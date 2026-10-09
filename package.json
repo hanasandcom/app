@@ -1,0 +1,51 @@
+{
+  "name": "hanasand-app",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "prebuild": "expo prebuild",
+    "ios": "expo run:ios",
+    "android": "expo run:android",
+    "lint": "eslint index.ts ./src",
+    "lint:fix": "eslint index.ts ./src --fix",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-navigation/bottom-tabs": "^7.4.7",
+    "@react-navigation/native": "^7.1.18",
+    "@react-navigation/native-stack": "^7.3.26",
+    "expo": "~55.0.19",
+    "expo-blur": "~55.0.12",
+    "expo-camera": "~55.0.16",
+    "expo-file-system": "~55.0.17",
+    "expo-linear-gradient": "~55.0.13",
+    "expo-media-library": "~55.0.15",
+    "expo-print": "~55.0.13",
+    "expo-sharing": "~55.0.18",
+    "expo-status-bar": "~55.0.5",
+    "expo-system-ui": "~55.0.16",
+    "lucide-react-native": "^1.11.0",
+    "otplib": "^13.4.0",
+    "react": "19.2.0",
+    "react-native": "0.83.6",
+    "react-native-gesture-handler": "~2.30.0",
+    "react-native-reanimated": "4.2.1",
+    "react-native-safe-area-context": "~5.6.0",
+    "react-native-screens": "~4.23.0",
+    "react-native-svg": "^15.15.4"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.2",
+    "@eslint/js": "10.0.1",
+    "@stylistic/eslint-plugin": "5.10.0",
+    "@types/react": "~19.2.10",
+    "@typescript-eslint/parser": "^8.58.2",
+    "babel-preset-expo": "^55.0.18",
+    "eslint": "10.2.1",
+    "typescript": "~5.9.2",
+    "typescript-eslint": "8.58.2"
+  }
+}

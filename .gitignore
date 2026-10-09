@@ -1,0 +1,15 @@
+.DS_Store
+node_modules/
+.expo/
+.artifacts/
+build/
+.build/
+dist/
+android/
+ios/
+.env
+.env.*
+!.env.example
+*.pem
+*.xcworkspace
+*.xcodeproj
