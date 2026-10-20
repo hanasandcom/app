@@ -39,15 +39,15 @@ extension String {
 
     var websocketBaseURL: URL? {
         let trimmed = trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        if trimmed.hasPrefix("https://") {
-            return URL(string: "wss://\(trimmed.dropFirst("https://".count))")
-        }
-        if trimmed.hasPrefix("http://") {
-            return URL(string: "ws://\(trimmed.dropFirst("http://".count))")
-        }
-        if trimmed.hasPrefix("ws://") || trimmed.hasPrefix("wss://") {
-            return URL(string: trimmed)
-        }
-        return nil
+        guard var components = URLComponents(string: trimmed),
+              let scheme = components.scheme?.lowercased(),
+              components.host != nil,
+              components.user == nil,
+              components.password == nil,
+              components.query == nil,
+              components.fragment == nil,
+              scheme == "https" || scheme == "wss" else { return nil }
+        components.scheme = "wss"
+        return components.url
     }
 }
