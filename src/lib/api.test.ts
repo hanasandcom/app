@@ -113,6 +113,22 @@ describe('refreshHanasandSession error classification', () => {
     })
 })
 
+describe('secure API transport', () => {
+    it('rejects HTTP even when the target is on a private LAN', async () => {
+        let requestCount = 0
+        mockFetch(async () => {
+            requestCount += 1
+            return new Response('{}', { status: 200 })
+        })
+
+        await expect(fetchDesktopAgentStatus({
+            ...settings,
+            apiBaseUrl: 'http://192.168.1.20:8080/api',
+        })).rejects.toThrow('Blocked insecure plaintext endpoint')
+        expect(requestCount).toBe(0)
+    })
+})
+
 describe('desktop command proof', () => {
     it('refuses to contact an endpoint without an authenticated certificate pin', async () => {
         const requestSettings = { ...settings, desktopAgentBaseUrl: 'http://192.168.1.20:45731' }

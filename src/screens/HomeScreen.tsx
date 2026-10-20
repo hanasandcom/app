@@ -18,16 +18,7 @@ type GptSocketMessage =
 function toWsUrl(apiBaseUrl: string) {
     const normalized = apiBaseUrl.trim().replace(/\/+$/, '')
     if (normalized.startsWith('https://')) return `wss://${normalized.slice('https://'.length)}`
-    if (normalized.startsWith('http://')) {
-        const url = new URL(normalized)
-        const host = url.hostname.toLowerCase()
-        const local = host === 'localhost' || host === '127.0.0.1' || host === '::1' || host.endsWith('.local')
-        if (!local) {
-            throw new Error('Blocked insecure AI websocket. Use HTTPS for Hanasand services.')
-        }
-        return `ws://${normalized.slice('http://'.length)}`
-    }
-    return normalized
+    throw new Error('Blocked insecure AI websocket. Use HTTPS for Hanasand services.')
 }
 
 function formatDuration(durationMs?: number) {

@@ -17,7 +17,7 @@
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": false,
-          "NSAllowsLocalNetworking": true
+          "NSAllowsLocalNetworking": false
         },
         "NSCameraUsageDescription": "Use the camera to scan documents quickly into a PDF.",
         "NSPhotoLibraryUsageDescription": "Use your library to review and clean up images.",

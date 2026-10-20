@@ -37,18 +37,9 @@ function pathPart(value: string) {
     return value.trim().replace(/^\/+/, '')
 }
 
-function isPrivateNetworkHost(hostname: string) {
-    const host = hostname.toLowerCase()
-    if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host.endsWith('.local')) return true
-    if (host.startsWith('10.') || host.startsWith('192.168.')) return true
-    const match = host.match(/^172\.(\d{1,2})\./)
-    return Boolean(match && Number(match[1]) >= 16 && Number(match[1]) <= 31)
-}
-
 function assertSecureTransport(url: string) {
     const parsed = new URL(url)
     if (parsed.protocol === 'https:') return
-    if (parsed.protocol === 'http:' && isPrivateNetworkHost(parsed.hostname)) return
     throw new Error(`Blocked insecure plaintext endpoint: ${parsed.origin}. Use HTTPS for Hanasand services.`)
 }
 
