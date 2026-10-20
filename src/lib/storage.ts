@@ -1,10 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import * as SecureStore from 'expo-secure-store'
 import type { AiChatMessage, AppSettings, AuthenticatorEntry, SavedMailboxConnection } from '../types'
 
 const SETTINGS_KEY = 'hanasand-mobile/settings'
 const MAILBOX_CONNECTIONS_KEY = 'hanasand-mobile/mailbox-connections'
 const AUTHENTICATOR_KEY = 'hanasand-mobile/authenticator'
 const AI_CHAT_KEY = 'hanasand-mobile/ai-chat'
+const AUTH_TOKEN_KEY = 'hanasand-mobile.auth-token'
+const IMPERSONATION_TOKEN_KEY = 'hanasand-mobile.impersonation-token'
+const AUTHENTICATOR_SECRET_PREFIX = 'hanasand-mobile.totp.'
 
 export const defaultSettings: AppSettings = {
     themeMode: 'obsidian',
@@ -79,11 +83,7 @@ function numberValue(value: unknown) {
 }
 
 async function getStoredValue(key: string) {
-    try {
-        return await AsyncStorage.getItem(key)
-    } catch {
-        return null
-    }
+    return await AsyncStorage.getItem(key)
 }
 
 async function setStoredValue(key: string, value: string) {
@@ -124,12 +124,52 @@ function normalizeSettings(value: unknown): AppSettings {
 
 export async function loadSettings() {
     const raw = await getStoredValue(SETTINGS_KEY)
-    if (!raw) return defaultSettings
-    return normalizeSettings(parseJSON(raw))
+    const legacySettings = raw ? normalizeSettings(parseJSON(raw)) : defaultSettings
+    const [authToken, impersonationToken] = await Promise.all([
+        SecureStore.getItemAsync(AUTH_TOKEN_KEY),
+        SecureStore.getItemAsync(IMPERSONATION_TOKEN_KEY),
+    ])
+
+    const nextSettings = {
+        ...legacySettings,
+        authToken: authToken ?? legacySettings.authToken,
+        impersonationToken: impersonationToken ?? legacySettings.impersonationToken,
+    }
+
+    if (authToken === null && legacySettings.authToken) {
+        await SecureStore.setItemAsync(AUTH_TOKEN_KEY, legacySettings.authToken)
+    }
+    if (impersonationToken === null && legacySettings.impersonationToken) {
+        await SecureStore.setItemAsync(IMPERSONATION_TOKEN_KEY, legacySettings.impersonationToken)
+    }
+
+    if (nextSettings.authToken !== legacySettings.authToken || nextSettings.impersonationToken !== legacySettings.impersonationToken) {
+        // Keep the legacy copy until both secrets are safely stored. If this write
+        // fails, a later load can retry from the still-intact legacy record.
+        await setStoredValue(SETTINGS_KEY, JSON.stringify(settingsWithoutSecrets(nextSettings)))
+    } else if (legacySettings.authToken || legacySettings.impersonationToken) {
+        // Also scrub a legacy record after a partially completed earlier migration.
+        await setStoredValue(SETTINGS_KEY, JSON.stringify(settingsWithoutSecrets(nextSettings)))
+    }
+
+    return nextSettings
 }
 
 export async function saveSettings(settings: AppSettings) {
-    await setStoredValue(SETTINGS_KEY, JSON.stringify(settings))
+    await Promise.all([
+        SecureStore.setItemAsync(AUTH_TOKEN_KEY, settings.authToken),
+        SecureStore.setItemAsync(IMPERSONATION_TOKEN_KEY, settings.impersonationToken),
+    ])
+    await setStoredValue(SETTINGS_KEY, JSON.stringify(settingsWithoutSecrets(settings)))
+}
+
+function settingsWithoutSecrets(settings: AppSettings) {
+    return { ...settings, authToken: '', impersonationToken: '' }
+}
+
+function authenticatorSecretKey(id: string) {
+    const encodedId = Array.from(id, character => character.codePointAt(0)!.toString(16).padStart(6, '0')).join('')
+    return `${AUTHENTICATOR_SECRET_PREFIX}${encodedId}`
 }
 
 export async function loadMailboxConnections() {
@@ -153,25 +193,51 @@ export async function saveMailboxConnections(connections: SavedMailboxConnection
 }
 
 export async function loadAuthenticatorEntries() {
-    return parseArray<unknown>(await getStoredValue(AUTHENTICATOR_KEY)).map(item => {
+    const rawEntries = parseArray<unknown>(await getStoredValue(AUTHENTICATOR_KEY))
+    if (rawEntries.some(item => stringValue(asRecord(item).secret) && !stringValue(asRecord(item).id))) {
+        throw new Error('An authenticator secret has no entry ID, so it cannot be migrated safely.')
+    }
+    const entries = rawEntries.map(item => {
         const entry = asRecord(item)
         const id = stringValue(entry.id)
-        const secret = stringValue(entry.secret)
-        if (!id || !secret) return null
+        const legacySecret = stringValue(entry.secret)
+        if (!id) return null
         return {
             id,
             label: stringValue(entry.label) || 'Authenticator code',
             issuer: stringValue(entry.issuer) || undefined,
             account: stringValue(entry.account) || undefined,
-            secret,
+            legacySecret,
             digits: typeof entry.digits === 'number' ? entry.digits : 6,
             period: typeof entry.period === 'number' ? entry.period : 30,
         }
-    }).filter(Boolean) as AuthenticatorEntry[]
+    }).filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+
+    const migrated: AuthenticatorEntry[] = []
+    for (const entry of entries) {
+        const secureSecret = await SecureStore.getItemAsync(authenticatorSecretKey(entry.id))
+        const secret = secureSecret || entry.legacySecret
+        if (!secureSecret && entry.legacySecret) {
+            await SecureStore.setItemAsync(authenticatorSecretKey(entry.id), entry.legacySecret)
+        }
+        if (secret) migrated.push({ ...entry, secret })
+    }
+
+    if (entries.some(entry => entry.legacySecret)) {
+        // Write every legacy secret to SecureStore before replacing the old JSON.
+        await setStoredValue(AUTHENTICATOR_KEY, JSON.stringify(migrated.map(({ id, label, issuer, account, digits, period }) => ({ id, label, issuer, account, digits, period }))))
+    }
+    return migrated
 }
 
 export async function saveAuthenticatorEntries(entries: AuthenticatorEntry[]) {
-    await setStoredValue(AUTHENTICATOR_KEY, JSON.stringify(entries))
+    const previousIds = parseArray<unknown>(await getStoredValue(AUTHENTICATOR_KEY))
+        .map(item => stringValue(asRecord(item).id))
+        .filter(Boolean)
+    await Promise.all(entries.map(entry => SecureStore.setItemAsync(authenticatorSecretKey(entry.id), entry.secret)))
+    await setStoredValue(AUTHENTICATOR_KEY, JSON.stringify(entries.map(({ id, label, issuer, account, digits, period }) => ({ id, label, issuer, account, digits, period }))))
+    const retainedIds = new Set(entries.map(entry => entry.id))
+    await Promise.all(previousIds.filter(id => !retainedIds.has(id)).map(id => SecureStore.deleteItemAsync(authenticatorSecretKey(id))))
 }
 
 export async function loadAiChat() {

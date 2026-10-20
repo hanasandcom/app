@@ -12,11 +12,11 @@ import WebKit
 
 extension LoopbackAgentServer {
 
-    func response(for request: String) -> String {
+    func response(for request: String, body: Data) -> String {
         if request.hasPrefix("OPTIONS ") {
             return http(body: "{}", status: "204 No Content")
         }
-        if !isAuthorized(request) {
+        if !isAuthorized(request, body: body) {
             return http(body: #"{"ok":false,"message":"A matching Hanasand login session is required for LAN access."}"#, status: "401 Unauthorized")
         }
         if request.hasPrefix("GET /health ") || request.hasPrefix("GET /status ") {

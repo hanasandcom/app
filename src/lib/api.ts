@@ -14,6 +14,13 @@ export class PendingDeletionError extends Error {
     }
 }
 
+export class AuthenticationError extends Error {
+    constructor(message: string) {
+        super(message)
+        this.name = 'AuthenticationError'
+    }
+}
+
 function headers(settings: AppSettings) {
     const next: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -92,7 +99,7 @@ function rightRotate(value: number, amount: number) {
     return (value >>> amount) | (value << (32 - amount))
 }
 
-function sha256Hex(input: string) {
+function utf8Bytes(input: string) {
     const bytes: number[] = []
     for (let i = 0; i < input.length; i += 1) {
         const code = input.charCodeAt(i)
@@ -112,6 +119,15 @@ function sha256Hex(input: string) {
         }
     }
 
+    return bytes
+}
+
+function sha256Hex(input: string) {
+    return sha256Bytes(utf8Bytes(input))
+}
+
+function sha256Bytes(input: number[]) {
+    const bytes = [...input]
     const bitLength = bytes.length * 8
     bytes.push(0x80)
     while ((bytes.length % 64) !== 56) bytes.push(0)
@@ -168,6 +184,19 @@ function sha256Hex(input: string) {
     return hash.map(value => value.toString(16).padStart(8, '0')).join('')
 }
 
+function hmacSha256Hex(key: string, message: string) {
+    const blockSize = 64
+    const keyBytes = utf8Bytes(key)
+    const normalizedKey = keyBytes.length > blockSize
+        ? (sha256Hex(key).match(/../g) || []).map(byte => Number.parseInt(byte, 16))
+        : keyBytes
+    const paddedKey = [...normalizedKey, ...new Array(Math.max(0, blockSize - normalizedKey.length)).fill(0)]
+    const innerBytes = [...paddedKey.map(byte => byte ^ 0x36), ...utf8Bytes(message)]
+    const outerBytes = [...paddedKey.map(byte => byte ^ 0x5c)]
+    const innerHashBytes = (sha256Bytes(innerBytes).match(/../g) || []).map(byte => Number.parseInt(byte, 16))
+    return sha256Bytes([...outerBytes, ...innerHashBytes])
+}
+
 function desktopAgentSessionCertificate(settings: AppSettings) {
     const userId = settings.userId.trim()
     const authToken = settings.authToken.trim()
@@ -181,7 +210,10 @@ function desktopAgentProofHeaders(path: string, init: RequestInit | undefined, c
     const target = `/${pathPart(path)}`
     const timestamp = String(Math.floor(Date.now() / 1000))
     const nonce = `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`
-    const proof = sha256Hex(`${certificate}\n${method}\n${target}\n${timestamp}\n${nonce}`)
+    const body = typeof init?.body === 'string' ? init.body : ''
+    const bodyHash = sha256Hex(body)
+    const material = `${method}\n${target}\n${timestamp}\n${nonce}\n${bodyHash}`
+    const proof = hmacSha256Hex(certificate, material)
     return {
         ...init,
         headers: {
@@ -276,6 +308,9 @@ async function readJsonResponse(response: Response) {
     }
     if (response.ok) return payload
     const message = stringValue(entry.error) || `Request failed with HTTP ${response.status}.`
+    if (response.status === 401 || response.status === 403) {
+        throw new AuthenticationError(message)
+    }
     throw new Error(message)
 }
 

@@ -16,5 +16,10 @@ let package = Package(
             path: "Sources/Hanasand",
             resources: [.process("Resources")]
         ),
+        .testTarget(
+            name: "HanasandTests",
+            dependencies: ["Hanasand"],
+            path: "Tests/HanasandTests"
+        ),
     ]
 )

@@ -12,20 +12,19 @@ import WebKit
 
 extension LoopbackAgentServer {
 
-    func isAuthorized(_ request: String) -> Bool {
+    func isAuthorized(_ request: String, body: Data) -> Bool {
         let certificate = certificateProvider().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !certificate.isEmpty else { return false }
-        return hasValidSessionProof(request, certificate: certificate)
+        return hasValidSessionProof(request, body: body, certificate: certificate)
     }
 
-    func hasValidSessionProof(_ request: String, certificate: String) -> Bool {
+    func hasValidSessionProof(_ request: String, body: Data, certificate: String) -> Bool {
         guard let timestamp = Self.headerValue("x-hanasand-session-timestamp", from: request),
               let timestampValue = TimeInterval(timestamp),
               abs(Date().timeIntervalSince1970 - timestampValue) <= 120,
               let nonce = Self.headerValue("x-hanasand-session-nonce", from: request),
               !nonce.isEmpty,
               nonce.count <= 160,
-              consumeProofNonce(nonce, timestamp: timestampValue),
               let proof = Self.headerValue("x-hanasand-session-proof", from: request),
               let firstLine = request.components(separatedBy: "\r\n").first else {
             return false
@@ -33,11 +32,16 @@ extension LoopbackAgentServer {
 
         let parts = firstLine.split(separator: " ", maxSplits: 2).map(String.init)
         guard parts.count >= 2 else { return false }
-        let material = "\(certificate)\n\(parts[0])\n\(parts[1])\n\(timestamp)\n\(nonce)"
-        let digest = SHA256.hash(data: Data(material.utf8))
+        let bodyDigest = SHA256.hash(data: body)
             .map { String(format: "%02x", $0) }
             .joined()
-        return Self.timingSafeEqual(proof.lowercased(), digest)
+        let message = "\(parts[0])\n\(parts[1])\n\(timestamp)\n\(nonce)\n\(bodyDigest)"
+        let key = SymmetricKey(data: Data(certificate.utf8))
+        let digest = HMAC<SHA256>.authenticationCode(for: Data(message.utf8), using: key)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        guard Self.timingSafeEqual(proof.lowercased(), digest) else { return false }
+        return consumeProofNonce(nonce, timestamp: timestampValue)
     }
 
     func consumeProofNonce(_ nonce: String, timestamp: TimeInterval) -> Bool {

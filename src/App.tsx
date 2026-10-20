@@ -19,10 +19,11 @@ import { NotesScreen } from './screens/NotesScreen'
 import { ProfileScreen } from './screens/ProfileScreen'
 import { PendingDeletionScreen } from './screens/PendingDeletionScreen'
 import { AutomationsScreen } from './screens/AutomationsScreen'
-import { defaultSettings, loadAiChat, loadAuthenticatorEntries, loadMailboxConnections, loadSettings, saveAiChat, saveAuthenticatorEntries, saveMailboxConnections, saveSettings } from './lib/storage'
+import { loadAiChat, loadAuthenticatorEntries, loadMailboxConnections, loadSettings, saveAiChat, saveAuthenticatorEntries, saveMailboxConnections, saveSettings } from './lib/storage'
 import { getThemePalette, palette } from './theme/tokens'
 import { AppThemeProvider } from './theme/context'
 import { PendingDeletionError, refreshHanasandSession, startMobileImpersonation, stopMobileImpersonation } from './lib/api'
+import { classifyRefreshFailure } from './lib/session'
 
 const Tab = createBottomTabNavigator<RootTabParamList>()
 
@@ -49,6 +50,8 @@ async function safeLoad<T>(loader: () => Promise<T>, fallback: T) {
 
 export default function App() {
     const [settings, setSettings] = useState<AppSettings | null>(null)
+    const [bootstrapError, setBootstrapError] = useState('')
+    const [bootstrapAttempt, setBootstrapAttempt] = useState(0)
     const [mailboxConnections, setMailboxConnections] = useState<SavedMailboxConnection[]>([])
     const [authenticatorEntries, setAuthenticatorEntries] = useState<AuthenticatorEntry[]>([])
     const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([])
@@ -56,45 +59,54 @@ export default function App() {
     const [pendingDeletion, setPendingDeletion] = useState<{ id: string, restoreToken: string, deletionScheduledAt: string } | null>(null)
 
     useEffect(() => {
+        let active = true
         void (async () => {
-            const [nextSettings, nextMailboxConnections, nextAuthenticatorEntries, nextAiMessages] = await Promise.all([
-                safeLoad(loadSettings, defaultSettings),
-                safeLoad(loadMailboxConnections, [] as SavedMailboxConnection[]),
-                safeLoad(loadAuthenticatorEntries, [] as AuthenticatorEntry[]),
-                safeLoad(loadAiChat, [] as AiChatMessage[]),
-            ])
-            let hydratedSettings = nextSettings
-            if (nextSettings.authToken && nextSettings.userId) {
-                try {
-                    const session = await refreshHanasandSession(nextSettings)
-                    hydratedSettings = {
-                        ...nextSettings,
-                        authToken: session.token,
-                        userId: session.id,
+            setBootstrapError('')
+            try {
+                const [nextSettings, nextMailboxConnections, nextAuthenticatorEntries, nextAiMessages] = await Promise.all([
+                    loadSettings(),
+                    safeLoad(loadMailboxConnections, [] as SavedMailboxConnection[]),
+                    loadAuthenticatorEntries(),
+                    safeLoad(loadAiChat, [] as AiChatMessage[]),
+                ])
+                let hydratedSettings = nextSettings
+                if (nextSettings.authToken && nextSettings.userId) {
+                    try {
+                        const session = await refreshHanasandSession(nextSettings)
+                        hydratedSettings = {
+                            ...nextSettings,
+                            authToken: session.token,
+                            userId: session.id,
+                        }
+                        await saveSettings(hydratedSettings)
+                    } catch (error) {
+                        const disposition = classifyRefreshFailure(error)
+                        if (disposition === 'pending-deletion' && error instanceof PendingDeletionError) {
+                            setPendingDeletion({
+                                id: error.id,
+                                restoreToken: error.restoreToken,
+                                deletionScheduledAt: error.deletionScheduledAt,
+                            })
+                            hydratedSettings = { ...nextSettings, authToken: '', userId: '' }
+                            await saveSettings(hydratedSettings)
+                        } else if (disposition === 'clear-session') {
+                            hydratedSettings = { ...nextSettings, authToken: '', userId: '' }
+                            await saveSettings(hydratedSettings)
+                        }
+                        // Network, server, and invalid-response failures keep the cached session.
                     }
-                    await saveSettings(hydratedSettings)
-                } catch (error) {
-                    if (error instanceof PendingDeletionError) {
-                        setPendingDeletion({
-                            id: error.id,
-                            restoreToken: error.restoreToken,
-                            deletionScheduledAt: error.deletionScheduledAt,
-                        })
-                    }
-                    hydratedSettings = {
-                        ...nextSettings,
-                        authToken: '',
-                        userId: '',
-                    }
-                    await saveSettings(hydratedSettings)
                 }
+                if (!active) return
+                setSettings(hydratedSettings)
+                setMailboxConnections(nextMailboxConnections)
+                setAuthenticatorEntries(nextAuthenticatorEntries)
+                setAiMessages(nextAiMessages)
+            } catch (error) {
+                if (active) setBootstrapError(error instanceof Error ? error.message : 'Secure local data could not be loaded.')
             }
-            setSettings(hydratedSettings)
-            setMailboxConnections(nextMailboxConnections)
-            setAuthenticatorEntries(nextAuthenticatorEntries)
-            setAiMessages(nextAiMessages)
         })()
-    }, [])
+        return () => { active = false }
+    }, [bootstrapAttempt])
 
     useEffect(() => {
         if (!settings) return
@@ -174,6 +186,19 @@ export default function App() {
         }
         await saveSettings(next)
         setSettings(next)
+    }
+
+    if (!settings && bootstrapError) {
+        return (
+            <GestureHandlerRootView style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28, backgroundColor: palette.background }}>
+                <StatusBar style='light' />
+                <Text style={{ color: palette.text, fontSize: 17, fontWeight: '700', textAlign: 'center' }}>Secure local data is unavailable</Text>
+                <Text style={{ color: palette.textSoft, marginTop: 10, textAlign: 'center' }}>{bootstrapError}</Text>
+                <Pressable onPress={() => setBootstrapAttempt(value => value + 1)} style={{ marginTop: 20, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 14, backgroundColor: palette.accent }}>
+                    <Text style={{ color: palette.background, fontWeight: '800' }}>Try again</Text>
+                </Pressable>
+            </GestureHandlerRootView>
+        )
     }
 
     if (!settings) {

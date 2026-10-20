@@ -1,101 +1,93 @@
-# Hanasand Desktop App + Agent
+# Hanasand Desktop
 
-Native macOS desktop app with an embedded loopback agent. The UI is built for fast agentic work: project rail, transcript, local status, Hanasand actions, and a bottom command dock. The embedded agent exposes the same safe local API that the phone app can call.
+Native macOS client for Hanasand account, mail, AI, and control workflows. It also runs an embedded Swift command bridge that the signed-in mobile app can discover over the local network.
 
-## Run the Desktop GUI
+## Run the macOS app
+
+From the repository root:
 
 ```sh
+cd desktop
 swift run Hanasand
 ```
 
-The app starts a local agent on `http://127.0.0.1:45731` and keeps the status visible in the title bar and transcript.
+The package requires macOS 14 or later. The app starts its embedded Swift bridge on port `45731`. After sign-in, it publishes active non-loopback IPv4 addresses for LAN discovery. The bridge also accepts requests on the Mac itself. Its requests require a short-lived, nonce-protected HMAC session proof derived from the current Hanasand login; a plain unauthenticated `curl` request is rejected. The bridge still uses HTTP, so proofs authenticate requests and prevent undetected changes but do not encrypt their contents or responses.
 
-## Native Features
+### Embedded Swift bridge routes
 
-- Command-first local control surface.
-- Native dashboard panels for Hanasand website, admin, share, VM, logs, database, backups, restore, notes, traffic, and vulnerability pages.
-- Real local Mac status through the embedded loopback agent.
-- Mail overview loader using the real Hanasand mail API.
-- Hanasand AI model check and prompt endpoint wiring.
-- Server controls for VPN, RDP, start, stop, and logs.
-- Settings for API URLs, auth token, user id, desktop agent URL, VPN, RDP, and server paths.
+The bridge exposes these HTTP routes:
 
-## Package an Auto Update
+- `GET /health` and `GET /status` return Mac status.
+- `GET /screenshot` returns the current desktop screenshot.
+- `GET /commands` returns the supported command names.
+- `POST /command` accepts a command in a JSON body; the same bridge also accepts command query forms.
 
-```sh
-HANASAND_APP_VERSION=0.1.2 app/desktop/scripts/package-update.sh
-```
+Commands include status and update checks, AI actions, app-section navigation, browser actions, native dashboard panels, server logs, settings, and remote-desktop controls. Parameterized commands include `codex_prompt:<url-encoded-prompt>`, `mac_control_type_text:<url-encoded-text>`, and `mac_control_pointer_click_at:<x>:<y>`. Keyboard text entry and pointer clicks require macOS Accessibility permission. Use the authenticated client for requests and read `GET /commands` for the names accepted by the running app; unsupported commands return HTTP 400. The bridge returns HTTP 401 when the session proof is missing or invalid.
 
-The script builds a release `.app`, signs it with `HANASAND_CODESIGN_IDENTITY` when set, otherwise auto-selects the first local `Apple Development` signing identity, and verifies the result before writing the archive. Stable signing keeps macOS privacy permissions such as Screen Recording attached across updates. Ad-hoc update packages are refused by default; set `HANASAND_ALLOW_ADHOC_SIGNING=1` only for throwaway local builds. It writes `Hanasand-<version>-macos.zip` plus `manifest.json` to `app/desktop/dist` by default. Set `HANASAND_APP_OUTPUT_DIR` to write into another directory, for example:
+## Package a macOS update
+
+From the repository root, choose a semantic version and run:
 
 ```sh
-HANASAND_APP_VERSION=0.1.2 HANASAND_APP_OUTPUT_DIR=/tmp/hanasand-desktop-0.1.2 app/desktop/scripts/package-update.sh
+HANASAND_APP_VERSION=0.1.2 desktop/scripts/package-update.sh
 ```
 
-The API reads the exact archive filename from `manifest.json`, so upload that versioned archive and the manifest together without renaming the archive:
+The script builds and verifies a release `.app`, signs it with `HANASAND_CODESIGN_IDENTITY` when set, or selects the first local Apple Development identity. Stable signing keeps macOS privacy permissions such as Screen Recording attached across updates. Ad-hoc packages are refused unless `HANASAND_ALLOW_ADHOC_SIGNING=1` is set for a throwaway local build. By default, the script writes `desktop/dist/Hanasand-<version>-macos.zip` and `desktop/dist/manifest.json`. Set `HANASAND_APP_OUTPUT_DIR` to choose another output directory:
 
 ```sh
-rsync -az dist/Hanasand-0.1.2-macos.zip dist/manifest.json ubuntu@hanasand:/srv/hanasand/app-updates/
+HANASAND_APP_VERSION=0.1.2 HANASAND_APP_OUTPUT_DIR=/tmp/hanasand-desktop-0.1.2 desktop/scripts/package-update.sh
 ```
 
-## Run the macOS Update Runner
-
-The Forgejo workflow needs a macOS runner because SwiftUI apps cannot be built in the Linux git container. To avoid an always-on remote execution agent, run the macOS runner in the foreground only when publishing desktop updates:
+The update API reads the exact archive filename recorded in the manifest. Upload the versioned archive and its manifest together, without renaming the archive. For example, from the repository root:
 
 ```sh
-app/desktop/scripts/run-macos-runner-once.sh
+rsync -az desktop/dist/Hanasand-0.1.2-macos.zip desktop/dist/manifest.json ubuntu@hanasand:/srv/hanasand/app-updates/
 ```
 
-The script builds the Forgejo runner locally if needed, registers it with `macos` and `macos-arm64` labels, and runs it until you stop it with `Ctrl-C`.
-
-## Embedded Agent Endpoints
-
-- `GET /health`
-- `GET /status`
-- `POST /command` with `{ "command": "status" }`
-
-Only the safe `status` command is enabled. Add future actions as explicit allowlist entries.
-
-## Visual Smoke Screenshots
-
-Run a repeatable native UI smoke pass from macOS:
+The runner helper is intended for a Forgejo update workflow, which needs a macOS runner because SwiftUI cannot be built in the Linux Git container. This checkout includes the helper but no Forgejo workflow definition, so any trigger and automated release steps are outside this repository. Start the runner in the foreground when that external workflow requires it:
 
 ```sh
-app/desktop/scripts/smoke-screenshots.sh
+desktop/scripts/run-macos-runner-once.sh
 ```
 
-The script builds/launches the Desktop app if the loopback agent is not already reachable, opens important sections through `POST /command`, validates that screenshots were written, and captures them into `.artifacts/desktop-smoke-<timestamp>/` with a `manifest.json` plus a browsable `report.html` contact sheet.
+The script builds the Forgejo runner locally if needed, registers it with `macos` and `macos-arm64` labels, and runs until stopped with `Ctrl-C`.
+
+## Capture visual smoke screenshots
+
+On macOS, run the screenshot pass from the repository root:
+
+```sh
+desktop/scripts/smoke-screenshots.sh
+```
+
+The script is intended to build or launch the Desktop app, open sections through `POST /command`, check the screenshots, and save a manifest and browsable HTML contact sheet under `desktop/.artifacts/desktop-smoke-<timestamp>/`. At this revision it sends unauthenticated `curl` requests to `/health` and `/command`, while the Swift bridge requires a session proof on both routes. The bridge returns HTTP 401, so this script cannot reach its capture steps until it gains authenticated request support.
 
 Useful options:
 
 ```sh
-HANASAND_DESKTOP_SMOKE_KEEP_RUNNING=1 app/desktop/scripts/smoke-screenshots.sh
-HANASAND_DESKTOP_SMOKE_OUT=/tmp/hanasand-smoke app/desktop/scripts/smoke-screenshots.sh
-HANASAND_DESKTOP_AGENT_URL=http://127.0.0.1:45731 app/desktop/scripts/smoke-screenshots.sh
-HANASAND_DESKTOP_SMOKE_SCOPE=core app/desktop/scripts/smoke-screenshots.sh
-HANASAND_DESKTOP_SMOKE_SCOPE=dashboard app/desktop/scripts/smoke-screenshots.sh
-HANASAND_DESKTOP_SMOKE_CAPTURE_MODE=rect app/desktop/scripts/smoke-screenshots.sh
-HANASAND_DESKTOP_SMOKE_CAPTURE_RECT=80,70,1340,900 app/desktop/scripts/smoke-screenshots.sh
+HANASAND_DESKTOP_SMOKE_KEEP_RUNNING=1 desktop/scripts/smoke-screenshots.sh
+HANASAND_DESKTOP_SMOKE_OUT=/tmp/hanasand-smoke desktop/scripts/smoke-screenshots.sh
+HANASAND_DESKTOP_AGENT_URL=http://127.0.0.1:45731 desktop/scripts/smoke-screenshots.sh
+HANASAND_DESKTOP_SMOKE_SCOPE=core desktop/scripts/smoke-screenshots.sh
+HANASAND_DESKTOP_SMOKE_SCOPE=dashboard desktop/scripts/smoke-screenshots.sh
+HANASAND_DESKTOP_SMOKE_CAPTURE_MODE=rect desktop/scripts/smoke-screenshots.sh
+HANASAND_DESKTOP_SMOKE_CAPTURE_RECT=80,70,1340,900 desktop/scripts/smoke-screenshots.sh
 ```
 
-The default `full` smoke path captures Control, Server, Mail, Documents, Images, Dashboard, Settings, and every registered native dashboard route: dashboard mail, shares, links, tests, articles, thoughts, profile, users, roles, logs, system, VMs, notes, databases, backups, restore, vulnerabilities, rate limits, and traffic. The script statically checks that every `open_dashboard_*` loopback command is included in screenshot coverage before it starts capturing. Use `HANASAND_DESKTOP_SMOKE_SCOPE=core` for a fast shell pass or `dashboard` for route parity only. Screenshots use the visible Hanasand window id by default so older background windows do not pollute the visual review. Set `HANASAND_DESKTOP_SMOKE_CAPTURE_MODE=rect` for rectangle capture, or set `HANASAND_DESKTOP_SMOKE_CAPTURE_MODE=screen HANASAND_DESKTOP_SMOKE_CAPTURE_RECT=` for full-screen captures.
+The default `full` pass captures Control, Server, Mail, Documents, Images, Dashboard, Settings, and every registered native dashboard route. The script checks route-command coverage before capture. Use `core` for a short shell pass or `dashboard` for dashboard route coverage. Screenshots use the visible Hanasand window ID by default. Set `HANASAND_DESKTOP_SMOKE_CAPTURE_MODE=rect` to capture a rectangle, or use `HANASAND_DESKTOP_SMOKE_CAPTURE_MODE=screen` and clear `HANASAND_DESKTOP_SMOKE_CAPTURE_RECT` for a full-screen capture.
 
-## Legacy C++ Agent
+## Legacy C++ loopback helper
 
-The small C++ loopback agent is still available when a GUI is not needed.
+`desktop/main.cpp` builds a separate, minimal helper for cases that do not need the macOS GUI. It is not the Swift bridge: it binds only to `127.0.0.1`, exposes `GET /health`, `GET /status`, and `POST /command`, and returns status output when the request text contains `status`; other command text returns HTTP 400. It does not parse the JSON command field, and it has no LAN discovery or the Swift bridge's session-proof protocol. Its default port is also `45731`; choose another port when running it alongside the Swift app.
 
-### Build
+Build it from `desktop/`:
 
 ```sh
 clang++ -std=c++17 -O2 -Wall -Wextra main.cpp -o build/hanasand-agent
 ```
 
-On Windows, build with a C++17 compiler and link Winsock.
-
-### Run
+On Windows, use a C++17 compiler and link Winsock. Run it with an optional port:
 
 ```sh
-./build/hanasand-agent 45731
+./build/hanasand-agent 45732
 ```
-
-The agent binds only to `127.0.0.1` by default. The iOS simulator can reach it through `http://127.0.0.1:45731`.

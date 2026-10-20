@@ -27,6 +27,7 @@
     "plugins": [
       "expo-camera",
       "expo-media-library",
+      "expo-secure-store",
       "expo-sharing"
     ],
     "android": {
