@@ -8,6 +8,8 @@ private struct EncryptedBridgeEnvelope: Encodable {
 }
 
 extension LoopbackAgentServer {
+    static let fixedEncryptedResponseBodyBytes = 262_144
+
     static func encryptBridgeBody(_ plaintext: Data, certificate: String) throws -> Data {
         let sealedBox = try AES.GCM.seal(plaintext, using: bridgeTransportKey(certificate: certificate))
         guard let combined = sealedBox.combined else {
@@ -43,7 +45,10 @@ extension LoopbackAgentServer {
 
         do {
             let encryptedBody = try encryptBridgeBody(plaintextBody, certificate: certificate)
-            guard let envelopeString = String(data: encryptedBody, encoding: .utf8) else { return nil }
+            guard encryptedBody.count <= fixedEncryptedResponseBodyBytes else { return nil }
+            var paddedBody = encryptedBody
+            paddedBody.append(Data(repeating: 32, count: fixedEncryptedResponseBodyBytes - encryptedBody.count))
+            guard let envelopeString = String(data: paddedBody, encoding: .utf8) else { return nil }
             return httpResponse(body: envelopeString, status: status)
         } catch {
             return nil

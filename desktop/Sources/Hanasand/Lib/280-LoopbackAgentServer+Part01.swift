@@ -12,7 +12,8 @@ import WebKit
 
 extension LoopbackAgentServer {
     static let maximumRequestHeaderBytes = 16_384
-    static let maximumRequestBodyBytes = 262_144
+    static let maximumRequestBodyBytes = 65_536
+    static let trafficFrameIntervalMs = 1_000
     static let requestReadTimeout: DispatchTimeInterval = .seconds(10)
 
     enum RequestReadState {
@@ -58,13 +59,21 @@ extension LoopbackAgentServer {
         connection.start(queue: queue)
         var buffer = Data()
         var finished = false
+        var responseScheduled = false
 
         func send(_ response: String) {
-            guard !finished else { return }
-            finished = true
-            connection.send(content: response.data(using: .utf8), completion: .contentProcessed { _ in
-                connection.cancel()
-            })
+            guard !finished, !responseScheduled else { return }
+            responseScheduled = true
+            let interval = Double(Self.trafficFrameIntervalMs) / 1_000
+            let remainder = Date().timeIntervalSince1970.truncatingRemainder(dividingBy: interval)
+            let delay = remainder == 0 ? interval : interval - remainder
+            queue.asyncAfter(deadline: .now() + delay) {
+                guard !finished else { return }
+                finished = true
+                connection.send(content: response.data(using: .utf8), completion: .contentProcessed { _ in
+                    connection.cancel()
+                })
+            }
         }
 
         func sendError(_ message: String, status: String) {
@@ -81,7 +90,7 @@ extension LoopbackAgentServer {
                     connection.cancel()
                     return
                 }
-                guard !finished else { return }
+                guard !finished, !responseScheduled else { return }
                 if error != nil {
                     sendError("Malformed request.", status: "400 Bad Request")
                     return
@@ -159,22 +168,25 @@ extension LoopbackAgentServer {
             return #"{"ok":false,"message":"Unable to capture the Mac screen. Check Screen Recording permission."}"#
         }
 
-        let maxWidth: CGFloat = 900
         let sourceSize = NSSize(width: cgImage.width, height: cgImage.height)
-        let scale = min(1, maxWidth / max(sourceSize.width, 1))
-        let targetSize = NSSize(width: sourceSize.width * scale, height: sourceSize.height * scale)
         let sourceImage = NSImage(cgImage: cgImage, size: sourceSize)
-        let targetImage = NSImage(size: targetSize)
-        targetImage.lockFocus()
-        sourceImage.draw(in: NSRect(origin: .zero, size: targetSize), from: NSRect(origin: .zero, size: sourceSize), operation: .copy, fraction: 1)
-        targetImage.unlockFocus()
+        for maxWidth: CGFloat in [900, 720, 600, 480, 360] {
+            let scale = min(1, maxWidth / max(sourceSize.width, 1))
+            let targetSize = NSSize(width: sourceSize.width * scale, height: sourceSize.height * scale)
+            let targetImage = NSImage(size: targetSize)
+            targetImage.lockFocus()
+            sourceImage.draw(in: NSRect(origin: .zero, size: targetSize), from: NSRect(origin: .zero, size: sourceSize), operation: .copy, fraction: 1)
+            targetImage.unlockFocus()
 
-        guard let tiff = targetImage.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiff),
-              let png = bitmap.representation(using: .png, properties: [:]) else {
-            return #"{"ok":false,"message":"Unable to encode the Mac screenshot."}"#
+            guard let tiff = targetImage.tiffRepresentation,
+                  let bitmap = NSBitmapImageRep(data: tiff) else { continue }
+            for quality: CGFloat in [0.8, 0.65, 0.5, 0.4, 0.3, 0.2] {
+                guard let jpeg = bitmap.representation(using: .jpeg, properties: [.compressionFactor: quality]),
+                      jpeg.count <= 131_072 else { continue }
+                return #"{"ok":true,"message":"Mac screen captured.","mimeType":"image/jpeg","imageBase64":"\#(jpeg.base64EncodedString())"}"#
+            }
         }
 
-        return #"{"ok":true,"message":"Mac screen captured.","mimeType":"image/png","imageBase64":"\#(png.base64EncodedString())"}"#
+        return #"{"ok":false,"message":"The Mac screenshot could not fit the fixed-size privacy frame."}"#
     }
 }

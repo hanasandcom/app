@@ -5,6 +5,32 @@ import { trustedDesktopAgentEndpoints } from './desktop-agent-endpoints'
 import { requestPinnedDesktopAgent } from './pinned-desktop-transport'
 export { AuthenticationError, PendingDeletionError } from './api-errors'
 
+const desktopAgentRequestBodyBytes = 64 * 1024
+const desktopAgentCoverTrafficIntervalMs = 1_000
+const desktopAgentPresenceCacheMs = 15_000
+const desktopAgentMaximumQueuedRequests = 32
+const desktopAgentMaximumInFlightRequests = 4
+
+type DesktopAgentQueueEntry = {
+    settings: AppSettings
+    path: string
+    init?: RequestInit
+    resolve: (response: Response) => void
+    reject: (error: unknown) => void
+}
+
+let desktopAgentTrafficSettings: AppSettings | null = null
+let desktopAgentTrafficTimer: ReturnType<typeof setTimeout> | null = null
+let desktopAgentTrafficInFlight = 0
+let desktopAgentRealRequestInFlight = false
+const desktopAgentTrafficQueue: DesktopAgentQueueEntry[] = []
+let cachedDesktopAgentPresence: {
+    key: string
+    expiresAt: number
+    agents: DesktopAgentPresence[]
+    pending?: Promise<DesktopAgentPresence[]>
+} | null = null
+
 function headers(settings: AppSettings) {
     const next: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -53,14 +79,33 @@ function joinUrl(base: string, path: string) {
 
 async function fetchDesktopAgentPresence(settings: AppSettings) {
     requireAppAuth(settings, 'discover the desktop agent')
-    const response = await fetch(joinUrl(settings.apiBaseUrl, 'desktop-agent/presence'), {
-        headers: headers(settings),
-    })
-    if (!response.ok) {
-        throw new Error(`Desktop agent discovery failed with HTTP ${response.status}.`)
+    const key = `${settings.apiBaseUrl}\n${settings.userId}\n${settings.authToken}`
+    if (cachedDesktopAgentPresence?.key === key
+        && (cachedDesktopAgentPresence.pending || cachedDesktopAgentPresence.expiresAt > Date.now())) {
+        return cachedDesktopAgentPresence.pending ?? cachedDesktopAgentPresence.agents
     }
-    const payload = await response.json().catch(() => null) as { agents?: DesktopAgentPresence[] } | null
-    return Array.isArray(payload?.agents) ? payload.agents : []
+    const cache: NonNullable<typeof cachedDesktopAgentPresence> = {
+        key,
+        expiresAt: Date.now() + desktopAgentPresenceCacheMs,
+        agents: [],
+    }
+    cachedDesktopAgentPresence = cache
+    cache.pending = (async () => {
+        const response = await fetch(joinUrl(settings.apiBaseUrl, 'desktop-agent/presence'), {
+            headers: headers(settings),
+        })
+        if (!response.ok) {
+            throw new Error(`Desktop agent discovery failed with HTTP ${response.status}.`)
+        }
+        const payload = await response.json().catch(() => null) as { agents?: DesktopAgentPresence[] } | null
+        cache.agents = Array.isArray(payload?.agents) ? payload.agents : []
+        return cache.agents
+    })()
+    try {
+        return await cache.pending
+    } finally {
+        cache.pending = undefined
+    }
 }
 
 function rightRotate(value: number, amount: number) {
@@ -233,29 +278,37 @@ async function openDesktopAgentResponse(response: Response, certificate: string)
 
 async function desktopAgentProofRequest(path: string, init: RequestInit | undefined, certificate: string) {
     if (!certificate) return init
-    const method = (init?.method || 'GET').toUpperCase()
+    // A uniform POST frame works consistently across URLSession and Android's
+    // HttpsURLConnection, which do not support request bodies on GET.
+    const method = 'POST'
     const target = `/${pathPart(path)}`
     const timestamp = String(Math.floor(Date.now() / 1000))
     const nonce = Array.from(await Crypto.getRandomBytesAsync(16), byte => byte.toString(16).padStart(2, '0')).join('')
-    const plaintext = typeof init?.body === 'string' ? init.body : ''
-    const body = plaintext ? await sealDesktopAgentBody(plaintext, certificate) : ''
+    const plaintext = typeof init?.body === 'string' ? init.body : '{}'
+    const envelope = await sealDesktopAgentBody(plaintext, certificate)
+    const envelopeBytes = utf8Bytes(envelope).length
+    if (envelopeBytes > desktopAgentRequestBodyBytes) {
+        throw new Error('Desktop command exceeds the fixed-size privacy frame.')
+    }
+    const body = envelope + ' '.repeat(desktopAgentRequestBodyBytes - envelopeBytes)
     const bodyHash = sha256Hex(body)
     const material = `${method}\n${target}\n${timestamp}\n${nonce}\n${bodyHash}`
     const proof = hmacSha256Hex(certificate, material)
     return {
         ...init,
+        method,
         headers: {
             ...(init?.headers || {}),
-            ...(body ? { 'Content-Type': 'application/json' } : {}),
+            'Content-Type': 'application/json',
             'X-Hanasand-Session-Timestamp': timestamp,
             'X-Hanasand-Session-Nonce': nonce,
             'X-Hanasand-Session-Proof': proof,
         },
-        body: body || undefined,
+        body,
     }
 }
 
-async function fetchDesktopAgentPath(settings: AppSettings, path: string, init?: RequestInit) {
+async function performDesktopAgentPath(settings: AppSettings, path: string, init?: RequestInit) {
     const agents = await fetchDesktopAgentPresence(settings)
     const endpoints = trustedDesktopAgentEndpoints(agents, settings.desktopAgentBaseUrl)
     if (endpoints.length === 0) {
@@ -278,6 +331,71 @@ async function fetchDesktopAgentPath(settings: AppSettings, path: string, init?:
     }
 
     throw lastError instanceof Error ? lastError : new Error('Desktop agent is unreachable.')
+}
+
+function stopDesktopAgentTrafficTimer() {
+    if (desktopAgentTrafficTimer) clearTimeout(desktopAgentTrafficTimer)
+    desktopAgentTrafficTimer = null
+}
+
+function scheduleDesktopAgentTrafficSlot() {
+    if (desktopAgentTrafficTimer) return
+    stopDesktopAgentTrafficTimer()
+    if (!desktopAgentTrafficSettings) return
+    const remainder = Date.now() % desktopAgentCoverTrafficIntervalMs
+    const delay = remainder === 0 ? desktopAgentCoverTrafficIntervalMs : desktopAgentCoverTrafficIntervalMs - remainder
+    desktopAgentTrafficTimer = setTimeout(() => { void runDesktopAgentTrafficSlot() }, delay)
+}
+
+function runDesktopAgentTrafficSlot() {
+    desktopAgentTrafficTimer = null
+    const settings = desktopAgentTrafficSettings
+    if (!settings) return
+    if (desktopAgentTrafficInFlight >= desktopAgentMaximumInFlightRequests) {
+        scheduleDesktopAgentTrafficSlot()
+        return
+    }
+
+    const queued = desktopAgentRealRequestInFlight ? undefined : desktopAgentTrafficQueue.shift()
+    desktopAgentTrafficInFlight += 1
+    if (queued) desktopAgentRealRequestInFlight = true
+    scheduleDesktopAgentTrafficSlot()
+    void performDesktopAgentPath(
+        queued?.settings ?? settings,
+        queued?.path ?? 'status',
+        queued?.init ?? { method: 'POST', body: '{}' },
+    ).then(async response => {
+        if (queued) queued.resolve(response)
+        else await response.body?.cancel()
+    }).catch(error => {
+        if (queued) queued.reject(error)
+    }).finally(() => {
+        desktopAgentTrafficInFlight -= 1
+        if (queued) desktopAgentRealRequestInFlight = false
+    })
+}
+
+export function startDesktopAgentCoverTraffic(settings: AppSettings) {
+    desktopAgentTrafficSettings = settings
+    scheduleDesktopAgentTrafficSlot()
+}
+
+export function stopDesktopAgentCoverTraffic() {
+    desktopAgentTrafficSettings = null
+    stopDesktopAgentTrafficTimer()
+    const error = new Error('Desktop agent request was canceled because the app left the foreground.')
+    while (desktopAgentTrafficQueue.length) desktopAgentTrafficQueue.shift()?.reject(error)
+}
+
+async function fetchDesktopAgentPath(settings: AppSettings, path: string, init?: RequestInit) {
+    if (!desktopAgentTrafficSettings) return performDesktopAgentPath(settings, path, init)
+    if (desktopAgentTrafficQueue.length >= desktopAgentMaximumQueuedRequests) {
+        throw new Error('The desktop agent request queue is full. Wait for the current actions to finish.')
+    }
+    return new Promise<Response>((resolve, reject) => {
+        desktopAgentTrafficQueue.push({ settings, path, init, resolve, reject })
+        scheduleDesktopAgentTrafficSlot()
+    })
 }
 
 function segment(value: string) {

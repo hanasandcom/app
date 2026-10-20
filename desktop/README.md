@@ -17,14 +17,15 @@ The package requires macOS 14 or later. The app starts its embedded Swift HTTPS 
 
 The bridge exposes these HTTPS routes:
 
-- `GET /health` and `GET /status` return Mac status.
-- `GET /screenshot` returns the current desktop screenshot.
-- `GET /commands` returns the supported command names.
+- `GET /health`, `GET /status`, and `GET /commands` remain available to compatible callers. The mobile client sends these as fixed-size `POST` frames.
+- `GET /screenshot` returns the current desktop screenshot. The mobile client sends it as a fixed-size `POST` frame; the embedded bridge accepts both methods.
 - `POST /command` accepts a command in a JSON body; the same bridge also accepts command query forms.
 
 Commands include status and update checks, AI actions, app-section navigation, browser actions, native dashboard panels, server logs, settings, and remote-desktop controls. Parameterized commands include `codex_prompt:<url-encoded-prompt>`, `mac_control_type_text:<url-encoded-text>`, and `mac_control_pointer_click_at:<x>:<y>`. Keyboard text entry and pointer clicks require macOS Accessibility permission. Use the authenticated client for requests and read `GET /commands` for the names accepted by the running app; unsupported commands return HTTP 400. The bridge returns HTTP 401 when the session proof is missing or invalid.
 
-The bridge uses Network.framework TLS 1.2 or later. TLS hides HTTP methods, paths, headers, and content on the network. The mobile client pins the leaf certificate using its published SHA-256 fingerprint. The bridge also encrypts request and response bodies with AES-256-GCM, and HMAC proofs bind each request body to its method, path, timestamp, and nonce. TLS does not hide the destination IP address, request timing, or approximate traffic size revealed by TLS record lengths; hiding traffic shape would require additional padding and scheduling.
+The bridge uses Network.framework TLS 1.2 or later. The mobile client pins the leaf certificate using its published SHA-256 fingerprint. The bridge also encrypts request and response bodies with AES-256-GCM, and HMAC proofs bind each request body to its method, path, timestamp, and nonce. While the signed-in app is foregrounded, the mobile client sends one request on each one-second slot when a desktop agent is available. Real requests use the next slot; otherwise it sends a status request. The bridge rounds responses to the next one-second boundary. Every request body is 64 KiB and every encrypted response body is 256 KiB. Screenshots are resized and JPEG-compressed to fit that response frame.
+
+This cover traffic adds about 2.6 Mbps (roughly 1.1 GB per foreground hour) while a desktop agent is available, and adds up to one second of slot wait plus response-boundary delay. The app stops cover traffic in the background and allows up to four outstanding requests; if all four exceed a slot, it skips that frame. An observer can still see the destination IP, whether the app is foregrounded, and gaps caused by network failures or a saturated request limit. TLS protects content; fixed frames and scheduled requests reduce the timing and size signals.
 
 ## Package a macOS update
 

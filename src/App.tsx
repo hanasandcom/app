@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { NavigationContainer, DarkTheme } from '@react-navigation/native'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
-import { Alert, Platform, Pressable, Text, View } from 'react-native'
+import { Alert, AppState, Platform, Pressable, Text, View } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
 import * as SystemUI from 'expo-system-ui'
 import { AlarmClockCheck, Bot, Images, Mail, ScanLine, SlidersHorizontal, StickyNote, UserRound } from 'lucide-react-native'
@@ -22,7 +22,7 @@ import { AutomationsScreen } from './screens/AutomationsScreen'
 import { loadAiChat, loadAuthenticatorEntries, loadMailboxConnections, loadSettings, saveAiChat, saveAuthenticatorEntries, saveMailboxConnections, saveSettings } from './lib/storage'
 import { getThemePalette, palette } from './theme/tokens'
 import { AppThemeProvider } from './theme/context'
-import { PendingDeletionError, refreshHanasandSession, startMobileImpersonation, stopMobileImpersonation } from './lib/api'
+import { PendingDeletionError, refreshHanasandSession, startDesktopAgentCoverTraffic, startMobileImpersonation, stopDesktopAgentCoverTraffic, stopMobileImpersonation } from './lib/api'
 import { classifyRefreshFailure } from './lib/session'
 
 const Tab = createBottomTabNavigator<RootTabParamList>()
@@ -97,6 +97,7 @@ export default function App() {
                     }
                 }
                 if (!active) return
+                if (AppState.currentState === 'active') startDesktopAgentCoverTraffic(hydratedSettings)
                 setSettings(hydratedSettings)
                 setMailboxConnections(nextMailboxConnections)
                 setAuthenticatorEntries(nextAuthenticatorEntries)
@@ -111,6 +112,22 @@ export default function App() {
     useEffect(() => {
         if (!settings) return
         void SystemUI.setBackgroundColorAsync(getThemePalette(settings.themeMode).background)
+    }, [settings])
+
+    useEffect(() => {
+        if (!settings || AppState.currentState !== 'active') {
+            stopDesktopAgentCoverTraffic()
+        } else {
+            startDesktopAgentCoverTraffic(settings)
+        }
+        const subscription = AppState.addEventListener('change', state => {
+            if (state === 'active' && settings) startDesktopAgentCoverTraffic(settings)
+            else stopDesktopAgentCoverTraffic()
+        })
+        return () => {
+            subscription.remove()
+            stopDesktopAgentCoverTraffic()
+        }
     }, [settings])
 
     async function handleSaveSettings(next: AppSettings) {

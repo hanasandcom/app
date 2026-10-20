@@ -18,7 +18,8 @@ extension LoopbackAgentServer {
         }
         let certificate = certificateProvider().trimmingCharacters(in: .whitespacesAndNewlines)
         if certificate.isEmpty || !hasValidSessionProof(request, body: body, certificate: certificate) {
-            return http(body: #"{"ok":false,"message":"A matching Hanasand login session is required for LAN access."}"#, status: "401 Unauthorized")
+            let rejected = http(body: #"{"ok":false,"message":"A matching Hanasand login session is required for LAN access."}"#, status: "401 Unauthorized")
+            return certificate.isEmpty ? rejected : (Self.encryptHTTPResponse(rejected, certificate: certificate) ?? rejected)
         }
 
         let plaintextBody: Data
@@ -45,13 +46,14 @@ extension LoopbackAgentServer {
     }
 
     private func authenticatedResponse(for request: String, body: Data) -> String {
-        if request.hasPrefix("GET /health ") || request.hasPrefix("GET /status ") {
+        if request.hasPrefix("GET /health ") || request.hasPrefix("GET /status ")
+            || request.hasPrefix("POST /health ") || request.hasPrefix("POST /status ") {
             return http(body: encode(AgentStatus.ready(message: "this pc is reachable")))
         }
-        if request.hasPrefix("GET /screenshot ") {
+        if request.hasPrefix("GET /screenshot ") || request.hasPrefix("POST /screenshot ") {
             return http(body: Self.screenshotResponse())
         }
-        if request.hasPrefix("GET /commands ") {
+        if request.hasPrefix("GET /commands ") || request.hasPrefix("POST /commands ") {
             return http(body: encode([
                 "status",
                 "update",
