@@ -1,7 +1,42 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { createHash, createHmac } from 'node:crypto'
+import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from 'node:crypto'
 import type { AppSettings } from '../types'
-import { AuthenticationError, refreshHanasandSession, runDesktopAgentCommand } from './api'
+
+class TestSealedData {
+    constructor(readonly bytes: Buffer) {}
+
+    async combined() {
+        return this.bytes.toString('base64')
+    }
+
+    static fromCombined(encoded: string) {
+        return new TestSealedData(Buffer.from(encoded, 'base64'))
+    }
+}
+
+mock.module('expo-crypto', () => ({
+    AESEncryptionKey: {
+        import: async (hex: string) => ({ bytes: Buffer.from(hex, 'hex') }),
+    },
+    AESSealedData: TestSealedData,
+    getRandomBytesAsync: async (count: number) => new Uint8Array(randomBytes(count)),
+    aesEncryptAsync: async (plaintext: Uint8Array, key: { bytes: Buffer }) => {
+        const iv = randomBytes(12)
+        const cipher = createCipheriv('aes-256-gcm', key.bytes, iv)
+        const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final(), cipher.getAuthTag()])
+        return new TestSealedData(Buffer.concat([iv, ciphertext]))
+    },
+    aesDecryptAsync: async (sealed: TestSealedData, key: { bytes: Buffer }) => {
+        const iv = sealed.bytes.subarray(0, 12)
+        const ciphertext = sealed.bytes.subarray(12, -16)
+        const tag = sealed.bytes.subarray(-16)
+        const decipher = createDecipheriv('aes-256-gcm', key.bytes, iv)
+        decipher.setAuthTag(tag)
+        return new Uint8Array(Buffer.concat([decipher.update(ciphertext), decipher.final()]))
+    },
+}))
+
+const { AuthenticationError, fetchDesktopAgentStatus, refreshHanasandSession, runDesktopAgentCommand } = await import('./api')
 
 const settings: AppSettings = {
     themeMode: 'obsidian',
@@ -71,33 +106,54 @@ describe('refreshHanasandSession error classification', () => {
 })
 
 describe('desktop command proof', () => {
-    it('authenticates the exact serialized command body with HMAC-SHA256', async () => {
+    it('rejects authenticated bridge responses that are not encrypted', async () => {
+        const requestSettings = { ...settings, desktopAgentBaseUrl: 'http://localhost:45731' }
+        mockFetch(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }))
+
+        await expect(fetchDesktopAgentStatus(requestSettings)).rejects.toThrow('without the required encryption envelope')
+    })
+
+    it('encrypts commands and authenticates the exact encrypted request body with HMAC-SHA256', async () => {
         const requestSettings = { ...settings, desktopAgentBaseUrl: 'http://127.0.0.1:45731' }
         const command = `mac_control_type_text:${'ø🚲'.repeat(50)}`
         let capturedInit: RequestInit | undefined
+        const certificate = createHash('sha256')
+            .update(`hanasand-desktop-agent-session-v1\n${settings.userId}\n${settings.authToken}`)
+            .digest('hex')
+        const aesKey = createHash('sha256')
+            .update(`hanasand-desktop-agent-transport-v1\n${certificate}`)
+            .digest()
         mockFetch(async (_input, init) => {
             capturedInit = init
-            return new Response(JSON.stringify({ ok: true }), { status: 200 })
+            const iv = randomBytes(12)
+            const cipher = createCipheriv('aes-256-gcm', aesKey, iv)
+            const encrypted = Buffer.concat([cipher.update(JSON.stringify({ ok: true })), cipher.final(), cipher.getAuthTag()])
+            return new Response(JSON.stringify({ encrypted: true, payload: Buffer.concat([iv, encrypted]).toString('base64') }), { status: 200 })
         })
 
-        await runDesktopAgentCommand(requestSettings, command)
+        const result = await runDesktopAgentCommand(requestSettings, command)
+        expect(result.ok).toBe(true)
 
-        const body = JSON.stringify({ command })
+        const wireBody = String(capturedInit?.body)
+        const envelope = JSON.parse(wireBody) as { encrypted: boolean; payload: string }
+        expect(envelope.encrypted).toBe(true)
+        const sealed = Buffer.from(envelope.payload, 'base64')
+        const decipher = createDecipheriv('aes-256-gcm', aesKey, sealed.subarray(0, 12))
+        decipher.setAuthTag(sealed.subarray(-16))
+        const plaintext = Buffer.concat([decipher.update(sealed.subarray(12, -16)), decipher.final()]).toString('utf8')
+        expect(plaintext).toBe(JSON.stringify({ command }))
+
         const headers = new Headers(capturedInit?.headers)
         const timestamp = headers.get('X-Hanasand-Session-Timestamp')!
         const nonce = headers.get('X-Hanasand-Session-Nonce')!
         const proof = headers.get('X-Hanasand-Session-Proof')!
-        const certificate = createHash('sha256')
-            .update(`hanasand-desktop-agent-session-v1\n${settings.userId}\n${settings.authToken}`)
-            .digest('hex')
-        const bodyHash = createHash('sha256').update(body).digest('hex')
+        const bodyHash = createHash('sha256').update(wireBody).digest('hex')
         const material = `POST\n/command\n${timestamp}\n${nonce}\n${bodyHash}`
         const expectedProof = createHmac('sha256', certificate).update(material).digest('hex')
 
-        expect(capturedInit?.body).toBe(body)
         expect(proof).toBe(expectedProof)
         expect(proof).not.toBe(createHmac('sha256', certificate).update(
-            `POST\n/command\n${timestamp}\n${nonce}\n${createHash('sha256').update(JSON.stringify({ command: `${command}altered` })).digest('hex')}`,
+            `POST\n/command\n${timestamp}\n${nonce}\n${createHash('sha256').update(`${wireBody}altered`).digest('hex')}`,
         ).digest('hex'))
     })
 })

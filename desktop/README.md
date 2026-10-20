@@ -24,6 +24,8 @@ The bridge exposes these HTTP routes:
 
 Commands include status and update checks, AI actions, app-section navigation, browser actions, native dashboard panels, server logs, settings, and remote-desktop controls. Parameterized commands include `codex_prompt:<url-encoded-prompt>`, `mac_control_type_text:<url-encoded-text>`, and `mac_control_pointer_click_at:<x>:<y>`. Keyboard text entry and pointer clicks require macOS Accessibility permission. Use the authenticated client for requests and read `GET /commands` for the names accepted by the running app; unsupported commands return HTTP 400. The bridge returns HTTP 401 when the session proof is missing or invalid.
 
+The bridge uses HTTP, not TLS. It encrypts request payloads with AES-256-GCM and encrypts response bodies at the application layer; HMAC proofs authenticate requests and bind the encrypted request body. The mobile API helper permits HTTP only for loopback and private-network hosts, and Android enables cleartext networking so the LAN bridge can work. Network observers can still see the Mac's address, HTTP method and path, headers, timing, and approximate payload size. This is payload confidentiality, not a fully encrypted transport.
+
 ## Package a macOS update
 
 From the repository root, choose a semantic version and run:
@@ -60,7 +62,7 @@ On macOS, run the screenshot pass from the repository root:
 desktop/scripts/smoke-screenshots.sh
 ```
 
-The script is intended to build or launch the Desktop app, open sections through `POST /command`, check the screenshots, and save a manifest and browsable HTML contact sheet under `desktop/.artifacts/desktop-smoke-<timestamp>/`. At this revision it sends unauthenticated `curl` requests to `/health` and `/command`, while the Swift bridge requires a session proof on both routes. The bridge returns HTTP 401, so this script cannot reach its capture steps until it gains authenticated request support.
+The script builds or launches the Desktop app, opens sections through authenticated `POST /command` requests, checks the screenshots, and saves a manifest and browsable HTML contact sheet under `desktop/.artifacts/desktop-smoke-<timestamp>/`. It prompts once for the Hanasand user ID and session token; token input is hidden. The script does not load credentials from environment variables, files, or Keychain. A local CryptoKit helper derives request proofs, encrypts command payloads, and verifies/decrypts response bodies in memory. The helper binary is placed in the smoke output directory; neither credentials nor plaintext response bodies are written there. The script uses the verified response only to check HTTP status.
 
 Useful options:
 

@@ -7,6 +7,8 @@ BASE_URL="${HANASAND_DESKTOP_AGENT_URL:-http://127.0.0.1:${PORT}}"
 STAMP="$(date +"%Y%m%d-%H%M%S")"
 OUT_DIR="${HANASAND_DESKTOP_SMOKE_OUT:-${ROOT_DIR}/.artifacts/desktop-smoke-${STAMP}}"
 APP_BIN="${ROOT_DIR}/.build/debug/Hanasand"
+SIGNER_SOURCE="${ROOT_DIR}/scripts/smoke-transport.swift"
+SIGNER_BIN="${OUT_DIR}/smoke-transport"
 APP_NAME="${HANASAND_DESKTOP_APP_NAME:-Hanasand}"
 WAIT_SECONDS="${HANASAND_DESKTOP_SMOKE_WAIT:-1.4}"
 CAPTURE_MODE="${HANASAND_DESKTOP_SMOKE_CAPTURE_MODE:-window}"
@@ -17,6 +19,13 @@ LABELS=()
 COMMANDS=()
 PATHS=()
 DIMENSIONS=()
+unset SESSION_USER_ID SESSION_TOKEN
+SESSION_USER_ID=""
+SESSION_TOKEN=""
+SIGNED_TIMESTAMP=""
+SIGNED_NONCE=""
+SIGNED_PROOF=""
+SIGNED_BODY=""
 
 mkdir -p "${OUT_DIR}"
 
@@ -40,8 +49,81 @@ html_escape() {
   printf '%s' "$value"
 }
 
+prompt_for_credentials() {
+  if [[ ! -r /dev/tty ]]; then
+    log "interactive terminal required to enter the Hanasand session credentials"
+    return 1
+  fi
+  printf 'Hanasand user ID: ' >/dev/tty
+  IFS= read -r SESSION_USER_ID </dev/tty || return 1
+  printf 'Hanasand session token (input hidden): ' >/dev/tty
+  IFS= read -r -s SESSION_TOKEN </dev/tty || return 1
+  printf '\n' >/dev/tty
+  if [[ -z "${SESSION_USER_ID//[[:space:]]/}" || -z "${SESSION_TOKEN//[[:space:]]/}" ]]; then
+    log "user ID and session token must both be nonempty"
+    return 1
+  fi
+}
+
+compile_signer() {
+  log "compiling encrypted request signer"
+  swiftc -O -o "${SIGNER_BIN}" "${SIGNER_SOURCE}"
+  chmod 700 "${SIGNER_BIN}"
+}
+
+sign_request() {
+  local method="$1"
+  local target="$2"
+  local plain_body="${3:-}"
+  local signed rest
+
+  signed="$(printf '%s\0%s\0%s' "${SESSION_USER_ID}" "${SESSION_TOKEN}" "${plain_body}" | "${SIGNER_BIN}" "${method}" "${target}")" || {
+    log "could not create authenticated request proof"
+    return 1
+  }
+  SIGNED_TIMESTAMP="${signed%%$'\n'*}"
+  rest="${signed#*$'\n'}"
+  SIGNED_NONCE="${rest%%$'\n'*}"
+  rest="${rest#*$'\n'}"
+  SIGNED_PROOF="${rest%%$'\n'*}"
+  SIGNED_BODY="${rest#*$'\n'}"
+  if [[ "${SIGNED_BODY}" == "-" ]]; then
+    SIGNED_BODY=""
+  fi
+}
+
+request_status() {
+  local method="$1"
+  local target="$2"
+  local plain_body="${3:-}"
+  local response status plaintext
+  local args=(curl -sS -w $'\n%{http_code}' -X "${method}")
+  sign_request "${method}" "${target}" "${plain_body}" || return 1
+  args+=(
+    -H "X-Hanasand-Session-Timestamp: ${SIGNED_TIMESTAMP}"
+    -H "X-Hanasand-Session-Nonce: ${SIGNED_NONCE}"
+    -H "X-Hanasand-Session-Proof: ${SIGNED_PROOF}"
+  )
+  if [[ -n "${SIGNED_BODY}" ]]; then
+    args+=(-H 'Content-Type: application/json' --data-binary "${SIGNED_BODY}")
+  fi
+  response="$("${args[@]}" "${BASE_URL}${target}")" || return 1
+  status="${response##*$'\n'}"
+  response="${response%$'\n'*}"
+  if [[ "${status}" != "401" ]]; then
+    plaintext="$(printf '%s\0%s\0%s' "${SESSION_USER_ID}" "${SESSION_TOKEN}" "${response}" | "${SIGNER_BIN}" --decrypt-response)" || {
+      log "agent response was not authenticated and encrypted"
+      return 1
+    }
+    unset plaintext
+  fi
+  printf '%s' "${status}"
+}
+
 agent_ready() {
-  curl -fsS "${BASE_URL}/health" >/dev/null 2>&1
+  local status
+  status="$(request_status GET /health)" || return 1
+  [[ "${status}" == 2[0-9][0-9] ]]
 }
 
 wait_for_agent() {
@@ -94,12 +176,13 @@ OSA
 send_command() {
   local command="$1"
   local escaped
+  local status
   escaped="$(json_escape "${command}")"
-  curl -fsS \
-    -X POST \
-    -H 'Content-Type: application/json' \
-    --data "{\"command\":\"${escaped}\"}" \
-    "${BASE_URL}/command" >/dev/null
+  status="$(request_status POST /command "{\"command\":\"${escaped}\"}")" || return 1
+  if [[ "${status}" != 2[0-9][0-9] ]]; then
+    log "command request failed with HTTP ${status}"
+    return 1
+  fi
 }
 
 capture_window_id() {
@@ -169,6 +252,7 @@ capture_screen() {
 }
 
 cleanup() {
+  unset SESSION_TOKEN
   if [[ -n "${STARTED_PID}" ]]; then
     if [[ "${HANASAND_DESKTOP_SMOKE_KEEP_RUNNING:-0}" != "1" ]]; then
       kill "${STARTED_PID}" >/dev/null 2>&1 || true
@@ -177,6 +261,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
+prompt_for_credentials
+compile_signer
 start_app_if_needed
 activate_app
 

@@ -12,12 +12,6 @@ import WebKit
 
 extension LoopbackAgentServer {
 
-    func isAuthorized(_ request: String, body: Data) -> Bool {
-        let certificate = certificateProvider().trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !certificate.isEmpty else { return false }
-        return hasValidSessionProof(request, body: body, certificate: certificate)
-    }
-
     func hasValidSessionProof(_ request: String, body: Data, certificate: String) -> Bool {
         guard let timestamp = Self.headerValue("x-hanasand-session-timestamp", from: request),
               let timestampValue = TimeInterval(timestamp),

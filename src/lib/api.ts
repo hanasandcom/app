@@ -1,25 +1,7 @@
+import * as Crypto from 'expo-crypto'
 import type { AgentAutomation, AgentAutomationPayload, AgentAutomationRun, AiFileSummary, AiRunDetails, AiToolUseSummary, AppSettings, DashboardRole, DashboardUser, DashboardUserRoleAssignment, DesktopAgentPresence, DesktopAgentStatus, GptClient, HanasandAuthSession, MailAddress, MailboxItem, MailMessage, MailMessageSummary, MailOverview, MailSendResult, ManagedCronJob, Note, ShareSummary, ShareTreeItem } from '../types'
-
-export class PendingDeletionError extends Error {
-    id: string
-    deletionScheduledAt: string
-    restoreToken: string
-
-    constructor(payload: Record<string, unknown>) {
-        super(stringValue(payload.error) || 'Account pending deletion.')
-        this.name = 'PendingDeletionError'
-        this.id = stringValue(payload.id)
-        this.deletionScheduledAt = stringValue(payload.deletion_scheduled_at)
-        this.restoreToken = stringValue(payload.restore_token)
-    }
-}
-
-export class AuthenticationError extends Error {
-    constructor(message: string) {
-        super(message)
-        this.name = 'AuthenticationError'
-    }
-}
+import { AuthenticationError, PendingDeletionError } from './api-errors'
+export { AuthenticationError, PendingDeletionError } from './api-errors'
 
 function headers(settings: AppSettings) {
     const next: Record<string, string> = {
@@ -204,13 +186,73 @@ function desktopAgentSessionCertificate(settings: AppSettings) {
     return sha256Hex(`hanasand-desktop-agent-session-v1\n${userId}\n${authToken}`)
 }
 
-function desktopAgentProofHeaders(path: string, init: RequestInit | undefined, certificate: string) {
+function utf8String(bytes: Uint8Array) {
+    let value = ''
+    for (let i = 0; i < bytes.length;) {
+        const first = bytes[i]
+        if (first < 0x80) {
+            value += String.fromCharCode(first)
+            i += 1
+        } else if (first < 0xe0 && i + 1 < bytes.length) {
+            value += String.fromCharCode(((first & 0x1f) << 6) | (bytes[i + 1] & 0x3f))
+            i += 2
+        } else if (first < 0xf0 && i + 2 < bytes.length) {
+            value += String.fromCharCode(((first & 0x0f) << 12) | ((bytes[i + 1] & 0x3f) << 6) | (bytes[i + 2] & 0x3f))
+            i += 3
+        } else if (i + 3 < bytes.length) {
+            const point = ((first & 0x07) << 18) | ((bytes[i + 1] & 0x3f) << 12) | ((bytes[i + 2] & 0x3f) << 6) | (bytes[i + 3] & 0x3f)
+            value += String.fromCodePoint(point)
+            i += 4
+        } else {
+            throw new Error('Desktop agent returned invalid UTF-8 data.')
+        }
+    }
+    return value
+}
+
+async function desktopAgentEncryptionKey(certificate: string) {
+    const keyHex = sha256Hex(`hanasand-desktop-agent-transport-v1\n${certificate}`)
+    return Crypto.AESEncryptionKey.import(keyHex, 'hex')
+}
+
+async function sealDesktopAgentBody(plaintext: string, certificate: string) {
+    const key = await desktopAgentEncryptionKey(certificate)
+    const sealed = await Crypto.aesEncryptAsync(new Uint8Array(utf8Bytes(plaintext)), key)
+    return JSON.stringify({ encrypted: true, payload: await sealed.combined('base64') })
+}
+
+async function openDesktopAgentResponse(response: Response, certificate: string) {
+    if (response.status === 401) return response
+
+    const payload = asRecord(await response.clone().json().catch(() => null))
+    if (payload.encrypted !== true || typeof payload.payload !== 'string') {
+        throw new Error('Desktop agent returned a response without the required encryption envelope.')
+    }
+
+    const key = await desktopAgentEncryptionKey(certificate)
+    const sealed = Crypto.AESSealedData.fromCombined(payload.payload, { ivLength: 12, tagLength: 16 })
+    const plaintext = await Crypto.aesDecryptAsync(sealed, key)
+    if (!(plaintext instanceof Uint8Array)) {
+        throw new Error('Desktop agent response could not be decrypted.')
+    }
+
+    const responseHeaders = new Headers(response.headers)
+    responseHeaders.delete('Content-Length')
+    return new Response(utf8String(plaintext), {
+        status: response.status,
+        statusText: response.statusText,
+        headers: responseHeaders,
+    })
+}
+
+async function desktopAgentProofRequest(path: string, init: RequestInit | undefined, certificate: string) {
     if (!certificate) return init
     const method = (init?.method || 'GET').toUpperCase()
     const target = `/${pathPart(path)}`
     const timestamp = String(Math.floor(Date.now() / 1000))
-    const nonce = `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`
-    const body = typeof init?.body === 'string' ? init.body : ''
+    const nonce = Array.from(await Crypto.getRandomBytesAsync(16), byte => byte.toString(16).padStart(2, '0')).join('')
+    const plaintext = typeof init?.body === 'string' ? init.body : ''
+    const body = plaintext ? await sealDesktopAgentBody(plaintext, certificate) : ''
     const bodyHash = sha256Hex(body)
     const material = `${method}\n${target}\n${timestamp}\n${nonce}\n${bodyHash}`
     const proof = hmacSha256Hex(certificate, material)
@@ -218,10 +260,12 @@ function desktopAgentProofHeaders(path: string, init: RequestInit | undefined, c
         ...init,
         headers: {
             ...(init?.headers || {}),
+            ...(body ? { 'Content-Type': 'application/json' } : {}),
             'X-Hanasand-Session-Timestamp': timestamp,
             'X-Hanasand-Session-Nonce': nonce,
             'X-Hanasand-Session-Proof': proof,
         },
+        body: body || undefined,
     }
 }
 
@@ -231,26 +275,32 @@ async function fetchDesktopAgentPath(settings: AppSettings, path: string, init?:
 
     let lastError: unknown
     for (const base of bases) {
+        let response: Response
         try {
-            const response = await fetch(joinUrl(base, path), desktopAgentProofHeaders(path, init, certificate))
-            if (response.status !== 401) return response
-            lastError = new Error('Desktop agent rejected this login session.')
+            const signedInit = await desktopAgentProofRequest(path, init, certificate)
+            response = await fetch(joinUrl(base, path), signedInit)
         } catch (error) {
             lastError = error
+            continue
         }
+        if (response.status !== 401) return openDesktopAgentResponse(response, certificate)
+        lastError = new Error('Desktop agent rejected this login session.')
     }
 
     try {
         const agents = await fetchDesktopAgentPresence(settings)
         for (const agent of agents) {
             for (const endpoint of agent.endpoints || []) {
+                let response: Response
                 try {
-                    const response = await fetch(joinUrl(endpoint, path), desktopAgentProofHeaders(path, init, certificate))
-                    if (response.status !== 401) return response
-                    lastError = new Error('Desktop agent rejected this login session.')
+                    const signedInit = await desktopAgentProofRequest(path, init, certificate)
+                    response = await fetch(joinUrl(endpoint, path), signedInit)
                 } catch (error) {
                     lastError = error
+                    continue
                 }
+                if (response.status !== 401) return openDesktopAgentResponse(response, certificate)
+                lastError = new Error('Desktop agent rejected this login session.')
             }
         }
     } catch (error) {

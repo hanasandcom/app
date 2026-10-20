@@ -16,9 +16,35 @@ extension LoopbackAgentServer {
         if request.hasPrefix("OPTIONS ") {
             return http(body: "{}", status: "204 No Content")
         }
-        if !isAuthorized(request, body: body) {
+        let certificate = certificateProvider().trimmingCharacters(in: .whitespacesAndNewlines)
+        if certificate.isEmpty || !hasValidSessionProof(request, body: body, certificate: certificate) {
             return http(body: #"{"ok":false,"message":"A matching Hanasand login session is required for LAN access."}"#, status: "401 Unauthorized")
         }
+
+        let plaintextBody: Data
+        if body.isEmpty {
+            plaintextBody = Data()
+        } else if let decrypted = try? Self.decryptBridgeBody(body, certificate: certificate) {
+            plaintextBody = decrypted
+        } else {
+            return Self.encryptHTTPResponse(
+                http(body: #"{"ok":false,"message":"Encrypted request body is invalid."}"#, status: "400 Bad Request"),
+                certificate: certificate
+            ) ?? ""
+        }
+
+        if let requestTarget = Self.requestTarget(from: request), requestTarget.hasPrefix("/command?") {
+            return Self.encryptHTTPResponse(
+                http(body: #"{"ok":false,"message":"Command values must be sent in the encrypted request body."}"#, status: "400 Bad Request"),
+                certificate: certificate
+            ) ?? ""
+        }
+
+        let routedResponse = authenticatedResponse(for: request, body: plaintextBody)
+        return Self.encryptHTTPResponse(routedResponse, certificate: certificate) ?? ""
+    }
+
+    private func authenticatedResponse(for request: String, body: Data) -> String {
         if request.hasPrefix("GET /health ") || request.hasPrefix("GET /status ") {
             return http(body: encode(AgentStatus.ready(message: "this pc is reachable")))
         }
@@ -77,8 +103,8 @@ extension LoopbackAgentServer {
                 "mac_control_pointer_click_at:<x>:<y>",
             ]))
         }
-        if request.hasPrefix("POST /command ") || request.hasPrefix("POST /command?") || request.hasPrefix("GET /command?") {
-            let command = Self.commandName(from: request)
+        if request.hasPrefix("POST /command ") {
+            let command = Self.commandName(from: request, body: body)
             if Self.requiresAccessibility(command), !AXIsProcessTrusted() {
                 return http(
                     body: #"{"ok":false,"message":"Mac Accessibility permission is required before the Hanasand app can control keyboard, Enter, Go/Search, or mouse clicks. Open Privacy & Security -> Accessibility and enable Hanasand, then reopen the app.","accessibilityAllowed":false}"#,

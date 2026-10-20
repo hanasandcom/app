@@ -12,8 +12,8 @@ import WebKit
 
 extension LoopbackAgentServer {
 
-    static func commandName(from request: String) -> String {
-        let explicit = commandFromBody(request) ?? commandFromQuery(request)
+    static func commandName(from request: String, body: Data) -> String {
+        let explicit = commandFromBody(body)
         let rawRequest = (explicit ?? request).trimmingCharacters(in: .whitespacesAndNewlines)
         if rawRequest.hasPrefix("mac_control_type_text:") || rawRequest.lowercased().hasPrefix("mac_control_type_text:") {
             return rawRequest

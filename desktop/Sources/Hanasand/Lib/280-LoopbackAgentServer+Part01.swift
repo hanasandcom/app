@@ -110,7 +110,8 @@ extension LoopbackAgentServer {
         for line in lines.dropFirst() {
             guard let colon = line.firstIndex(of: ":") else { return .malformed }
             let name = line[..<colon].trimmingCharacters(in: .whitespaces).lowercased()
-            let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+            let rawValue = line[line.index(after: colon)...]
+            let value = rawValue.drop(while: { $0 == " " || $0 == "\t" })
             if name == "transfer-encoding" { return .malformed }
             if name == "content-length" {
                 guard contentLength == nil,

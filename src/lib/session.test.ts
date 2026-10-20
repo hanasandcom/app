@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { AuthenticationError, PendingDeletionError } from './api'
+import { AuthenticationError, PendingDeletionError } from './api-errors'
 import { classifyRefreshFailure } from './session'
 
 describe('session refresh failures', () => {

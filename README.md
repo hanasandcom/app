@@ -17,7 +17,22 @@ The API defaults to `https://hanasand.com/api`. To point a development build at 
 
 ## Mobile releases
 
-This checkout documents local Expo development and native prebuild commands. It does not contain an EAS configuration, a mobile release script, or a GitHub Actions workflow for building or publishing iOS and Android releases. Signing, store submission, and any release process outside this repository are not specified here.
+Mobile builds use [EAS Build](https://docs.expo.dev/build/introduction/) and the manual GitHub Actions workflow at **Actions → Mobile EAS build → Run workflow**. It supports iOS, Android, or both, with a `preview` (internal distribution) or `production` (store-signed artifact) profile. The workflow only builds artifacts; it does not submit them to either app store or publish an update. Preview builds are the default.
+
+### One-time setup
+
+1. Install dependencies with `bun install`, authenticate to the intended Expo account with `bunx eas-cli login`, and link this app to an EAS project by running `bunx eas-cli init`. Commit the resulting `expo.extra.eas.projectId` entry in `app.json`. The project ID is public configuration, not a credential.
+2. Add an Expo access token as the GitHub Actions repository secret `EXPO_TOKEN`. Keep this token in GitHub Secrets; do not put it in source, workflow variables, or app configuration. EAS also needs signing credentials for the selected platforms. Configure these for the EAS project before requesting builds; iOS device distribution requires Apple provisioning, and production store builds require the corresponding store signing setup.
+3. Run the workflow manually. Use `preview` to create installable internal builds (Android APK; iOS ad hoc distribution) or select `production` for App Store / Google Play artifacts. Store submission and release remain a separate, deliberate step.
+
+The same builds can be requested locally after linking the project and signing in:
+
+```sh
+bunx eas-cli build --platform all --profile preview
+bunx eas-cli build --platform all --profile production
+```
+
+See Expo's [build profiles](https://docs.expo.dev/build/eas-json/) and [programmatic access](https://docs.expo.dev/accounts/programmatic-access/) documentation for profile behavior and token setup.
 
 ## macOS client
 

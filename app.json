@@ -46,7 +46,7 @@
         "android.permission.READ_MEDIA_AUDIO"
       ],
       "package": "com.hanasand.app",
-      "usesCleartextTraffic": false
+      "usesCleartextTraffic": true
     }
   }
 }

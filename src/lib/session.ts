@@ -1,4 +1,4 @@
-import { AuthenticationError, PendingDeletionError } from './api'
+import { AuthenticationError, PendingDeletionError } from './api-errors'
 
 export type RefreshFailureDisposition = 'retain-session' | 'clear-session' | 'pending-deletion'
 
