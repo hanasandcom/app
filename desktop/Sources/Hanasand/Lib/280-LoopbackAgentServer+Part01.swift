@@ -22,13 +22,35 @@ extension LoopbackAgentServer {
         case tooLarge
     }
 
-    func start() throws {
-        let listener = try NWListener(using: .tcp, on: NWEndpoint.Port(rawValue: port)!)
+    func start(advertisingIPv4Addresses addresses: [String]) throws {
+        let identity = try LoopbackTLSServerIdentity.load(advertising: addresses, namespace: identityNamespace)
+        let parameters = try LoopbackTLSServerIdentity.makeTLSParameters(identity: identity.identity)
+        let listener = try NWListener(using: parameters, on: NWEndpoint.Port(rawValue: port)!)
         listener.newConnectionHandler = { [weak self] connection in
             self?.handle(connection)
         }
         listener.start(queue: .global(qos: .userInitiated))
+        tlsIdentity = identity
         self.listener = listener
+    }
+
+    func restart(advertisingIPv4Addresses addresses: [String]) throws {
+        if let listener {
+            let cancelled = DispatchSemaphore(value: 0)
+            listener.stateUpdateHandler = { state in
+                if case .cancelled = state { cancelled.signal() }
+            }
+            listener.cancel()
+            guard cancelled.wait(timeout: .now() + 3) == .success else {
+                throw NSError(
+                    domain: "com.hanasand.desktop.loopback-tls",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "The previous HTTPS listener did not close in time to rotate its certificate."]
+                )
+            }
+        }
+        listener = nil
+        try start(advertisingIPv4Addresses: addresses)
     }
 
     func handle(_ connection: NWConnection) {

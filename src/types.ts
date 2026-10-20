@@ -244,6 +244,7 @@ export type DesktopAgentPresence = {
     deviceId: string
     deviceName?: string
     endpoints: string[]
+    tlsCertificateSha256: string | null
     updatedAt?: string
     expiresAt?: string
 }

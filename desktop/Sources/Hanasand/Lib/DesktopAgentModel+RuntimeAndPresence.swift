@@ -28,7 +28,7 @@ extension DesktopAgentModel {
         return created
     }
 
-    static func localAgentEndpoints(port: UInt16) -> [String] {
+    static func localAgentIPv4Addresses() -> [String] {
         var interfaces: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&interfaces) == 0, let first = interfaces else { return [] }
         defer { freeifaddrs(interfaces) }
@@ -58,10 +58,14 @@ extension DesktopAgentModel {
             guard result == 0 else { continue }
             let ip = String(cString: hostname)
             if ip.hasPrefix("169.254.") { continue }
-            endpoints.append("http://\(ip):\(port)")
+            endpoints.append(ip)
         }
 
         return Array(Set(endpoints)).sorted()
+    }
+
+    static func localAgentEndpoints(port: UInt16) -> [String] {
+        localAgentIPv4Addresses().map { "https://\($0):\(port)" }
     }
 
     static func desktopAgentSessionCertificate(userID: String, authToken: String) -> String {
@@ -87,10 +91,10 @@ extension DesktopAgentModel {
             }
         }
         do {
-            try next.start()
+            try next.start(advertisingIPv4Addresses: Self.localAgentIPv4Addresses())
             server = next
             status = AgentStatus.ready(message: "online")
-            append(meta: "Agent", body: "http://localhost:45731")
+            append(meta: "Agent", body: "https://localhost:45731")
             startRemoteCodexWorkerIfAvailable()
             beginAutomaticUpdateCheck()
             beginDesktopAgentPresence()
@@ -117,9 +121,23 @@ extension DesktopAgentModel {
     func publishDesktopAgentPresence() async {
         guard hasHanasandAuth else { return }
 
-        let endpoints = Self.localAgentEndpoints(port: 45731)
+        guard let server else { return }
+        let currentAddresses = Self.localAgentIPv4Addresses()
+        if currentAddresses != server.advertisedIPv4Addresses {
+            do {
+                try server.restart(advertisingIPv4Addresses: currentAddresses)
+            } catch {
+                append(meta: "Agent TLS", body: "Could not update the local TLS certificate for the current network addresses: \(error.localizedDescription)", kind: .error)
+                return
+            }
+        }
+        let endpoints = server.endpoints
         guard !endpoints.isEmpty else {
             append(meta: "Agent discovery", body: "No LAN IPv4 address found to publish.", kind: .error)
+            return
+        }
+        guard let certificateFingerprint = server.tlsCertificateSha256 else {
+            append(meta: "Agent discovery", body: "The local TLS certificate fingerprint is unavailable.", kind: .error)
             return
         }
 
@@ -127,6 +145,7 @@ extension DesktopAgentModel {
             "deviceId": Self.deviceIdentifier,
             "deviceName": Host.current().localizedName ?? "Mac",
             "endpoints": endpoints,
+            "tlsCertificateSha256": certificateFingerprint,
         ]
 
         do {

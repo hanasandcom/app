@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PORT="${HANASAND_DESKTOP_AGENT_PORT:-45731}"
-BASE_URL="${HANASAND_DESKTOP_AGENT_URL:-http://127.0.0.1:${PORT}}"
+BASE_URL="${HANASAND_DESKTOP_AGENT_URL:-https://localhost:${PORT}}"
 STAMP="$(date +"%Y%m%d-%H%M%S")"
 OUT_DIR="${HANASAND_DESKTOP_SMOKE_OUT:-${ROOT_DIR}/.artifacts/desktop-smoke-${STAMP}}"
 APP_BIN="${ROOT_DIR}/.build/debug/Hanasand"
@@ -22,10 +22,6 @@ DIMENSIONS=()
 unset SESSION_USER_ID SESSION_TOKEN
 SESSION_USER_ID=""
 SESSION_TOKEN=""
-SIGNED_TIMESTAMP=""
-SIGNED_NONCE=""
-SIGNED_PROOF=""
-SIGNED_BODY=""
 
 mkdir -p "${OUT_DIR}"
 
@@ -71,58 +67,17 @@ compile_signer() {
   chmod 700 "${SIGNER_BIN}"
 }
 
-sign_request() {
-  local method="$1"
-  local target="$2"
-  local plain_body="${3:-}"
-  local signed rest
-
-  signed="$(printf '%s\0%s\0%s' "${SESSION_USER_ID}" "${SESSION_TOKEN}" "${plain_body}" | "${SIGNER_BIN}" "${method}" "${target}")" || {
-    log "could not create authenticated request proof"
-    return 1
-  }
-  SIGNED_TIMESTAMP="${signed%%$'\n'*}"
-  rest="${signed#*$'\n'}"
-  SIGNED_NONCE="${rest%%$'\n'*}"
-  rest="${rest#*$'\n'}"
-  SIGNED_PROOF="${rest%%$'\n'*}"
-  SIGNED_BODY="${rest#*$'\n'}"
-  if [[ "${SIGNED_BODY}" == "-" ]]; then
-    SIGNED_BODY=""
-  fi
-}
-
 request_status() {
   local method="$1"
   local target="$2"
   local plain_body="${3:-}"
-  local response status plaintext
-  local args=(curl -sS -w $'\n%{http_code}' -X "${method}")
-  sign_request "${method}" "${target}" "${plain_body}" || return 1
-  args+=(
-    -H "X-Hanasand-Session-Timestamp: ${SIGNED_TIMESTAMP}"
-    -H "X-Hanasand-Session-Nonce: ${SIGNED_NONCE}"
-    -H "X-Hanasand-Session-Proof: ${SIGNED_PROOF}"
-  )
-  if [[ -n "${SIGNED_BODY}" ]]; then
-    args+=(-H 'Content-Type: application/json' --data-binary "${SIGNED_BODY}")
-  fi
-  response="$("${args[@]}" "${BASE_URL}${target}")" || return 1
-  status="${response##*$'\n'}"
-  response="${response%$'\n'*}"
-  if [[ "${status}" != "401" ]]; then
-    plaintext="$(printf '%s\0%s\0%s' "${SESSION_USER_ID}" "${SESSION_TOKEN}" "${response}" | "${SIGNER_BIN}" --decrypt-response)" || {
-      log "agent response was not authenticated and encrypted"
-      return 1
-    }
-    unset plaintext
-  fi
-  printf '%s' "${status}"
+  printf '%s\0%s\0%s' "${SESSION_USER_ID}" "${SESSION_TOKEN}" "${plain_body}" \
+    | "${SIGNER_BIN}" --send "${BASE_URL}" "${method}" "${target}"
 }
 
 agent_ready() {
   local status
-  status="$(request_status GET /health)" || return 1
+  status="$(request_status GET /health 2>/dev/null)" || return 1
   [[ "${status}" == 2[0-9][0-9] ]]
 }
 

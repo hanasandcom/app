@@ -24,7 +24,7 @@ struct HanasandDesktopSettings: Codable, Equatable {
     var impersonatingUserName = ""
     var codexAPIPath = "/tools/ai"
     var aiAPIURL = "https://api.hanasand.com/api/tools/ai"
-    var desktopAgentBaseURL = "http://localhost:45731"
+    var desktopAgentBaseURL = "https://localhost:45731"
     var vpnURLScheme = "ciscoanyconnect://"
     var rdpHost = "localhost:5900"
     var rdpUser = "macmini"
@@ -74,7 +74,14 @@ struct HanasandDesktopSettings: Codable, Equatable {
         impersonatingUserName = try container.decodeIfPresent(String.self, forKey: .impersonatingUserName) ?? impersonatingUserName
         codexAPIPath = try container.decodeIfPresent(String.self, forKey: .codexAPIPath) ?? codexAPIPath
         aiAPIURL = try container.decodeIfPresent(String.self, forKey: .aiAPIURL) ?? aiAPIURL
-        desktopAgentBaseURL = try container.decodeIfPresent(String.self, forKey: .desktopAgentBaseURL) ?? desktopAgentBaseURL
+        let savedDesktopAgentBaseURL = try container.decodeIfPresent(String.self, forKey: .desktopAgentBaseURL)
+        if savedDesktopAgentBaseURL == "http://localhost:45731" {
+            desktopAgentBaseURL = "https://localhost:45731"
+        } else if savedDesktopAgentBaseURL == "http://127.0.0.1:45731" {
+            desktopAgentBaseURL = "https://127.0.0.1:45731"
+        } else {
+            desktopAgentBaseURL = savedDesktopAgentBaseURL ?? desktopAgentBaseURL
+        }
         vpnURLScheme = try container.decodeIfPresent(String.self, forKey: .vpnURLScheme) ?? vpnURLScheme
         rdpHost = try container.decodeIfPresent(String.self, forKey: .rdpHost) ?? rdpHost
         rdpUser = try container.decodeIfPresent(String.self, forKey: .rdpUser) ?? rdpUser

@@ -1,0 +1,10 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["HanasandPinnedHttpsModule"],
+    "podspecPath": "ios/HanasandPinnedHttps.podspec"
+  },
+  "android": {
+    "modules": ["com.hanasand.pinnedhttps.HanasandPinnedHttpsModule"]
+  }
+}

@@ -69,6 +69,17 @@ describe('secure local storage', () => {
         expect(operations.indexOf('secure:hanasand-mobile.auth-token')).toBeLessThan(operations.indexOf('async:hanasand-mobile/settings'))
     })
 
+    it('clears a legacy plaintext desktop-agent URL during settings migration', async () => {
+        asyncValues.set('hanasand-mobile/settings', JSON.stringify({
+            ...defaultSettings,
+            desktopAgentBaseUrl: 'http://192.168.1.20:45731',
+        }))
+
+        const settings = await loadSettings()
+
+        expect(settings.desktopAgentBaseUrl).toBe('')
+    })
+
     it('leaves legacy session data intact when secure migration fails', async () => {
         const legacy = { ...defaultSettings, authToken: 'keep-on-failure' }
         const raw = JSON.stringify(legacy)

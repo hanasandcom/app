@@ -114,12 +114,23 @@ function normalizeSettings(value: unknown): AppSettings {
     merged.apiBaseUrl = secureUrlOrDefault(merged.apiBaseUrl, defaultSettings.apiBaseUrl)
     merged.cdnBaseUrl = secureUrlOrDefault(merged.cdnBaseUrl, defaultSettings.cdnBaseUrl)
     merged.codexUrl = secureUrlOrDefault(merged.codexUrl, defaultSettings.codexUrl)
-    merged.desktopAgentBaseUrl = secureUrlOrDefault(merged.desktopAgentBaseUrl, defaultSettings.desktopAgentBaseUrl)
+    merged.desktopAgentBaseUrl = secureHttpsUrlOrDefault(merged.desktopAgentBaseUrl, defaultSettings.desktopAgentBaseUrl)
     merged.serverBaseUrl = secureUrlOrDefault(merged.serverBaseUrl, defaultSettings.serverBaseUrl)
 
     return Object.fromEntries(
         Object.entries(merged).map(([key, entry]) => [key, typeof entry === 'string' ? entry : String(defaultSettings[key as keyof AppSettings] || '')]),
     ) as AppSettings
+}
+
+function secureHttpsUrlOrDefault(value: string, fallback: string) {
+    const trimmed = value.trim()
+    if (!trimmed) return fallback
+    try {
+        const url = new URL(trimmed)
+        return url.protocol === 'https:' ? trimmed : fallback
+    } catch {
+        return fallback
+    }
 }
 
 export async function loadSettings() {

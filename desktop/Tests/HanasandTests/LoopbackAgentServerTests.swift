@@ -107,6 +107,59 @@ final class LoopbackAgentServerTests: XCTestCase {
         XCTAssertEqual(contentLength, "Content-Length: \(responseBody.count)")
     }
 
+    func testKeychainTLSIdentityHasStableFingerprintAndReissuesForSANChanges() throws {
+        let namespace = "test-\(UUID().uuidString)"
+        defer { try? LoopbackTLSServerIdentity.removeKeychainIdentity(namespace: namespace) }
+
+        let originalAddresses = ["192.0.2.23", "10.0.0.8"]
+        let first = try LoopbackTLSServerIdentity.load(advertising: originalAddresses, namespace: namespace)
+        let reloaded = try LoopbackTLSServerIdentity.load(advertising: originalAddresses, namespace: namespace)
+        XCTAssertEqual(first.certificateSHA256, reloaded.certificateSHA256)
+        XCTAssertEqual(
+            first.certificateSHA256,
+            SHA256.hash(data: first.certificateDER).map { String(format: "%02x", $0) }.joined()
+        )
+        XCTAssertTrue(LoopbackTLSServerIdentity.certificateIsCurrent(first.certificateDER, advertisedIPv4Addresses: originalAddresses))
+        XCTAssertFalse(LoopbackTLSServerIdentity.certificateIsCurrent(first.certificateDER, advertisedIPv4Addresses: ["192.0.2.23"]))
+        for host in ["localhost", "192.0.2.23", "10.0.0.8"] {
+            let validation = try evaluatePinnedCertificate(first.certificateDER, hostname: host)
+            XCTAssertTrue(validation.valid, "Certificate should validate for SAN host \(host): \(validation.error)")
+        }
+        XCTAssertFalse(try evaluatePinnedCertificate(first.certificateDER, hostname: "not-localhost.example").valid)
+
+        let parameters = try LoopbackTLSServerIdentity.makeTLSParameters(identity: first.identity)
+        XCTAssertNotNil(parameters)
+        XCTAssertEqual(LoopbackTLSServerIdentity.minimumTLSVersion, .TLSv12)
+
+        let changedAddresses = ["192.0.2.24"]
+        let reissued = try LoopbackTLSServerIdentity.load(advertising: changedAddresses, namespace: namespace)
+        XCTAssertNotEqual(first.certificateSHA256, reissued.certificateSHA256)
+        XCTAssertTrue(LoopbackTLSServerIdentity.certificateIsCurrent(reissued.certificateDER, advertisedIPv4Addresses: changedAddresses))
+    }
+
+    func testTLSListenerRestartsAfterEndpointSetChanges() throws {
+        let namespace = "test-listener-\(UUID().uuidString)"
+        let server = LoopbackAgentServer(
+            port: 45_732,
+            certificateProvider: { "test-session" },
+            onCommand: { _ in },
+            identityNamespace: namespace
+        )
+        defer {
+            server.listener?.cancel()
+            try? LoopbackTLSServerIdentity.removeKeychainIdentity(namespace: namespace)
+        }
+
+        try server.start(advertisingIPv4Addresses: ["192.0.2.30"])
+        let initialFingerprint = try XCTUnwrap(server.tlsCertificateSha256)
+        XCTAssertEqual(server.endpoints, ["https://192.0.2.30:45732"])
+
+        try server.restart(advertisingIPv4Addresses: ["192.0.2.31"])
+        XCTAssertNotEqual(initialFingerprint, server.tlsCertificateSha256)
+        XCTAssertEqual(server.endpoints, ["https://192.0.2.31:45732"])
+        XCTAssertNotNil(server.listener)
+    }
+
     func testEmptyBodyGetStaysEmptyAndReceivesEncryptedResponse() {
         let certificate = "session-certificate"
         let server = LoopbackAgentServer(port: 45731, certificateProvider: { certificate }, onCommand: { _ in })
@@ -167,6 +220,26 @@ final class LoopbackAgentServerTests: XCTestCase {
             .map { String(format: "%02x", $0) }
             .joined()
         return "\(method) \(target) HTTP/1.1\r\nContent-Length: \(body.count)\r\nX-Hanasand-Session-Timestamp: \(timestamp)\r\nX-Hanasand-Session-Nonce: \(nonce)\r\nX-Hanasand-Session-Proof: \(proof)\r\n\r\n"
+    }
+
+    private func evaluatePinnedCertificate(_ der: Data, hostname: String) throws -> (valid: Bool, error: String) {
+        guard let certificate = SecCertificateCreateWithData(nil, der as CFData) else {
+            throw NSError(domain: "HanasandTests", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid test certificate DER"])
+        }
+        var trust: SecTrust?
+        let policy = SecPolicyCreateSSL(true, hostname as CFString)
+        let createStatus = SecTrustCreateWithCertificates(certificate, policy, &trust)
+        guard createStatus == errSecSuccess, let trust else {
+            throw NSError(domain: "HanasandTests", code: Int(createStatus), userInfo: [NSLocalizedDescriptionKey: "Could not create certificate trust evaluation"])
+        }
+        guard SecTrustSetAnchorCertificates(trust, [certificate] as CFArray) == errSecSuccess,
+              SecTrustSetAnchorCertificatesOnly(trust, true) == errSecSuccess,
+              SecTrustSetPolicies(trust, policy) == errSecSuccess else {
+            throw NSError(domain: "HanasandTests", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not configure pinned certificate trust evaluation"])
+        }
+        var error: CFError?
+        let valid = SecTrustEvaluateWithError(trust, &error)
+        return (valid, error?.localizedDescription ?? "no trust error")
     }
 
     private func assertEncryptedResponse(_ response: String, certificate: String, expectedStatus: String, file: StaticString = #filePath, line: UInt = #line) {

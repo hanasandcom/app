@@ -127,7 +127,7 @@ export function SettingsDrawer({
                                         body='Prefer the local desktop agent when it is reachable.'
                                         value={draft.desktopAgentBaseUrl.startsWith('http')}
                                         onChange={(value) => {
-                                            update('desktopAgentBaseUrl', value ? settings.desktopAgentBaseUrl || 'http://localhost:45731' : '')
+                                            update('desktopAgentBaseUrl', value ? settings.desktopAgentBaseUrl || 'https://localhost:45731' : '')
                                         }}
                                     />
                                     <PreferenceNote

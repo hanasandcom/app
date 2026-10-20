@@ -1,6 +1,8 @@
 import * as Crypto from 'expo-crypto'
 import type { AgentAutomation, AgentAutomationPayload, AgentAutomationRun, AiFileSummary, AiRunDetails, AiToolUseSummary, AppSettings, DashboardRole, DashboardUser, DashboardUserRoleAssignment, DesktopAgentPresence, DesktopAgentStatus, GptClient, HanasandAuthSession, MailAddress, MailboxItem, MailMessage, MailMessageSummary, MailOverview, MailSendResult, ManagedCronJob, Note, ShareSummary, ShareTreeItem } from '../types'
 import { AuthenticationError, PendingDeletionError } from './api-errors'
+import { trustedDesktopAgentEndpoints } from './desktop-agent-endpoints'
+import { requestPinnedDesktopAgent } from './pinned-desktop-transport'
 export { AuthenticationError, PendingDeletionError } from './api-errors'
 
 function headers(settings: AppSettings) {
@@ -56,13 +58,6 @@ function joinUrl(base: string, path: string) {
     const next = cleanPath ? `${cleanBase}/${cleanPath}` : cleanBase
     assertSecureTransport(next)
     return next
-}
-
-function desktopAgentBases(settings: AppSettings) {
-    const primary = settings.desktopAgentBaseUrl.trim()
-    if (!primary) return ['http://127.0.0.1:45731', 'http://localhost:45731']
-    const fallback = primary.replace('127.0.0.1', 'localhost')
-    return fallback === primary ? [primary] : [primary, fallback]
 }
 
 async function fetchDesktopAgentPresence(settings: AppSettings) {
@@ -270,41 +265,25 @@ async function desktopAgentProofRequest(path: string, init: RequestInit | undefi
 }
 
 async function fetchDesktopAgentPath(settings: AppSettings, path: string, init?: RequestInit) {
-    const bases = desktopAgentBases(settings)
+    const agents = await fetchDesktopAgentPresence(settings)
+    const endpoints = trustedDesktopAgentEndpoints(agents, settings.desktopAgentBaseUrl)
+    if (endpoints.length === 0) {
+        throw new Error('No HTTPS desktop agent with a valid certificate pin is available. Update the Hanasand desktop app and check that it is online.')
+    }
     const certificate = desktopAgentSessionCertificate(settings)
 
     let lastError: unknown
-    for (const base of bases) {
+    for (const endpoint of endpoints) {
         let response: Response
         try {
             const signedInit = await desktopAgentProofRequest(path, init, certificate)
-            response = await fetch(joinUrl(base, path), signedInit)
+            response = await requestPinnedDesktopAgent(endpoint, path, signedInit)
         } catch (error) {
             lastError = error
             continue
         }
         if (response.status !== 401) return openDesktopAgentResponse(response, certificate)
         lastError = new Error('Desktop agent rejected this login session.')
-    }
-
-    try {
-        const agents = await fetchDesktopAgentPresence(settings)
-        for (const agent of agents) {
-            for (const endpoint of agent.endpoints || []) {
-                let response: Response
-                try {
-                    const signedInit = await desktopAgentProofRequest(path, init, certificate)
-                    response = await fetch(joinUrl(endpoint, path), signedInit)
-                } catch (error) {
-                    lastError = error
-                    continue
-                }
-                if (response.status !== 401) return openDesktopAgentResponse(response, certificate)
-                lastError = new Error('Desktop agent rejected this login session.')
-            }
-        }
-    } catch (error) {
-        lastError = error
     }
 
     throw lastError instanceof Error ? lastError : new Error('Desktop agent is unreachable.')

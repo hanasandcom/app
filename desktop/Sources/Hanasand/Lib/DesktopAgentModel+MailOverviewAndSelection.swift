@@ -14,16 +14,18 @@ extension DesktopAgentModel {
 
     func refreshLocalStatus() async {
         currentTaskState = "Checking this Mac"
-        do {
-            let loaded: AgentStatus = try await requestJSON(settings.desktopAgentBaseURL.normalizedBaseURL.appendingPathComponent("status"))
-            status = loaded
-            append(meta: "This Mac", body: "\(loaded.hostname) · \(loaded.platform) · \(Int(loaded.uptimeSeconds / 60)) min", kind: .command)
-            recordRun(title: "This Mac", detail: loaded.message, kind: .command)
-        } catch {
-            status = AgentStatus.ready(ok: false, message: error.localizedDescription)
-            append(meta: "This Mac", body: error.localizedDescription, kind: .error)
-            recordRun(title: "This Mac error", detail: error.localizedDescription, kind: .error)
+        guard server?.tlsCertificateSha256 != nil else {
+            let message = "The local agent HTTPS listener is not running."
+            status = AgentStatus.ready(ok: false, message: message)
+            append(meta: "This Mac", body: message, kind: .error)
+            recordRun(title: "This Mac error", detail: message, kind: .error)
+            currentTaskState = "Idle"
+            return
         }
+        let loaded = AgentStatus.ready(message: "this Mac is reachable")
+        status = loaded
+        append(meta: "This Mac", body: "\(loaded.hostname) · \(loaded.platform) · \(Int(loaded.uptimeSeconds / 60)) min", kind: .command)
+        recordRun(title: "This Mac", detail: loaded.message, kind: .command)
         currentTaskState = "Idle"
     }
 

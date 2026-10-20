@@ -2,6 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from 'node:crypto'
 import type { AppSettings } from '../types'
 
+type PinnedEndpoint = { url: string; pin: string }
+type PinnedRequest = (endpoint: PinnedEndpoint, path: string, init?: RequestInit) => Promise<Response>
+let pinnedRequest: PinnedRequest = async () => { throw new Error('Pinned transport was not configured in this test.') }
+mock.module('./pinned-desktop-transport', () => ({
+    requestPinnedDesktopAgent: (endpoint: PinnedEndpoint, path: string, init?: RequestInit) => pinnedRequest(endpoint, path, init),
+}))
+
 class TestSealedData {
     constructor(readonly bytes: Buffer) {}
 
@@ -69,6 +76,7 @@ function mockFetch(handler: (input: RequestInfo | URL, init?: RequestInit) => Pr
 }
 
 beforeEach(() => {
+    pinnedRequest = async () => { throw new Error('Pinned transport was not configured in this test.') }
     mockFetch(async () => new Response(JSON.stringify({ error: 'Rejected' }), {
         status: 401,
         headers: { 'Content-Type': 'application/json' },
@@ -106,33 +114,62 @@ describe('refreshHanasandSession error classification', () => {
 })
 
 describe('desktop command proof', () => {
+    it('refuses to contact an endpoint without an authenticated certificate pin', async () => {
+        const requestSettings = { ...settings, desktopAgentBaseUrl: 'http://192.168.1.20:45731' }
+        let fetchCalls = 0
+        let pinnedCalls = 0
+        mockFetch(async () => {
+            fetchCalls += 1
+            return new Response(JSON.stringify({ agents: [{
+                deviceId: 'mac', endpoints: ['http://192.168.1.20:45731'],
+            }] }), { status: 200 })
+        })
+        pinnedRequest = async () => {
+            pinnedCalls += 1
+            return new Response('{}')
+        }
+
+        await expect(fetchDesktopAgentStatus(requestSettings)).rejects.toThrow('valid certificate pin')
+        expect(fetchCalls).toBe(1)
+        expect(pinnedCalls).toBe(0)
+    })
+
     it('rejects authenticated bridge responses that are not encrypted', async () => {
-        const requestSettings = { ...settings, desktopAgentBaseUrl: 'http://localhost:45731' }
-        mockFetch(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }))
+        const requestSettings = { ...settings, desktopAgentBaseUrl: 'https://desktop.example.test:45731' }
+        mockFetch(async () => new Response(JSON.stringify({ agents: [{
+            deviceId: 'mac', endpoints: ['https://desktop.example.test:45731'], tlsCertificateSha256: 'a'.repeat(64),
+        }] }), { status: 200 }))
+        pinnedRequest = async () => new Response(JSON.stringify({ ok: true }), { status: 200 })
 
         await expect(fetchDesktopAgentStatus(requestSettings)).rejects.toThrow('without the required encryption envelope')
     })
 
     it('encrypts commands and authenticates the exact encrypted request body with HMAC-SHA256', async () => {
-        const requestSettings = { ...settings, desktopAgentBaseUrl: 'http://127.0.0.1:45731' }
+        const requestSettings = { ...settings, desktopAgentBaseUrl: 'https://desktop.example.test:45731' }
         const command = `mac_control_type_text:${'ø🚲'.repeat(50)}`
         let capturedInit: RequestInit | undefined
+        let capturedEndpoint: PinnedEndpoint | undefined
+        mockFetch(async () => new Response(JSON.stringify({ agents: [{
+            deviceId: 'mac', endpoints: ['https://desktop.example.test:45731'], tlsCertificateSha256: 'b'.repeat(64),
+        }] }), { status: 200 }))
         const certificate = createHash('sha256')
             .update(`hanasand-desktop-agent-session-v1\n${settings.userId}\n${settings.authToken}`)
             .digest('hex')
         const aesKey = createHash('sha256')
             .update(`hanasand-desktop-agent-transport-v1\n${certificate}`)
             .digest()
-        mockFetch(async (_input, init) => {
+        pinnedRequest = async (endpoint, _path, init) => {
+            capturedEndpoint = endpoint
             capturedInit = init
             const iv = randomBytes(12)
             const cipher = createCipheriv('aes-256-gcm', aesKey, iv)
             const encrypted = Buffer.concat([cipher.update(JSON.stringify({ ok: true })), cipher.final(), cipher.getAuthTag()])
             return new Response(JSON.stringify({ encrypted: true, payload: Buffer.concat([iv, encrypted]).toString('base64') }), { status: 200 })
-        })
+        }
 
         const result = await runDesktopAgentCommand(requestSettings, command)
         expect(result.ok).toBe(true)
+        expect(capturedEndpoint).toEqual({ url: 'https://desktop.example.test:45731', pin: 'b'.repeat(64) })
 
         const wireBody = String(capturedInit?.body)
         const envelope = JSON.parse(wireBody) as { encrypted: boolean; payload: string }

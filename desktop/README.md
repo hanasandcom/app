@@ -11,11 +11,11 @@ cd desktop
 swift run Hanasand
 ```
 
-The package requires macOS 14 or later. The app starts its embedded Swift bridge on port `45731`. After sign-in, it publishes active non-loopback IPv4 addresses for LAN discovery. The bridge also accepts requests on the Mac itself. Its requests require a short-lived, nonce-protected HMAC session proof derived from the current Hanasand login; a plain unauthenticated `curl` request is rejected. The bridge still uses HTTP, so proofs authenticate requests and prevent undetected changes but do not encrypt their contents or responses.
+The package requires macOS 14 or later. The app starts its embedded Swift HTTPS bridge on port `45731`. It creates a unique P-256 TLS key in the macOS Keychain and a self-signed leaf certificate for `localhost` plus every active advertised IPv4 address. The private key stays in Keychain. The app reuses the certificate while its address set is unchanged, reissues it when that set changes, and publishes the lowercase SHA-256 fingerprint of the certificate's DER bytes with the LAN endpoints. The bridge also accepts requests on the Mac itself. Its requests require a short-lived, nonce-protected HMAC session proof derived from the current Hanasand login; unauthenticated requests receive HTTP 401 inside the TLS connection.
 
 ### Embedded Swift bridge routes
 
-The bridge exposes these HTTP routes:
+The bridge exposes these HTTPS routes:
 
 - `GET /health` and `GET /status` return Mac status.
 - `GET /screenshot` returns the current desktop screenshot.
@@ -24,7 +24,7 @@ The bridge exposes these HTTP routes:
 
 Commands include status and update checks, AI actions, app-section navigation, browser actions, native dashboard panels, server logs, settings, and remote-desktop controls. Parameterized commands include `codex_prompt:<url-encoded-prompt>`, `mac_control_type_text:<url-encoded-text>`, and `mac_control_pointer_click_at:<x>:<y>`. Keyboard text entry and pointer clicks require macOS Accessibility permission. Use the authenticated client for requests and read `GET /commands` for the names accepted by the running app; unsupported commands return HTTP 400. The bridge returns HTTP 401 when the session proof is missing or invalid.
 
-The bridge uses HTTP, not TLS. It encrypts request payloads with AES-256-GCM and encrypts response bodies at the application layer; HMAC proofs authenticate requests and bind the encrypted request body. The mobile API helper permits HTTP only for loopback and private-network hosts, and Android enables cleartext networking so the LAN bridge can work. Network observers can still see the Mac's address, HTTP method and path, headers, timing, and approximate payload size. This is payload confidentiality, not a fully encrypted transport.
+The bridge uses Network.framework TLS 1.2 or later. TLS hides HTTP methods, paths, headers, and content on the network. The mobile client pins the leaf certificate using its published SHA-256 fingerprint. The bridge also encrypts request and response bodies with AES-256-GCM, and HMAC proofs bind each request body to its method, path, timestamp, and nonce. TLS does not hide the destination IP address, request timing, or approximate traffic size revealed by TLS record lengths; hiding traffic shape would require additional padding and scheduling.
 
 ## Package a macOS update
 
@@ -62,14 +62,14 @@ On macOS, run the screenshot pass from the repository root:
 desktop/scripts/smoke-screenshots.sh
 ```
 
-The script builds or launches the Desktop app, opens sections through authenticated `POST /command` requests, checks the screenshots, and saves a manifest and browsable HTML contact sheet under `desktop/.artifacts/desktop-smoke-<timestamp>/`. It prompts once for the Hanasand user ID and session token; token input is hidden. The script does not load credentials from environment variables, files, or Keychain. A local CryptoKit helper derives request proofs, encrypts command payloads, and verifies/decrypts response bodies in memory. The helper binary is placed in the smoke output directory; neither credentials nor plaintext response bodies are written there. The script uses the verified response only to check HTTP status.
+The script builds or launches the Desktop app, opens sections through authenticated `POST /command` requests, checks the screenshots, and saves a manifest and browsable HTML contact sheet under `desktop/.artifacts/desktop-smoke-<timestamp>/`. It prompts once for the Hanasand user ID and session token; token input is hidden. The script does not load session credentials from environment variables or files. A local CryptoKit helper reads the desktop leaf certificate from Keychain, verifies the exact DER SHA-256 fingerprint during TLS, derives request proofs, encrypts command payloads, and verifies/decrypts response bodies in memory. The helper binary is placed in the smoke output directory; neither credentials nor plaintext response bodies are written there.
 
 Useful options:
 
 ```sh
 HANASAND_DESKTOP_SMOKE_KEEP_RUNNING=1 desktop/scripts/smoke-screenshots.sh
 HANASAND_DESKTOP_SMOKE_OUT=/tmp/hanasand-smoke desktop/scripts/smoke-screenshots.sh
-HANASAND_DESKTOP_AGENT_URL=http://127.0.0.1:45731 desktop/scripts/smoke-screenshots.sh
+HANASAND_DESKTOP_AGENT_URL=https://localhost:45731 desktop/scripts/smoke-screenshots.sh
 HANASAND_DESKTOP_SMOKE_SCOPE=core desktop/scripts/smoke-screenshots.sh
 HANASAND_DESKTOP_SMOKE_SCOPE=dashboard desktop/scripts/smoke-screenshots.sh
 HANASAND_DESKTOP_SMOKE_CAPTURE_MODE=rect desktop/scripts/smoke-screenshots.sh
