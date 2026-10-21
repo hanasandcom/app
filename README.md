@@ -15,6 +15,8 @@ Then use the Expo CLI to open a development build or simulator. The repository a
 
 The API defaults to `https://hanasand.com/api`. To point a development build at another API, set `EXPO_PUBLIC_API_BASE_URL` before starting Expo. Native app metadata, identifiers, permissions, and the current app version are in [`app.json`](app.json).
 
+Hanasand sessions are bound to a P-256 device key. The app stores the private key in device-only SecureStore and signs authenticated requests with DPoP proofs. Existing sessions without a device key require signing in again after the Identity migration.
+
 ## Mobile releases
 
 Mobile builds use [EAS Build](https://docs.expo.dev/build/introduction/) and the manual GitHub Actions workflow at **Actions → Mobile EAS build → Run workflow**. It supports iOS, Android, or both, with a `preview` (internal distribution) or `production` (store-signed artifact) profile. The workflow only builds artifacts; it does not submit them to either app store or publish an update. Preview builds are the default.
