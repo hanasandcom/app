@@ -6,13 +6,23 @@ import * as WebBrowser from 'expo-web-browser'
 import { isSupported as arePasskeysSupported } from 'react-native-passkeys'
 import { ArrowRight, X } from 'lucide-react-native'
 import type { AppSettings, HanasandAuthSession } from '../types'
-import { completePasswordReset, createHanasandAccount, exchangeHanasandMobileSsoCode, loginToHanasand, loginWithHanasandPasskey, PendingDeletionError, requestPasswordResetCode, verifyPasswordResetCode } from '../lib/api'
+import { completePasswordReset, createHanasandAccount, exchangeHanasandMobileSsoCode, isHanasandGoogleSignInConfigured, loginToHanasand, loginWithHanasandPasskey, PendingDeletionError, requestPasswordResetCode, verifyPasswordResetCode } from '../lib/api'
 import { getThemePalette, spacing, type ThemePalette } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
 import { InlineNotice } from '../components/ui'
 
 type AuthMode = 'login' | 'signup'
 type ResetStep = 'idle' | 'code' | 'password'
+
+async function createMobilePkcePair() {
+    const verifier = `${Crypto.randomUUID()}${Crypto.randomUUID()}${Crypto.randomUUID()}`.replaceAll('-', '')
+    const challenge = (await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        verifier,
+        { encoding: Crypto.CryptoEncoding.BASE64 },
+    )).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+    return { verifier, challenge }
+}
 
 const reservedUsernames = new Set([
     'abuse', 'admin', 'administrator', 'billing', 'bookkeeper', 'cdc', 'ceo', 'cfo', 'chairman', 'compliance',
@@ -109,12 +119,7 @@ export function LoginScreen({
         setBusy(true)
         setStatus('Connecting to SSO')
         try {
-            const verifier = `${Crypto.randomUUID()}${Crypto.randomUUID()}${Crypto.randomUUID()}`.replaceAll('-', '')
-            const challenge = (await Crypto.digestStringAsync(
-                Crypto.CryptoDigestAlgorithm.SHA256,
-                verifier,
-                { encoding: Crypto.CryptoEncoding.BASE64 },
-            )).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+            const { verifier, challenge } = await createMobilePkcePair()
             const startUrl = new URL(`${settings.apiBaseUrl.replace(/\/+$/, '')}/auth/mobile/sso/start`)
             startUrl.searchParams.set('code_challenge', challenge)
             const result = await WebBrowser.openAuthSessionAsync(startUrl.toString(), 'hanasand://sso')
@@ -130,6 +135,36 @@ export function LoginScreen({
             await onAuthenticated(session)
         } catch (error) {
             setStatus(error instanceof Error ? error.message : 'SSO sign-in failed.')
+        } finally {
+            setBusy(false)
+        }
+    }
+
+    async function submitGoogleLogin() {
+        if (busy) return
+        setBusy(true)
+        setStatus('Checking Google sign-in')
+        try {
+            if (!await isHanasandGoogleSignInConfigured(settings)) {
+                throw new Error('Google sign-in is not configured on the server yet.')
+            }
+            const { verifier, challenge } = await createMobilePkcePair()
+            const startUrl = new URL(`${settings.apiBaseUrl.replace(/\/+$/, '')}/auth/social/google/start`)
+            startUrl.searchParams.set('mobile_challenge', challenge)
+            setStatus('Connecting to Google')
+            const result = await WebBrowser.openAuthSessionAsync(startUrl.toString(), 'hanasand://social')
+            if (result.type !== 'success') {
+                setStatus('')
+                return
+            }
+            const callback = new URL(result.url)
+            const code = callback.searchParams.get('code')
+            if (!code) throw new Error(callback.searchParams.get('error') || 'Google sign-in was not completed.')
+            const session = await exchangeHanasandMobileSsoCode(settings, code, verifier)
+            setStatus('')
+            await onAuthenticated(session)
+        } catch (error) {
+            setStatus(error instanceof Error ? error.message : 'Google sign-in failed.')
         } finally {
             setBusy(false)
         }
@@ -314,6 +349,9 @@ export function LoginScreen({
                                         <Text style={styles.secondaryText}>Sign in with passkey</Text>
                                     </Pressable>
                                 ) : null}
+                                <Pressable accessibilityRole='button' disabled={busy} onPress={() => void submitGoogleLogin()} style={({ pressed }) => [styles.secondaryButton, styles.identityButton, busy && styles.disabled, pressed && !busy && styles.pressed]}>
+                                    <Text style={styles.secondaryText}>Continue with Google</Text>
+                                </Pressable>
                                 <Pressable accessibilityRole='button' disabled={busy} onPress={() => void submitSsoLogin()} style={({ pressed }) => [styles.secondaryButton, styles.identityButton, busy && styles.disabled, pressed && !busy && styles.pressed]}>
                                     <Text style={styles.secondaryText}>Continue with SSO</Text>
                                 </Pressable>

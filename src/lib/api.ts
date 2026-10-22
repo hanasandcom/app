@@ -519,6 +519,18 @@ export async function exchangeHanasandMobileSsoCode(settings: AppSettings, code:
     return normalizeAuthSession(await readJsonResponse(response))
 }
 
+export async function isHanasandGoogleSignInConfigured(settings: AppSettings) {
+    const response = await apiFetch(undefined, joinUrl(settings.apiBaseUrl, 'auth/social/providers'), {
+        headers: { Accept: 'application/json' },
+    })
+    const payload = asRecord(await readJsonResponse(response))
+    const providers = Array.isArray(payload.providers) ? payload.providers : []
+    return providers.some(provider => {
+        const record = asRecord(provider)
+        return record.provider === 'google' && record.configured === true
+    })
+}
+
 export async function createHanasandAccount(settings: AppSettings, username: string, name: string, password: string) {
     const id = username.trim()
     const displayName = name.trim()

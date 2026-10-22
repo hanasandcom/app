@@ -5,8 +5,16 @@ import type { AppSettings } from '../types'
 type PinnedEndpoint = { url: string; pin: string }
 type PinnedRequest = (endpoint: PinnedEndpoint, path: string, init?: RequestInit) => Promise<Response>
 let pinnedRequest: PinnedRequest = async () => { throw new Error('Pinned transport was not configured in this test.') }
+let passkeyRequestOptions: Record<string, unknown> | undefined
+const passkeyCredential = { id: 'credential-id', rawId: 'cmF3LWlk', type: 'public-key', response: { clientDataJSON: 'Y2xpZW50LWRhdGE=', authenticatorData: 'YXV0aC1kYXRh', signature: 'c2lnbmF0dXJl', userHandle: null } }
 mock.module('./pinned-desktop-transport', () => ({
     requestPinnedDesktopAgent: (endpoint: PinnedEndpoint, path: string, init?: RequestInit) => pinnedRequest(endpoint, path, init),
+}))
+mock.module('react-native-passkeys', () => ({
+    get: async (options: Record<string, unknown>) => {
+        passkeyRequestOptions = options
+        return passkeyCredential
+    },
 }))
 
 class TestSealedData {
@@ -43,7 +51,7 @@ mock.module('expo-crypto', () => ({
     },
 }))
 
-const { AuthenticationError, fetchDesktopAgentStatus, refreshHanasandSession, runDesktopAgentCommand } = await import('./api')
+const { AuthenticationError, exchangeHanasandMobileSsoCode, fetchDesktopAgentStatus, isHanasandGoogleSignInConfigured, loginToHanasand, loginWithHanasandPasskey, refreshHanasandSession, runDesktopAgentCommand } = await import('./api')
 
 const settings: AppSettings = {
     themeMode: 'obsidian',
@@ -77,6 +85,7 @@ function mockFetch(handler: (input: RequestInfo | URL, init?: RequestInit) => Pr
 
 beforeEach(() => {
     pinnedRequest = async () => { throw new Error('Pinned transport was not configured in this test.') }
+    passkeyRequestOptions = undefined
     mockFetch(async () => new Response(JSON.stringify({ error: 'Rejected' }), {
         status: 401,
         headers: { 'Content-Type': 'application/json' },
@@ -126,6 +135,85 @@ describe('secure API transport', () => {
             apiBaseUrl: 'http://192.168.1.20:8080/api',
         })).rejects.toThrow('Blocked insecure plaintext endpoint')
         expect(requestCount).toBe(0)
+    })
+})
+
+describe('Google sign-in availability route', () => {
+    it('reads the configured provider state from the website auth proxy', async () => {
+        let requestedUrl = ''
+        mockFetch(async input => {
+            requestedUrl = String(input)
+            return new Response(JSON.stringify({ providers: [{ provider: 'google', configured: true }] }), { status: 200 })
+        })
+
+        await expect(isHanasandGoogleSignInConfigured(settings)).resolves.toBe(true)
+        expect(requestedUrl).toBe('https://example.test/api/auth/social/providers')
+    })
+
+    it('returns false when Google is not configured and surfaces a missing route clearly', async () => {
+        mockFetch(async () => new Response(JSON.stringify({ providers: [{ provider: 'google', configured: false }] }), { status: 200 }))
+        await expect(isHanasandGoogleSignInConfigured(settings)).resolves.toBe(false)
+
+        mockFetch(async () => new Response(JSON.stringify({ error: 'Not found' }), { status: 404 }))
+        await expect(isHanasandGoogleSignInConfigured(settings)).rejects.toThrow('Not found')
+
+        mockFetch(async () => new Response('{}', { status: 404 }))
+        await expect(isHanasandGoogleSignInConfigured(settings)).rejects.toThrow('Request failed with HTTP 404.')
+    })
+})
+
+describe('mobile authentication route contracts', () => {
+    it('posts password credentials to the API login route and normalizes the session', async () => {
+        let requestUrl = ''
+        let requestBody: unknown
+        mockFetch(async (input, init) => {
+            requestUrl = String(input)
+            requestBody = JSON.parse(String(init?.body))
+            return new Response(JSON.stringify({ id: 'user-1', name: 'User', token: 'session-token' }), { status: 200 })
+        })
+
+        await expect(loginToHanasand(settings, ' analyst ', 'password'))
+            .resolves.toMatchObject({ id: 'user-1', token: 'session-token' })
+        expect(requestUrl).toBe('https://example.test/api/auth/login/analyst')
+        expect(requestBody).toEqual({ password: 'password' })
+    })
+
+    it('exchanges the mobile PKCE code through the frontend auth proxy', async () => {
+        let requestUrl = ''
+        let requestMethod = ''
+        let requestBody: unknown
+        mockFetch(async (input, init) => {
+            requestUrl = String(input)
+            requestMethod = init?.method || 'GET'
+            requestBody = JSON.parse(String(init?.body))
+            return new Response(JSON.stringify({ id: 'user-1', name: 'User', token: 'session-token' }), { status: 200 })
+        })
+
+        await expect(exchangeHanasandMobileSsoCode(settings, 'a'.repeat(43), 'v'.repeat(43)))
+            .resolves.toMatchObject({ id: 'user-1', token: 'session-token' })
+        expect(requestUrl).toBe('https://example.test/api/auth/mobile/sso/exchange')
+        expect(requestMethod).toBe('POST')
+        expect(requestBody).toEqual({ code: 'a'.repeat(43), verifier: 'v'.repeat(43) })
+    })
+
+    it('loads passkey options and posts the assertion to the mobile verification proxy', async () => {
+        const requests: Array<{ url: string, method: string, body: unknown }> = []
+        mockFetch(async (input, init) => {
+            const url = String(input)
+            const method = init?.method || 'GET'
+            const body = init?.body ? JSON.parse(String(init.body)) : undefined
+            requests.push({ url, method, body })
+            return requests.length === 1
+                ? new Response(JSON.stringify({ challengeId: 'challenge-1', publicKey: { challenge: 'Y2hhbGxlbmdl', rpId: 'hanasand.com' } }), { status: 200 })
+                : new Response(JSON.stringify({ id: 'user-1', token: 'session-token' }), { status: 200 })
+        })
+
+        await expect(loginWithHanasandPasskey(settings, 'analyst')).resolves.toMatchObject({ id: 'user-1', token: 'session-token' })
+        expect(requests).toEqual([
+            { url: 'https://example.test/api/auth/passkeys/authenticate/options?username=analyst', method: 'GET', body: undefined },
+            { url: 'https://example.test/api/auth/mobile/passkeys/authenticate/verify', method: 'POST', body: { challengeId: 'challenge-1', credential: passkeyCredential } },
+        ])
+        expect(passkeyRequestOptions).toMatchObject({ challenge: 'Y2hhbGxlbmdl', rpId: 'hanasand.com' })
     })
 })
 
