@@ -122,7 +122,7 @@ describe('native album contract and session isolation', () => {
         await expect(loadAlbumDetail(settings, album.id)).rejects.toThrow('unexpected')
     })
     it('rejects absent sessions, insecure endpoints and unsupported impersonation before network', async () => {
-        for (const next of [{ ...settings, authToken: '' }, { ...settings, cdnBaseUrl: 'http://cdn.hanasand.test/api' }, { ...settings, impersonatingUserId: 'someone' }]) await expect(listManagedAlbums(next)).rejects.toThrow()
+        for (const next of [{ ...settings, authToken: '' }, { ...settings, cdnBaseUrl: 'http://cdn.hanasand.test/api' }, { ...settings, impersonatingUserId: 'someone' }, { ...settings, impersonatingUserId: '', impersonationToken: 'partial-impersonation' }]) await expect(listManagedAlbums(next)).rejects.toThrow()
         expect(calls).toHaveLength(0)
     })
 })

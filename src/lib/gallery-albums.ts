@@ -12,7 +12,7 @@ export type AlbumDetail = ManagedAlbum & { role: AlbumRole, items: AlbumPhoto[],
 // explicit same-origin Origin, and no shared native cookie jar.
 async function fetchCdn(settings: AppSettings, path: string, init: RequestInit = {}) {
     if (!settings.userId || !settings.authToken) throw new Error('Sign in to manage albums.')
-    if (settings.impersonatingUserId) throw new Error('Switch back to your own account to manage CDN albums.')
+    if (settings.impersonatingUserId || settings.impersonationToken) throw new Error('Switch back to your own account to manage CDN albums.')
     const url = new URL(`${settings.cdnBaseUrl.replace(/\/+$/, '')}/${path}`)
     if (url.protocol !== 'https:' || url.username || url.password) throw new Error('A secure CDN connection is required.')
     const headers = new Headers({ 'Content-Type': 'application/json', Origin: url.origin,
@@ -137,6 +137,9 @@ function imageSlot(signal?: AbortSignal): Promise<() => void> {
 
 // Keep private pixels in component memory. Image's native loader cannot create a
 // fresh DPoP proof or isolate its cookie jar; apiFetch can do both.
+// Previews allow 5 MiB thumbnails / 50 MiB full size; larger valid CDN files
+// remain available on the website. Native arrayBuffer fallback checks actual
+// result size after receiving it, so this is not a native receive-memory cap.
 export async function loadGalleryAlbumImage(settings: AppSettings, id: string, thumbnail = true, signal?: AbortSignal): Promise<string> {
     const release = await imageSlot(signal)
     try {

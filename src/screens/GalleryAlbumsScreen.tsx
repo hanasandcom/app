@@ -208,9 +208,9 @@ function PrivateImage({ settings, fileId, thumbnail = true, style, resizeMode = 
 
 function useGalleryAccountKey(settings: AppSettings) {
     const account = `${workspaceAccountKey(settings)}/${settings.cdnBaseUrl}`
-    const current = useRef({ account, token: settings.authToken, revision: 0 })
-    if (current.current.account !== account || current.current.token !== settings.authToken) {
-        current.current = { account, token: settings.authToken, revision: current.current.revision + 1 }
+    const current = useRef({ account, token: settings.authToken, impersonation: settings.impersonationToken, revision: 0 })
+    if (current.current.account !== account || current.current.token !== settings.authToken || current.current.impersonation !== settings.impersonationToken) {
+        current.current = { account, token: settings.authToken, impersonation: settings.impersonationToken, revision: current.current.revision + 1 }
     }
     // Session changes remount and discard old pixels without exposing a token in
     // React element keys, URLs, logs, or a persistent cache.
