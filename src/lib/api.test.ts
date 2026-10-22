@@ -174,8 +174,8 @@ describe('mobile authentication route contracts', () => {
 
         await expect(loginToHanasand(settings, ' analyst ', 'password'))
             .resolves.toMatchObject({ id: 'user-1', token: 'session-token' })
-        expect(requestUrl).toBe('https://example.test/api/auth/login/analyst')
-        expect(requestBody).toEqual({ password: 'password' })
+        expect(requestUrl).toBe('https://example.test/api/auth/mobile/login')
+        expect(requestBody).toEqual({ id: 'analyst', password: 'password' })
     })
 
     it('exchanges the mobile PKCE code through the frontend auth proxy', async () => {

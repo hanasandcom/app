@@ -481,10 +481,10 @@ export async function loginToHanasand(settings: AppSettings, username: string, p
     if (!id || !password) {
         throw new Error('Enter username and password.')
     }
-    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, `auth/login/${segment(id)}`), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'auth/mobile/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ id, password }),
     })
     return normalizeAuthSession(await readJsonResponse(response))
 }
