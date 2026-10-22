@@ -175,7 +175,7 @@ export type WorkspaceField = [label: string, path: string, format?: 'bytes' | 'p
 export type WorkspaceSection = {
     label: string
     endpoint: string
-    origin?: 'site' | 'status'
+    origin?: 'site'
     listPath?: string
     titlePath?: string
     fields: WorkspaceField[]
@@ -198,8 +198,8 @@ const definitions: WorkspacePageDefinition[] = [
     { path: '/system/containers', sections: [{ label: 'Containers', endpoint: 'docker', listPath: 'containers', titlePath: 'name', fields: [['Image', 'image'], ['State', 'state'], ['Status', 'status'], ['Health', 'health'], ['CPU', 'stats.cpu_percent|cpu', 'percent'], ['Memory', 'stats.memory_bytes|memory', 'bytes'], ['Restarts', 'restart_count'], ['Created', 'created_at', 'date']] }] },
     ...['/vms', '/system/virtual-machines'].map(path => ({ path, sections: [{ label: 'Virtual machines', endpoint: 'vms/:userId', listPath: '', titlePath: 'name', fields: vmFields }] })),
     { path: '/status', sections: [
-        { label: 'Status', endpoint: 'api/status?dashboard=true', origin: 'status', fields: [['Overall', 'overall'], ['Monitoring', 'monitoring'], ['Generated', 'generated_at', 'date']] },
-        { label: 'Services', endpoint: 'api/status?dashboard=true', origin: 'status', listPath: 'checks', titlePath: 'service', fields: [['Check', 'check_name'], ['Status', 'status'], ['Latency (ms)', 'latency_ms'], ['Message', 'message'], ['30 day uptime', 'uptime_30d'], ['Checked', 'checked_at', 'date']] },
+        { label: 'Status', endpoint: 'api/status', origin: 'site', fields: [['Overall', 'overall'], ['Monitoring', 'monitoring'], ['Generated', 'generated_at', 'date']] },
+        { label: 'Services', endpoint: 'api/status', origin: 'site', listPath: 'checks', titlePath: 'service', fields: [['Check', 'check_name'], ['Status', 'status'], ['Latency (ms)', 'latency_ms'], ['Message', 'message'], ['30 day uptime', 'uptime_30d'], ['Checked', 'checked_at', 'date']] },
     ] },
     { path: '/repositories', sections: [
         { label: 'Repositories', endpoint: 'projects/user/:userId', listPath: '', titlePath: 'alias', fields: [['Owner', 'owner'], ['Files', 'file_count'], ['Size', 'total_size', 'bytes'], ['Updated', 'last_updated', 'date']], detailEndpoint: 'project/:id', detailKey: 'alias', detailObjectPath: 'share', detailTreePath: 'tree', detailFields: fileFields },

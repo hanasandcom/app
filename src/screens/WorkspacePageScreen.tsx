@@ -46,24 +46,22 @@ export function workspaceRequestUrl(settings: AppSettings, definition: Workspace
         .replace(':userId', encodeURIComponent(settings.impersonatingUserId || settings.userId))
         .replace(':organizationId', encodeURIComponent(organizationId))
         .replace(':id', encodeURIComponent(detailId || ''))
-    const base = definition.origin === 'status' ? 'https://status.hanasand.com' : definition.origin === 'site' ? settings.siteBaseUrl : settings.apiBaseUrl
+    const base = definition.origin === 'site' ? settings.siteBaseUrl : settings.apiBaseUrl
     const url = new URL(`${base.replace(/\/+$/, '')}/${endpoint.replace(/^\/+/, '')}`)
     if (url.protocol !== 'https:') throw new Error('Workspace services require a secure HTTPS connection.')
-    if (organizationId && definition.origin !== 'status') url.searchParams.set('organizationId', organizationId)
+    if (organizationId) url.searchParams.set('organizationId', organizationId)
     if (search && definition.searchParam) url.searchParams.set(definition.searchParam, search)
     return url.toString()
 }
 export async function fetchWorkspaceSection(settings: AppSettings, definition: WorkspaceSection, signal: AbortSignal, detailId?: string, search?: string) {
     const url = workspaceRequestUrl(settings, definition, detailId, search)
-    const response = definition.origin === 'status'
-        ? await fetch(url, { signal })
-        : await apiFetch(settings, url, {
-            signal,
-            headers: {
-                Authorization: `Bearer ${settings.authToken}`, id: settings.userId,
-                ...(settings.impersonationToken ? { 'x-impersonation-token': settings.impersonationToken } : {}),
-            },
-        })
+    const response = await apiFetch(settings, url, {
+        signal,
+        headers: {
+            Authorization: `Bearer ${settings.authToken}`, id: settings.userId,
+            ...(settings.impersonationToken ? { 'x-impersonation-token': settings.impersonationToken } : {}),
+        },
+    })
     const payload: unknown = await response.json().catch(() => null)
     if (!response.ok) {
         const error = workspaceValue(payload, 'error.message|error')
