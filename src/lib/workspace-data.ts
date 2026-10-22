@@ -17,7 +17,13 @@ async function request(settings: AppSettings, service: 'api' | 'cdn', path: stri
         headers.set('Cookie', `id=${encodeURIComponent(settings.userId)}; access_token=${encodeURIComponent(settings.authToken)}`)
         headers.set('Origin', url.origin)
     }
-    const response = await apiFetch(settings, url.toString(), { ...init, headers })
+    const response = await apiFetch(settings, url.toString(), {
+        ...init,
+        // iOS appends supplied Cookie headers to its shared jar unless disabled.
+        // Keep the CDN cookie session tied to the currently signed-in account.
+        ...(service === 'cdn' ? { credentials: 'omit' as const } : {}),
+        headers,
+    })
     const body = await response.json().catch(() => null)
     if (!response.ok) throw new Error(body?.error || `Request failed (${response.status}). Please retry.`)
     if (!body || typeof body !== 'object') throw new Error('The server returned an unexpected response.')
