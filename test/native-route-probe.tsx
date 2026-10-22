@@ -87,6 +87,13 @@ void (async () => {
                     ['delivery-health', () => loadDeliveryHealth(settings, { scope: 'global', tenantId: '', status: '', query: '' }, null, signal()).then(row => ({ count: row.items.length, total: row.total }))],
                     ['status', async () => { const response = await fetch('https://status.hanasand.com/api/status?dashboard=true', { signal: signal(), credentials: 'omit' }); const row = await response.json(); if (!response.ok) throw new Error(`HTTP ${response.status}`); return { count: row.checks?.length, monitoring: row.monitoring } }],
                 ]
+                if (process.env.EXPO_PUBLIC_PROBE_LOG_FAILURES === '1') {
+                    jobs.push(['menu:/logs/errors:Direct API', async () => {
+                        const section = { label: 'Errors', endpoint: 'logs/errors?limit=150', listPath: 'errors', fields: [] }
+                        const payload = await fetchWorkspaceSection(settings, section, signal(46_000))
+                        return { count: workspaceRows(payload, section).length }
+                    }])
+                }
                 if (process.env.EXPO_PUBLIC_PROBE_MENU === '1') {
                     const leaves = (items: SiteNavigationItem[]): SiteNavigationItem[] => items.flatMap(item => item.items ? leaves(item.items) : [item])
                     const visited = new Set<string>()
