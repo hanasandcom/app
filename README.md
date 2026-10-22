@@ -1,6 +1,6 @@
 # Hanasand App
 
-Hanasand App is a mobile companion for people with Hanasand accounts. It brings account and workspace tasks to iOS and Android: sign in and manage your profile, work with mail and notes, scan documents, review images, use AI and automation features, and reach Hanasand control panels. The native macOS client is maintained separately in [`desktop/`](desktop/README.md).
+Hanasand App is a mobile companion for people with Hanasand accounts. It brings account and workspace tasks to iOS and Android: sign in and manage your profile, work with mail and notes, scan documents, review images, use AI and automation features, and reach Hanasand control panels. The native macOS client lives in its own [`desktop` repository](https://github.com/hanasandcom/desktop), mirrored on [Forgejo](https://git.hanasand.com/hanasandcom/desktop).
 
 ## Mobile development
 
@@ -46,4 +46,4 @@ See Expo's [build profiles](https://docs.expo.dev/build/eas-json/) and [programm
 
 ## macOS client
 
-The macOS app has its own Swift package, setup, screenshots, and update packaging instructions in [`desktop/README.md`](desktop/README.md).
+The native macOS app has its own Swift package, setup, screenshots, and update packaging instructions in the [`desktop` repository](https://github.com/hanasandcom/desktop), also available on [Forgejo](https://git.hanasand.com/hanasandcom/desktop).
