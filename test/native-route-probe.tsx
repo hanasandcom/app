@@ -14,6 +14,20 @@ import { loadGalleryAlbumImage } from '../src/lib/gallery-albums'
 import { siteNavigation, workspacePageDefinition, type SiteNavigationItem } from '../src/data/site-navigation'
 import { fetchWorkspaceSection, workspaceRequestUrl, workspaceRows } from '../src/screens/WorkspacePageScreen'
 
+
+// Record only known operational categories, never arbitrary response messages.
+function logFailureCategory(name: string, error: unknown) {
+    if (process.env.EXPO_PUBLIC_PROBE_LOG_FAILURES !== '1' || !/^menu:\/logs(?::|\/)/.test(name) || !(error instanceof Error)) return undefined
+    const categories: Record<string, string> = {
+        'Search took too long. Narrow the time range or add a service filter.': 'database-query-timeout',
+        'Log searches are busy. Please retry shortly.': 'database-search-capacity',
+        'The backend service did not respond in time. Try again shortly; the dashboard is still available.': 'website-upstream-timeout',
+        'The backend service is unavailable right now. Try again shortly.': 'website-upstream-transport',
+        'Log snapshot is unavailable. Please retry shortly.': 'database-snapshot-unavailable',
+    }
+    return categories[error.message] || 'unclassified-log-failure'
+}
+
 registerRootComponent(() => <Text>Checking mobile services…</Text>)
 void (async () => {
     const report: { source: string; complete: boolean; session?: string; checks: Array<Record<string, unknown>> } = { source: process.env.EXPO_PUBLIC_PROBE_REVISION || 'working-tree', complete: false, checks: [] }
@@ -98,7 +112,7 @@ void (async () => {
                     const start = Date.now()
                     requests = []
                     try { report.checks.push({ name, ok: true, result: await run(), requests, ms: Date.now() - start }) }
-                    catch (error) { report.checks.push({ name, ok: false, error: error instanceof Error ? (/unauthorized/i.test(error.message) ? 'Unauthorized' : /(?:HTTP|Request failed)\s*\(?[45]\d\d/i.exec(error.message)?.[0] || (/timed? ?out|abort/i.test(error.message) ? 'Timeout' : 'Service or response validation failed')) : 'Request failed', requests, ms: Date.now() - start }) }
+                    catch (error) { report.checks.push({ name, ok: false, error: error instanceof Error ? (/unauthorized/i.test(error.message) ? 'Unauthorized' : /(?:HTTP|Request failed)\s*\(?[45]\d\d/i.exec(error.message)?.[0] || (/timed? ?out|abort/i.test(error.message) ? 'Timeout' : 'Service or response validation failed')) : 'Request failed', requests, failureCategory: logFailureCategory(name, error), ms: Date.now() - start }) }
                     save()
                 }
             } finally { globalThis.fetch = nativeFetch }
