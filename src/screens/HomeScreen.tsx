@@ -631,7 +631,6 @@ function createStyles(theme: ThemePalette) {
         aiRoot: { flex: 1, gap: 8 },
         macWindow: {
             minHeight: 78,
-            maxHeight: 128,
             borderRadius: 22,
             borderWidth: 1,
             borderColor: theme.surfaceBorderSoft,
