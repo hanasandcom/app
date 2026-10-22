@@ -13,3 +13,12 @@ ios/
 *.pem
 *.xcworkspace
 *.xcodeproj
+
+# Keep the app's local Expo native module sources while excluding generated projects.
+!/modules/
+!/modules/hanasand-pinned-https/
+!/modules/hanasand-pinned-https/ios/
+!/modules/hanasand-pinned-https/ios/**
+!/modules/hanasand-pinned-https/android/
+!/modules/hanasand-pinned-https/android/**
+/modules/hanasand-pinned-https/android/build/
