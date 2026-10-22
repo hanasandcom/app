@@ -101,14 +101,29 @@ function AccountNotes({ settings }: { settings: AppSettings }) {
     const [loading, setLoading] = useState(true)
     const [syncing, setSyncing] = useState(false)
     const [loadError, setLoadError] = useState('')
+    const [cacheError, setCacheError] = useState('')
+    const [cacheRetry, setCacheRetry] = useState(0)
+    const [persistedNotes, setPersistedNotes] = useState<LocalNote[] | null>(null)
+    const [remoteAvailable, setRemoteAvailable] = useState(false)
     const [hydrated, setHydrated] = useState(false)
     const notesRef = useRef<LocalNote[]>([])
     const selectedRef = useRef('')
     const active = useRef(true)
     const syncingRef = useRef(false)
+    const cacheWriteRef = useRef<Promise<void>>(Promise.resolve())
     const cacheKey = NOTES_CACHE_KEY + encodeURIComponent(workspaceAccountKey(settings))
     const configured = Boolean(settings.apiBaseUrl.trim() && settings.authToken.trim() && settings.userId.trim())
     const selected = notes.find(note => note.id === selectedId) || null
+    const pendingChanges = notes.some(note => note.syncState === 'pending' && (hasText(note) || !note.id.startsWith('local-')))
+    const locallySaved = persistedNotes === notes
+    let syncStatus = remoteAvailable ? 'Synced with Hanasand' : 'Offline · showing cached notes'
+    if (!configured) syncStatus = 'Sign in to sync notes'
+    else if (loading) syncStatus = 'Loading notes…'
+    else if (syncing) syncStatus = 'Syncing…'
+    else if (cacheError) syncStatus = 'Device save failed · retry to save your edits'
+    else if (pendingChanges && !locallySaved) syncStatus = 'Saving on this device…'
+    else if (selected?.remoteVersion || selected?.deletedOnWebsite) syncStatus = 'Saved on this device · website changes need review'
+    else if (pendingChanges) syncStatus = remoteAvailable ? 'Saved on this device · waiting to sync' : 'Saved on this device · offline'
     const visibleNotes = notes.filter(note => hasText(note) && `${note.title} ${note.content}`.toLowerCase().includes(search.toLowerCase()))
 
     function replaceNotes(next: LocalNote[]) {
@@ -128,8 +143,20 @@ function AccountNotes({ settings }: { settings: AppSettings }) {
         return () => { active.current = false }
     }, [])
     useEffect(() => {
-        if (hydrated && configured) void AsyncStorage.setItem(cacheKey, JSON.stringify(notes)).catch(() => setLoadError('Unable to save notes on this device.'))
-    }, [notes, hydrated, cacheKey, configured])
+        if (!hydrated || !configured) return
+        // Serialize writes so an older completion cannot replace the latest cache.
+        cacheWriteRef.current = cacheWriteRef.current.then(async () => {
+            try {
+                await AsyncStorage.setItem(cacheKey, JSON.stringify(notes))
+                if (active.current && notesRef.current === notes) {
+                    setPersistedNotes(notes)
+                    setCacheError('')
+                }
+            } catch {
+                if (active.current && notesRef.current === notes) setCacheError('Unable to save notes on this device.')
+            }
+        })
+    }, [notes, hydrated, cacheKey, configured, cacheRetry])
     useEffect(() => {
         if (!hydrated || !configured || !notes.some(note => note.syncState === 'pending' && !note.remoteVersion && !note.deletedOnWebsite && (hasText(note) || !note.id.startsWith('local-')))) return
         const timer = setTimeout(() => { void syncPendingNotes() }, 1200)
@@ -151,13 +178,19 @@ function AccountNotes({ settings }: { settings: AppSettings }) {
             try {
                 const remote = await fetchNotes(settings)
                 if (!active.current) return
+                setRemoteAvailable(true)
                 const pending = notesRef.current.filter(note => note.syncState === 'pending')
                 const pendingIds = new Set(pending.map(note => note.id))
                 replaceNotes([...remote.filter(note => !pendingIds.has(note.id)).map(fromRemote), ...pending.map(note => {
                     const website = remote.find(item => item.id === note.id)
                     return website && website.updated_at !== note.baseUpdatedAt ? { ...note, remoteVersion: website } : !website && !note.id.startsWith('local-') ? { ...note, deletedOnWebsite: true } : note
                 })])
-            } catch (error) { if (active.current) setLoadError(error instanceof Error ? error.message : 'Unable to load website notes.') }
+            } catch (error) {
+                if (active.current) {
+                    setRemoteAvailable(false)
+                    setLoadError(error instanceof Error ? error.message : 'Unable to load website notes.')
+                }
+            }
             if (active.current) {
                 if (!selectedRef.current || !notesRef.current.some(note => note.id === selectedRef.current)) choose(notesRef.current[0]?.id || '')
                 else choose(selectedRef.current)
@@ -184,6 +217,7 @@ function AccountNotes({ settings }: { settings: AppSettings }) {
         try {
             const remote = await fetchNotes(settings)
             if (!active.current) return
+            setRemoteAvailable(true)
             for (const note of notesRef.current.filter(item => item.syncState === 'pending' && !item.remoteVersion && !item.deletedOnWebsite && (hasText(item) || !item.id.startsWith('local-')))) {
                 const website = remote.find(item => item.id === note.id)
                 if (!note.id.startsWith('local-') && (!website || website.updated_at !== note.baseUpdatedAt)) {
@@ -201,7 +235,12 @@ function AccountNotes({ settings }: { settings: AppSettings }) {
                 replaceNotes([next, ...notesRef.current.filter(item => item.id !== note.id && item.id !== saved.id)])
                 if (selectedRef.current === note.id) { selectedRef.current = saved.id; setSelectedId(saved.id) }
             }
-        } catch (error) { if (active.current) setLoadError(error instanceof Error ? error.message : 'Sync failed. Your edits are saved on this device.') }
+        } catch (error) {
+            if (active.current) {
+                setRemoteAvailable(false)
+                setLoadError(error instanceof Error ? error.message : 'Sync failed. Please retry.')
+            }
+        }
         finally { syncingRef.current = false; if (active.current) setSyncing(false) }
     }
 
@@ -246,9 +285,9 @@ function AccountNotes({ settings }: { settings: AppSettings }) {
                 </Pressable>
             )}
         >
-            {(loading || loadError) && <View style={{ paddingHorizontal: 14, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <Text style={{ flex: 1, color: theme.textMuted, fontSize: 12 }}>{loading ? 'Syncing notes with Hanasand…' : loadError}</Text>
-                {!loading && <Pressable accessibilityRole='button' onPress={() => void hydrate()} style={{ paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999, backgroundColor: theme.ambientNeutral }}><Text style={{ color: theme.text, fontWeight: '700', fontSize: 12 }}>Retry</Text></Pressable>}
+            {(loading || loadError || cacheError) && <View style={{ paddingHorizontal: 14, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Text style={{ flex: 1, color: theme.textMuted, fontSize: 12 }}>{loading ? 'Syncing notes with Hanasand…' : cacheError || loadError}</Text>
+                {!loading && <Pressable accessibilityRole='button' onPress={() => { setCacheRetry(current => current + 1); void hydrate() }} style={{ paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999, backgroundColor: theme.ambientNeutral }}><Text style={{ color: theme.text, fontWeight: '700', fontSize: 12 }}>Retry</Text></Pressable>}
             </View>}
             <View style={{ paddingHorizontal: spacing.lg, gap: spacing.sm, paddingBottom: spacing.sm }}>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
@@ -259,7 +298,7 @@ function AccountNotes({ settings }: { settings: AppSettings }) {
                 </View>
                 <TextInput accessibilityLabel='Search notes' value={search} onChangeText={setSearch} placeholder='Search notes' placeholderTextColor={theme.textSoft} style={{ color: theme.text, padding: 10, borderRadius: 12, backgroundColor: theme.ambientNeutral }} />
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>{visibleNotes.map(note => <PillButton key={note.id} label={noteTitle(note)} tone={note.id === selectedId ? 'accent' : 'default'} small onPress={() => openNote(note)} />)}</ScrollView>
-                <Text style={{ color: theme.textMuted, fontSize: 12 }}>{syncing ? 'Syncing…' : selected?.remoteVersion || selected?.deletedOnWebsite ? 'Website changes need review' : notes.some(note => note.syncState === 'pending' && hasText(note)) ? 'Saved on this device · waiting to sync' : 'Synced with Hanasand'}</Text>
+                <Text style={{ color: theme.textMuted, fontSize: 12 }}>{syncStatus}</Text>
                 {!!selected?.deletedOnWebsite && <View style={{ gap: 8 }}><Text style={{ color: theme.textMuted }}>This note was deleted on the website. Your edits remain on this device.</Text><PillButton label='Keep as new note' small onPress={() => { const copy = { ...selected, id: createLocalNote().id, deletedOnWebsite: false, baseUpdatedAt: undefined }; replaceNotes([copy, ...notesRef.current.filter(note => note.id !== selected.id)]); choose(copy.id) }} /></View>}
                 {!!selected?.remoteVersion && <View style={{ gap: 8 }}><Text style={{ color: theme.textMuted }}>This note changed on the website. Keep your edits as a new note or use the website version.</Text><View style={{ flexDirection: 'row', gap: 8 }}><PillButton label='Keep both' small onPress={() => resolveConflict(false)} /><PillButton label='Use website' small onPress={() => resolveConflict(true)} /></View></View>}
             </View>
