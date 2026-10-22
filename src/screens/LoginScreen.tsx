@@ -6,7 +6,7 @@ import * as WebBrowser from 'expo-web-browser'
 import { isSupported as arePasskeysSupported } from 'react-native-passkeys'
 import { ArrowRight, X } from 'lucide-react-native'
 import type { AppSettings, HanasandAuthSession } from '../types'
-import { completePasswordReset, createHanasandAccount, exchangeHanasandMobileSsoCode, isHanasandGoogleSignInConfigured, loginToHanasand, loginWithHanasandPasskey, PendingDeletionError, requestPasswordResetCode, verifyPasswordResetCode } from '../lib/api'
+import { completePasswordReset, createHanasandAccount, createHanasandBrowserSignInUrl, exchangeHanasandMobileSsoCode, isHanasandGoogleSignInConfigured, loginToHanasand, loginWithHanasandPasskey, PendingDeletionError, requestPasswordResetCode, verifyPasswordResetCode } from '../lib/api'
 import { getThemePalette, spacing, type ThemePalette } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
 import { InlineNotice } from '../components/ui'
@@ -120,9 +120,8 @@ export function LoginScreen({
         setStatus('Connecting to SSO')
         try {
             const { verifier, challenge } = await createMobilePkcePair()
-            const startUrl = new URL(`${settings.apiBaseUrl.replace(/\/+$/, '')}/auth/mobile/sso/start`)
-            startUrl.searchParams.set('code_challenge', challenge)
-            const result = await WebBrowser.openAuthSessionAsync(startUrl.toString(), 'hanasand://sso')
+            const startUrl = createHanasandBrowserSignInUrl(settings, 'sso', challenge)
+            const result = await WebBrowser.openAuthSessionAsync(startUrl, 'hanasand://sso')
             if (result.type !== 'success') {
                 setStatus('')
                 return
@@ -149,10 +148,9 @@ export function LoginScreen({
                 throw new Error('Google sign-in is not configured on the server yet.')
             }
             const { verifier, challenge } = await createMobilePkcePair()
-            const startUrl = new URL(`${settings.apiBaseUrl.replace(/\/+$/, '')}/auth/social/google/start`)
-            startUrl.searchParams.set('mobile_challenge', challenge)
+            const startUrl = createHanasandBrowserSignInUrl(settings, 'google', challenge)
             setStatus('Connecting to Google')
-            const result = await WebBrowser.openAuthSessionAsync(startUrl.toString(), 'hanasand://social')
+            const result = await WebBrowser.openAuthSessionAsync(startUrl, 'hanasand://social')
             if (result.type !== 'success') {
                 setStatus('')
                 return

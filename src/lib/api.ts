@@ -117,6 +117,13 @@ function identityUrl(settings: AppSettings, path: string) {
         : joinUrl(settings.apiBaseUrl, path)
 }
 
+export function createHanasandBrowserSignInUrl(settings: AppSettings, provider: 'sso' | 'google', challenge: string) {
+    const path = provider === 'google' ? 'auth/social/google/start' : 'auth/mobile/sso/start'
+    const url = new URL(identityUrl(settings, path))
+    url.searchParams.set(provider === 'google' ? 'mobile_challenge' : 'code_challenge', challenge)
+    return url.toString()
+}
+
 function mailUrl(path: string) {
     return joinUrl(defaultMailApiBaseUrl, path)
 }

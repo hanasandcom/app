@@ -55,7 +55,7 @@ mock.module('expo-crypto', () => ({
     },
 }))
 
-const { apiFetch, fetchNotes, AuthenticationError, exchangeHanasandMobileSsoCode, fetchDesktopAgentStatus, isHanasandGoogleSignInConfigured, loginToHanasand, loginWithHanasandPasskey, refreshHanasandSession, runDesktopAgentCommand } = await import('./api')
+const { apiFetch, createHanasandBrowserSignInUrl, fetchNotes, AuthenticationError, exchangeHanasandMobileSsoCode, fetchDesktopAgentStatus, isHanasandGoogleSignInConfigured, loginToHanasand, loginWithHanasandPasskey, refreshHanasandSession, runDesktopAgentCommand } = await import('./api')
 
 const settings: AppSettings = {
     themeMode: 'obsidian',
@@ -139,6 +139,32 @@ describe('secure API transport', () => {
             apiBaseUrl: 'http://192.168.1.20:8080/api',
         })).rejects.toThrow('Blocked insecure plaintext endpoint')
         expect(requestCount).toBe(0)
+    })
+})
+
+describe('browser sign-in routing', () => {
+    const challenge = 'a'.repeat(43)
+
+    it('starts Google on the callback website so its host-only mobile cookie survives', () => {
+        const production = { ...settings, apiBaseUrl: 'https://api.hanasand.com/api' }
+        const url = new URL(createHanasandBrowserSignInUrl(production, 'google', challenge))
+        expect(url.origin).toBe('https://hanasand.com')
+        expect(url.pathname).toBe('/api/auth/social/google/start')
+        expect(url.searchParams.get('mobile_challenge')).toBe(challenge)
+    })
+
+    it('starts SSO on the website mobile handoff route', () => {
+        const production = { ...settings, apiBaseUrl: 'https://api.hanasand.com/api' }
+        const url = new URL(createHanasandBrowserSignInUrl(production, 'sso', challenge))
+        expect(url.origin).toBe('https://hanasand.com')
+        expect(url.pathname).toBe('/api/auth/mobile/sso/start')
+        expect(url.searchParams.get('code_challenge')).toBe(challenge)
+    })
+
+    it('preserves explicitly configured custom authentication endpoints', () => {
+        const url = new URL(createHanasandBrowserSignInUrl(settings, 'google', challenge))
+        expect(url.origin).toBe('https://example.test')
+        expect(url.pathname).toBe('/api/auth/social/google/start')
     })
 })
 
