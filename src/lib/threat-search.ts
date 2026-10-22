@@ -14,6 +14,18 @@ export function threatAccountKey(settings: AppSettings) { return JSON.stringify(
 export function safeEvidenceUrl(value: unknown) {
     try { const url = new URL(text(value)); return url.protocol === 'https:' && !url.username && !url.password ? url.toString() : null } catch { return null }
 }
+/** A fresh budget belongs to one explicit user search or refresh. */
+export class ThreatRefreshBudget {
+    private query = ''
+    private remaining = 0
+    start(query: string) { this.query = query.trim().toLowerCase(); this.remaining = 5 }
+    cancel() { this.remaining = 0 }
+    take(query: string) {
+        if (query.trim().toLowerCase() !== this.query || this.remaining === 0) return false
+        this.remaining -= 1
+        return true
+    }
+}
 export type ThreatSearchResult = ReturnType<typeof normalizeThreatResult>
 export function normalizeThreatResult(value: unknown, query: string) {
     const body = object(value)

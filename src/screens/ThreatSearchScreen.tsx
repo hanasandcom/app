@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Linking, Text, TextInput, View } from 'react-native'
 import type { AppSettings } from '../types'
-import { changeSavedThreatSearch, loadSavedThreatSearches, searchThreatIntel, threatAccountKey, type SavedThreatSearch, type ThreatSearchResult } from '../lib/threat-search'
+import { changeSavedThreatSearch, loadSavedThreatSearches, searchThreatIntel, threatAccountKey, ThreatRefreshBudget, type SavedThreatSearch, type ThreatSearchResult } from '../lib/threat-search'
 import { GlassCard, InlineNotice, PillButton, Screen } from '../components/ui'
 import { useAppTheme } from '../theme/context'
 
@@ -14,6 +14,7 @@ function AccountThreatSearch({ settings }: { settings: AppSettings }) {
     const [result, setResult] = useState<ThreatSearchResult | null>(null)
     const [error, setError] = useState('')
     const [busy, setBusy] = useState(false)
+    const [autoRefreshPaused, setAutoRefreshPaused] = useState(false)
     const [saved, setSaved] = useState<SavedThreatSearch[]>([])
     const [savedError, setSavedError] = useState('')
     const [savedBusy, setSavedBusy] = useState(false)
@@ -25,7 +26,8 @@ function AccountThreatSearch({ settings }: { settings: AppSettings }) {
     const request = useRef<AbortController | null>(null)
     const mutation = useRef<AbortController | null>(null)
     const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-    useEffect(() => { active.current = true; return () => { active.current = false; attempt.current += 1; request.current?.abort(); mutation.current?.abort() } }, [])
+    const refreshBudget = useRef(new ThreatRefreshBudget())
+    useEffect(() => { active.current = true; return () => { active.current = false; attempt.current += 1; request.current?.abort(); mutation.current?.abort(); refreshBudget.current.cancel(); if (pollTimer.current) clearTimeout(pollTimer.current) } }, [])
     useEffect(() => {
         const controller = new AbortController()
         let current = true
@@ -37,10 +39,11 @@ function AccountThreatSearch({ settings }: { settings: AppSettings }) {
         return () => { current = false; controller.abort(); clearTimeout(timeout) }
     }, [savedRevision])
     function cancel(clear = false) {
-        attempt.current += 1; request.current?.abort(); if (pollTimer.current) clearTimeout(pollTimer.current); setBusy(false)
+        attempt.current += 1; request.current?.abort(); refreshBudget.current.cancel(); setAutoRefreshPaused(true); if (pollTimer.current) clearTimeout(pollTimer.current); setBusy(false)
         if (clear) { setQuery(''); setResult(null); setError('') }
     }
-    async function search(value = query, preferCached = true) {
+    async function search(value = query, preferCached = true, automatic = false) {
+        if (!automatic) { refreshBudget.current.start(value); setAutoRefreshPaused(false) }
         request.current?.abort()
         if (pollTimer.current) clearTimeout(pollTimer.current)
         const controller = new AbortController()
@@ -58,7 +61,8 @@ function AccountThreatSearch({ settings }: { settings: AppSettings }) {
     }
     useEffect(() => {
         if (!result?.refreshAfterSeconds || ['ready', 'unavailable', 'blocked_unsafe_target'].includes(result.status)) return
-        pollTimer.current = setTimeout(() => void search(result.query, false), result.refreshAfterSeconds * 1000)
+        if (!refreshBudget.current.take(result.query)) { setAutoRefreshPaused(true); return }
+        pollTimer.current = setTimeout(() => void search(result.query, false, true), result.refreshAfterSeconds * 1000)
         return () => { if (pollTimer.current) clearTimeout(pollTimer.current) }
     }, [result])
     async function changeSaved(value: string, save: boolean) {
@@ -99,6 +103,7 @@ function AccountThreatSearch({ settings }: { settings: AppSettings }) {
                 {!!result.aliases.length && <Text style={text}>Also known as: {result.aliases.join(', ')}</Text>}
                 {result.candidates.map((candidate, index) => <View key={`${candidate.name}:${index}`} style={{ gap: 6 }}><Text style={heading}>{candidate.name}</Text><Text selectable style={text}>{candidate.description}</Text>{evidence(candidate.url)}</View>)}
                 {result.notes.map((note, index) => <Text selectable key={index} style={text}>{note}</Text>)}
+                {autoRefreshPaused && !['ready', 'unavailable', 'blocked_unsafe_target'].includes(result.status) && <Text style={text}>Automatic refresh is paused. Refresh the result to check again.</Text>}
                 <PillButton small label='Refresh result' disabled={busy} onPress={() => void search(result.query, false)} />
             </GlassCard>
             <View style={row}>{(['activity', 'sources', 'techniques', 'targets'] as const).map(tab => <PillButton key={tab} small label={`${tab[0].toUpperCase()}${tab.slice(1)} · ${result[tab].length}`} tone={view === tab ? 'accent' : 'default'} onPress={() => { setView(tab); setLimit(20) }} />)}</View>
