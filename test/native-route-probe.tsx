@@ -10,6 +10,7 @@ import { loadMail } from '../src/lib/mail-api'
 import { loadGalleryPage, loadGalleryAlbums, loadWorkspaceCronJobs } from '../src/lib/workspace-data'
 import { loadAccountSubscription, loadHostAccess, loadHostUpdates } from '../src/lib/account-system-tools'
 import { loadActorProfiles, loadDeliveryHealth } from '../src/lib/intelligence'
+import { workspaceRequestTimeoutMs } from '../src/lib/workspace-timeout'
 import { loadGalleryAlbumImage } from '../src/lib/gallery-albums'
 import { siteNavigation, workspacePageDefinition, type SiteNavigationItem } from '../src/data/site-navigation'
 import { fetchWorkspaceSection, workspaceRequestUrl, workspaceRows } from '../src/screens/WorkspacePageScreen'
@@ -56,7 +57,7 @@ void (async () => {
                 return response
             }, nativeFetch)
             try {
-                const signal = () => { const controller = new AbortController(); setTimeout(() => controller.abort(), 15000); return controller.signal }
+                const signal = (timeoutMs = 15000) => { const controller = new AbortController(); setTimeout(() => controller.abort(), timeoutMs); return controller.signal }
                 const jobs: Array<[string, () => Promise<unknown>]> = [
                     ['organizations', () => fetchOrganizations(settings).then(rows => ({ count: rows.length }))],
                     ['ai-workspace', () => fetchAiWorkspace(settings).then(rows => ({ count: rows.length }))],
@@ -102,7 +103,7 @@ void (async () => {
                             if (visited.has(url)) continue
                             visited.add(url)
                             jobs.push([`menu:${item.path}:${section.label}`, async () => {
-                                const payload = await fetchWorkspaceSection(settings, section, signal())
+                                const payload = await fetchWorkspaceSection(settings, section, signal(workspaceRequestTimeoutMs(section) === 45_000 ? 46_000 : 15_000))
                                 return { count: workspaceRows(payload, section).length }
                             }])
                         }
