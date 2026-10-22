@@ -9,6 +9,7 @@ import { fetchOrganizations, fetchAccountIdentity, fetchAccountSessions, fetchAc
 import { loadMail } from '../src/lib/mail-api'
 import { loadGalleryPage, loadGalleryAlbums, loadWorkspaceCronJobs } from '../src/lib/workspace-data'
 import { loadAccountSubscription, loadHostAccess, loadHostUpdates } from '../src/lib/account-system-tools'
+import { loadActorProfiles, loadDeliveryHealth } from '../src/lib/intelligence'
 
 registerRootComponent(() => <Text>Checking mobile services…</Text>)
 void (async () => {
@@ -41,6 +42,8 @@ void (async () => {
                 ['hosts', () => loadHostAccess(settings, signal()).then(row => ({ count: row.hosts.length }))],
                 ['updates-inspur', () => loadHostUpdates(settings, 'inspur', signal()).then(() => ({}))],
                 ['updates-ovh', () => loadHostUpdates(settings, 'ovhcloud', signal()).then(() => ({}))],
+                ['actor-profiles', () => loadActorProfiles(settings, { query: '', page: 1 }, signal()).then(row => ({ count: row.items.length, total: row.total }))],
+                ['delivery-health', () => loadDeliveryHealth(settings, { scope: 'global', tenantId: '', status: '', query: '' }, null, signal()).then(row => ({ count: row.items.length, total: row.total }))],
                 ['status', async () => { const response = await fetch('https://status.hanasand.com/api/status?dashboard=true', { signal: signal(), credentials: 'omit' }); const row = await response.json(); if (!response.ok) throw new Error(`HTTP ${response.status}`); return { count: row.checks?.length, monitoring: row.monitoring } }],
             ]
             for (const [name, run] of jobs) {
