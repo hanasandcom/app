@@ -2,6 +2,7 @@ import { Platform } from 'react-native'
 import { create, isSupported } from 'react-native-passkeys'
 import type { AppSettings } from '../types'
 import { apiFetch } from './api'
+import { organizationListBase } from './organization-endpoint'
 
 export type AccountIdentity = { id: string; name: string; username: string; email?: string; active?: boolean }
 export type AccountSession = {
@@ -139,7 +140,7 @@ export const removeAccountSshKey = (settings: AppSettings, id: number) => accoun
 export const fetchAccountSupportTickets = async (settings: AppSettings) => list<SupportTicket>(await accountRequest(settings, 'support/my-tickets', {}, process.env.EXPO_PUBLIC_SUPPORT_API || 'https://support.hanasand.com/api'), 'tickets')
 export const fetchSupportMessages = async (settings: AppSettings, id: string) => list<SupportMessage>(await accountRequest(settings, `support/tickets/${encodeURIComponent(id)}/messages`, {}, process.env.EXPO_PUBLIC_SUPPORT_API || 'https://support.hanasand.com/api'), 'messages')
 export const sendSupportMessage = (settings: AppSettings, id: string, subject: string, message: string) => accountRequest<{ id?: string }>(settings, id ? `support/tickets/${encodeURIComponent(id)}/messages` : 'support/tickets', { method: 'POST', body: JSON.stringify(id ? { message } : { subject, message }) }, process.env.EXPO_PUBLIC_SUPPORT_API || 'https://support.hanasand.com/api')
-export const fetchOrganizations = async (settings: AppSettings) => list<Organization>(await accountRequest(settings, 'organizations'), 'organizations')
+export const fetchOrganizations = async (settings: AppSettings) => list<Organization>(await accountRequest(settings, 'organizations', {}, organizationListBase(settings)), 'organizations')
 export const organizationPath = (id: string, suffix: string) => `organizations/${encodeURIComponent(id)}/${suffix}`
 export const fetchOrganizationMembers = async (settings: AppSettings, id: string) => list<OrganizationMember>(await accountRequest(settings, organizationPath(id, 'members')), 'members')
 export const fetchOrganizationInvites = async (settings: AppSettings, id: string) => list<OrganizationInvite>(await accountRequest(settings, organizationPath(id, 'invites')), 'invites')

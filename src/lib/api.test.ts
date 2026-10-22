@@ -55,7 +55,7 @@ mock.module('expo-crypto', () => ({
     },
 }))
 
-const { apiFetch, createHanasandBrowserSignInUrl, fetchNotes, AuthenticationError, exchangeHanasandMobileSsoCode, fetchDesktopAgentStatus, isHanasandGoogleSignInConfigured, loginToHanasand, loginWithHanasandPasskey, refreshHanasandSession, runDesktopAgentCommand } = await import('./api')
+const { isHanasandOrganizationMember, apiFetch, createHanasandBrowserSignInUrl, fetchNotes, AuthenticationError, exchangeHanasandMobileSsoCode, fetchDesktopAgentStatus, isHanasandGoogleSignInConfigured, loginToHanasand, loginWithHanasandPasskey, refreshHanasandSession, runDesktopAgentCommand } = await import('./api')
 
 const settings: AppSettings = {
     themeMode: 'obsidian',
@@ -370,5 +370,22 @@ describe('notes response integrity', () => {
         }
         mockFetch(async () => new Response('[]', { status: 200 }))
         await expect(fetchNotes(settings)).resolves.toEqual([])
+    })
+})
+
+describe('native organization membership discovery', () => {
+    it('signs the direct Identity URL and recognizes Hanasand membership', async () => {
+        let target = ''
+        let sent: Headers | undefined
+        globalThis.fetch = Object.assign(async (input: RequestInfo | URL, init?: RequestInit) => {
+            target = String(input)
+            sent = new Headers(init?.headers)
+            return Response.json({ organizations: [{ slug: 'hanasand', lifecycleStatus: 'active' }] })
+        }, { preconnect: () => {} }) as typeof fetch
+        expect(await isHanasandOrganizationMember({ ...settings, apiBaseUrl: 'https://api.hanasand.com/api' })).toBe(true)
+        expect(target).toBe('https://identity.hanasand.com/api/organizations')
+        expect(sent?.get('dpop')).toBe('test-dpop')
+        expect(sent?.get('x-device-proof-url')).toBe(target)
+        expect(sent?.get('authorization')).toBe('Bearer test-token')
     })
 })

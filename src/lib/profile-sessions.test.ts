@@ -12,7 +12,7 @@ mock.module('./api', () => ({
         return response()
     },
 }))
-const { describeAccountSession, filterAccountSessions, fetchAccountSessions, revokeAccountSession, revokeOtherAccountSessions, logOutCurrentAccountSession } = await import('./profile-api')
+const { describeAccountSession, filterAccountSessions, fetchOrganizations, fetchAccountSessions, revokeAccountSession, revokeOtherAccountSessions, logOutCurrentAccountSession } = await import('./profile-api')
 const settings = { apiBaseUrl: 'https://api.example.test/api/', authToken: 'synthetic-token', userId: 'synthetic-user', impersonationToken: '' } as AppSettings
 const session = (changes: Partial<AccountSession> = {}): AccountSession => ({
     token_id: 3, id: 'synthetic-user', ip: '203.0.113.10', current: false, user_agent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X) Version/18.0 Safari/605.1',
@@ -63,6 +63,14 @@ describe('native device session review', () => {
 })
 
 describe('existing Identity session contracts', () => {
+    it('reads production organizations from Identity without changing custom account targets', async () => {
+        response = () => Response.json({ organizations: [] })
+        await fetchOrganizations({ ...settings, apiBaseUrl: 'https://api.hanasand.com/api/' })
+        expect(calls[0].url).toBe('https://identity.hanasand.com/api/organizations')
+        await fetchOrganizations(settings)
+        expect(calls[1].url).toBe('https://api.example.test/api/organizations')
+    })
+
     it('loads the actual session envelope through authenticated managed transport', async () => {
         response = () => Response.json({ sessions: [session({ private_ip: '10.0.0.7' })] })
         expect(await fetchAccountSessions(settings)).toEqual([session({ private_ip: '10.0.0.7' })])

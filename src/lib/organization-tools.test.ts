@@ -46,6 +46,13 @@ afterAll(() => {
 })
 
 describe('organization API keys', () => {
+    it('loads memberships directly from Identity while keeping key operations on core', async () => {
+        response = () => Response.json({ organizations: [org] })
+        expect(await api.loadToolOrganizations(settings, signal())).toEqual([org])
+        expect(calls[0].url).toBe('https://identity.hanasand.com/api/organizations')
+        expect(calls[0].settings).toBe(settings)
+    })
+
     it('shows actionable service errors without raw authentication codes', async () => {
         for (const [status, message] of [[401, 'session could not be verified'], [403, 'do not have access'], [429, 'Wait a moment'], [502, 'temporarily unavailable']] as const) {
             response = () => Response.json({ error: 'invalid_session' }, { status })

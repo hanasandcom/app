@@ -1,5 +1,6 @@
 import type { AppSettings } from '../types'
 import { apiFetch } from './api'
+import { organizationListBase } from './organization-endpoint'
 
 const record = (value: unknown): Record<string, unknown> =>
     value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
@@ -63,10 +64,10 @@ async function request(
     settings: AppSettings,
     organizationId: string | undefined,
     path: string,
-    init: RequestInit
+    init: RequestInit,
+    base = settings.apiBaseUrl
 ) {
     requireScope(settings, organizationId, !!init.method && init.method !== 'GET')
-    const base = settings.apiBaseUrl
     const url = new URL(`${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`)
     if (url.protocol !== 'https:' || url.username || url.password)
         throw new Error('Organization services require secure HTTPS URLs.')
@@ -97,7 +98,7 @@ export async function loadToolOrganizations(
     settings: AppSettings,
     signal: AbortSignal
 ): Promise<ToolOrganization[]> {
-    const { response, body } = await request(settings, undefined, 'organizations', { signal })
+    const { response, body } = await request(settings, undefined, 'organizations', { signal }, organizationListBase(settings))
     if (!response.ok) throw new OrganizationToolError(errorText(body, response.status), response.status)
     if (!Array.isArray(body.organizations))
         throw new Error('The organization list was invalid. Refresh and try again.')

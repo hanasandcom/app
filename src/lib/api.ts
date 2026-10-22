@@ -1,5 +1,6 @@
 import * as Crypto from 'expo-crypto'
 import { normalizeAutomation } from './automation-contract'
+import { organizationListBase } from './organization-endpoint'
 import type { AgentAutomation, AgentAutomationPayload, AgentAutomationRun, AiFileSummary, AiRunDetails, AiToolUseSummary, AppSettings, DashboardRole, DashboardUser, DashboardUserRoleAssignment, DesktopAgentPresence, DesktopAgentStatus, GptClient, HanasandAuthSession, MailAddress, MailboxItem, MailMessage, MailMessageSummary, MailOverview, MailSendResult, ManagedCronJob, Note, ShareSummary, ShareTreeItem } from '../types'
 import { AuthenticationError, PendingDeletionError } from './api-errors'
 import { trustedDesktopAgentEndpoints } from './desktop-agent-endpoints'
@@ -1019,7 +1020,7 @@ export async function askCodex(settings: AppSettings, prompt: string, context?: 
 
 export async function isHanasandOrganizationMember(settings: AppSettings) {
     requireAppAuth(settings, 'check organization access')
-    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'organizations'), { headers: headers(settings) })
+    const response = await apiFetch(settings, joinUrl(organizationListBase(settings), 'organizations'), { headers: headers(settings) })
     if (!response.ok) return false
     const payload = asRecord(await response.json().catch(() => ({})))
     const organizations = Array.isArray(payload.organizations) ? payload.organizations : []
