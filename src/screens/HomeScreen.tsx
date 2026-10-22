@@ -61,6 +61,7 @@ export function HomeScreen({
     const portalConversationRef = useRef('')
     const submittingRef = useRef(false)
     const pendingMessageSync = useRef(new Map<string, { conversationId: string; message: WorkspaceMessage }>())
+    const messageSyncQueue = useRef<Promise<void>>(Promise.resolve())
     const workspaceAccountRef = useRef('')
     const preferenceKey = `hanasand-mobile/ai-active/${settings.userId}/${settings.selectedOrganizationId || 'personal'}`
     const activeConversation = conversations.find(item => item.id === activeConversationId)
@@ -189,11 +190,15 @@ export function HomeScreen({
         try { await syncPendingMessages() }
         catch (cause) { if (mountedRef.current) setWorkspaceError(cause instanceof Error ? cause.message : 'Chat history could not be synced.') }
     }
-    async function syncPendingMessages() {
-        await Promise.all([...pendingMessageSync.current.entries()].map(async ([key, entry]) => {
-            await persistAiMessage(settings, entry.conversationId, entry.message)
-            if (pendingMessageSync.current.get(key) === entry) pendingMessageSync.current.delete(key)
-        }))
+    function syncPendingMessages() {
+        const next = messageSyncQueue.current.catch(() => {}).then(async () => {
+            await Promise.all([...pendingMessageSync.current.entries()].map(async ([key, entry]) => {
+                await persistAiMessage(settings, entry.conversationId, entry.message)
+                if (pendingMessageSync.current.get(key) === entry) pendingMessageSync.current.delete(key)
+            }))
+        })
+        messageSyncQueue.current = next
+        return next
     }
     async function refreshWorkspace() {
         try {
@@ -358,6 +363,7 @@ export function HomeScreen({
     async function submitPrompt() {
         const trimmed = prompt.trim()
         if (submittingRef.current || busy || workspaceLoading || readOnly || (selectedAgent === 'chatgpt' && (portalUncertain || (persistedConversationIds.current.has(activeConversationId) && !portalReady)))) return
+        if (selectedAgent === 'hanasand' && activeConversation?.messages.some(message => message.pending)) { setWorkspaceError('A response is pending in this conversation. Refresh before sending another prompt.'); return }
         if (!trimmed) { Alert.alert('Empty prompt', 'Type a prompt first.'); return }
         submittingRef.current = true
         setBusy(true)
