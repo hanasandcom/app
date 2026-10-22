@@ -131,7 +131,7 @@ describe('secure API transport', () => {
 
 describe('desktop command proof', () => {
     it('refuses to contact an endpoint without an authenticated certificate pin', async () => {
-        const requestSettings = { ...settings, desktopAgentBaseUrl: 'http://192.168.1.20:45731' }
+        const requestSettings = { ...settings, authToken: 'no-pin-token', desktopAgentBaseUrl: 'http://192.168.1.20:45731' }
         let fetchCalls = 0
         let pinnedCalls = 0
         mockFetch(async () => {
@@ -151,7 +151,7 @@ describe('desktop command proof', () => {
     })
 
     it('rejects authenticated bridge responses that are not encrypted', async () => {
-        const requestSettings = { ...settings, desktopAgentBaseUrl: 'https://desktop.example.test:45731' }
+        const requestSettings = { ...settings, authToken: 'unencrypted-response-token', desktopAgentBaseUrl: 'https://desktop.example.test:45731' }
         mockFetch(async () => new Response(JSON.stringify({ agents: [{
             deviceId: 'mac', endpoints: ['https://desktop.example.test:45731'], tlsCertificateSha256: 'a'.repeat(64),
         }] }), { status: 200 }))
@@ -161,7 +161,7 @@ describe('desktop command proof', () => {
     })
 
     it('encrypts commands and authenticates the exact encrypted request body with HMAC-SHA256', async () => {
-        const requestSettings = { ...settings, desktopAgentBaseUrl: 'https://desktop.example.test:45731' }
+        const requestSettings = { ...settings, authToken: 'encrypted-command-token', desktopAgentBaseUrl: 'https://desktop.example.test:45731' }
         const command = `mac_control_type_text:${'ø🚲'.repeat(50)}`
         let capturedInit: RequestInit | undefined
         let capturedEndpoint: PinnedEndpoint | undefined
@@ -169,7 +169,7 @@ describe('desktop command proof', () => {
             deviceId: 'mac', endpoints: ['https://desktop.example.test:45731'], tlsCertificateSha256: 'b'.repeat(64),
         }] }), { status: 200 }))
         const certificate = createHash('sha256')
-            .update(`hanasand-desktop-agent-session-v1\n${settings.userId}\n${settings.authToken}`)
+            .update(`hanasand-desktop-agent-session-v1\n${requestSettings.userId}\n${requestSettings.authToken}`)
             .digest('hex')
         const aesKey = createHash('sha256')
             .update(`hanasand-desktop-agent-transport-v1\n${certificate}`)

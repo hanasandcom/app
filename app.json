@@ -8,11 +8,14 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "icon": "./assets/icon.png",
       "bundleIdentifier": "com.hanasand.app",
+      "associatedDomains": ["webcredentials:hanasand.com"],
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": false,
@@ -23,7 +26,13 @@
         "NSPhotoLibraryAddUsageDescription": "Save exported PDFs and attachments when needed."
       }
     },
-    "plugins": ["expo-camera", "expo-media-library", "expo-secure-store", "expo-sharing"],
+    "plugins": [
+      "expo-camera",
+      "expo-media-library",
+      "expo-secure-store",
+      "expo-sharing",
+      "expo-web-browser"
+    ],
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",

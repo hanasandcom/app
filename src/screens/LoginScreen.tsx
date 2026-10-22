@@ -1,9 +1,12 @@
 import { useMemo, useRef, useState } from 'react'
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
+import * as Crypto from 'expo-crypto'
+import * as WebBrowser from 'expo-web-browser'
+import { isSupported as arePasskeysSupported } from 'react-native-passkeys'
 import { ArrowRight, X } from 'lucide-react-native'
 import type { AppSettings, HanasandAuthSession } from '../types'
-import { completePasswordReset, createHanasandAccount, loginToHanasand, PendingDeletionError, requestPasswordResetCode, verifyPasswordResetCode } from '../lib/api'
+import { completePasswordReset, createHanasandAccount, exchangeHanasandMobileSsoCode, loginToHanasand, loginWithHanasandPasskey, PendingDeletionError, requestPasswordResetCode, verifyPasswordResetCode } from '../lib/api'
 import { getThemePalette, spacing, type ThemePalette } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
 import { InlineNotice } from '../components/ui'
@@ -41,6 +44,7 @@ export function LoginScreen({
     const [resetToken, setResetToken] = useState('')
     const [newPassword, setNewPassword] = useState('')
     const [confirmPassword, setConfirmPassword] = useState('')
+    const [passkeySupported] = useState(() => (Platform.OS === 'ios' || Platform.OS === 'android') && arePasskeysSupported())
     const codeInputRef = useRef<TextInput | null>(null)
 
     const cleanUsername = username.trim()
@@ -80,6 +84,52 @@ export function LoginScreen({
                 return
             }
             setStatus(error instanceof Error ? error.message : 'Login failed.')
+        } finally {
+            setBusy(false)
+        }
+    }
+
+    async function submitPasskeyLogin() {
+        if (busy) return
+        setBusy(true)
+        setStatus('Waiting for passkey')
+        try {
+            const session = await loginWithHanasandPasskey(settings, cleanUsername)
+            setStatus('')
+            await onAuthenticated(session)
+        } catch (error) {
+            setStatus(error instanceof Error ? error.message : 'Passkey sign-in failed.')
+        } finally {
+            setBusy(false)
+        }
+    }
+
+    async function submitSsoLogin() {
+        if (busy) return
+        setBusy(true)
+        setStatus('Connecting to SSO')
+        try {
+            const verifier = `${Crypto.randomUUID()}${Crypto.randomUUID()}${Crypto.randomUUID()}`.replaceAll('-', '')
+            const challenge = (await Crypto.digestStringAsync(
+                Crypto.CryptoDigestAlgorithm.SHA256,
+                verifier,
+                { encoding: Crypto.CryptoEncoding.BASE64 },
+            )).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+            const startUrl = new URL(`${settings.apiBaseUrl.replace(/\/+$/, '')}/auth/mobile/sso/start`)
+            startUrl.searchParams.set('code_challenge', challenge)
+            const result = await WebBrowser.openAuthSessionAsync(startUrl.toString(), 'hanasand://sso')
+            if (result.type !== 'success') {
+                setStatus('')
+                return
+            }
+            const callback = new URL(result.url)
+            const code = callback.searchParams.get('code')
+            if (!code) throw new Error(callback.searchParams.get('error') || 'SSO sign-in was not completed.')
+            const session = await exchangeHanasandMobileSsoCode(settings, code, verifier)
+            setStatus('')
+            await onAuthenticated(session)
+        } catch (error) {
+            setStatus(error instanceof Error ? error.message : 'SSO sign-in failed.')
         } finally {
             setBusy(false)
         }
@@ -257,6 +307,18 @@ export function LoginScreen({
                                 </>
                             ) : null}
                         </View>
+                        {authMode === 'login' && resetStep === 'idle' ? (
+                            <View style={styles.identityActions}>
+                                {passkeySupported ? (
+                                    <Pressable accessibilityRole='button' disabled={busy} onPress={() => void submitPasskeyLogin()} style={({ pressed }) => [styles.secondaryButton, styles.identityButton, busy && styles.disabled, pressed && !busy && styles.pressed]}>
+                                        <Text style={styles.secondaryText}>Sign in with passkey</Text>
+                                    </Pressable>
+                                ) : null}
+                                <Pressable accessibilityRole='button' disabled={busy} onPress={() => void submitSsoLogin()} style={({ pressed }) => [styles.secondaryButton, styles.identityButton, busy && styles.disabled, pressed && !busy && styles.pressed]}>
+                                    <Text style={styles.secondaryText}>Continue with SSO</Text>
+                                </Pressable>
+                            </View>
+                        ) : null}
                     </View>
 
                     {resetStep !== 'idle' ? (
@@ -427,6 +489,8 @@ function createStyles(theme: ThemePalette) {
             shadowOffset: { width: 0, height: 16 },
         },
         actionRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 4 },
+        identityActions: { gap: 9, marginTop: 3 },
+        identityButton: { minHeight: 48 },
         primaryButton: {
             minHeight: 54,
             borderRadius: 18,

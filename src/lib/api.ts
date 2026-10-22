@@ -489,6 +489,36 @@ export async function loginToHanasand(settings: AppSettings, username: string, p
     return normalizeAuthSession(await readJsonResponse(response))
 }
 
+export async function loginWithHanasandPasskey(settings: AppSettings, username: string) {
+    const { get } = await import('react-native-passkeys')
+    const optionsUrl = new URL(joinUrl(settings.apiBaseUrl, 'auth/passkeys/authenticate/options'))
+    if (username.trim()) optionsUrl.searchParams.set('username', username.trim())
+    const optionsResponse = await apiFetch(undefined, optionsUrl, { headers: { Accept: 'application/json' } })
+    const optionsPayload = asRecord(await readJsonResponse(optionsResponse))
+    const request = asRecord(optionsPayload.publicKey)
+    if (typeof optionsPayload.challengeId !== 'string' || typeof request.challenge !== 'string' || typeof request.rpId !== 'string') {
+        throw new Error('Passkey sign-in is unavailable. Try again or use your password.')
+    }
+
+    const credential = await get(request as Parameters<typeof get>[0])
+    if (!credential) throw new Error('Passkey sign-in was canceled.')
+    const response = await apiFetch(undefined, joinUrl(settings.apiBaseUrl, 'auth/mobile/passkeys/authenticate/verify'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ challengeId: optionsPayload.challengeId, credential }),
+    })
+    return normalizeAuthSession(await readJsonResponse(response))
+}
+
+export async function exchangeHanasandMobileSsoCode(settings: AppSettings, code: string, verifier: string) {
+    const response = await apiFetch(undefined, joinUrl(settings.apiBaseUrl, 'auth/mobile/sso/exchange'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ code, verifier }),
+    })
+    return normalizeAuthSession(await readJsonResponse(response))
+}
+
 export async function createHanasandAccount(settings: AppSettings, username: string, name: string, password: string) {
     const id = username.trim()
     const displayName = name.trim()
