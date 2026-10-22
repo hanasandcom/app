@@ -1,14 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, BackHandler, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
-import * as Crypto from 'expo-crypto'
 import * as Sharing from 'expo-sharing'
 import type { AppSettings } from '../types'
-import { addMailFolder, loadMail, loadMailPage, saveMailAttachment, searchMail, sendMail, updateMail, type MailAction, type MailAttachment, type MailDraft, type MailMessage, type MailOverview, type MailScope } from '../lib/mail-api'
+import { addMailFolder, canSendMail, createMailComposer, editMailComposer, hasMailDraftContent, pickMailAttachments, loadMail, loadMailPage, saveMailAttachment, searchMail, sendMail, updateMail, type MailAction, type MailAttachment, type MailDraft, type MailMessage, type MailOverview, type MailScope } from '../lib/mail-api'
 import { GlassCard, InlineNotice, PillButton, Screen, SectionTitle } from '../components/ui'
 import { spacing, type ThemePalette } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
 
-const emptyDraft = (mailboxUser: string): MailDraft => ({ mailboxUser, to: '', cc: '', bcc: '', subject: '', textBody: '' })
 const recipients = (items: MailMessage['from']) => items.map(item => item.name ? `${item.name} <${item.email}>` : item.email).join(', ')
 const errorMessage = (cause: unknown) => cause instanceof Error ? cause.message : 'Unable to complete this request.'
 
@@ -29,8 +27,9 @@ export function MailScreen({ settings }: { settings: AppSettings }) {
     const [folderName, setFolderName] = useState('')
     const [showFolders, setShowFolders] = useState(false)
     const [moving, setMoving] = useState(false)
-    const [draft, setDraft] = useState<MailDraft>(emptyDraft(''))
-    const [draftKey, setDraftKey] = useState('')
+    const [composer, setComposer] = useState(() => createMailComposer(''))
+    const { draft, idempotencyKey: draftKey } = composer
+    const [preparingAttachments, setPreparingAttachments] = useState(false)
     const sequence = useRef(0)
     const busyRef = useRef(false)
     const authenticated = Boolean(settings.authToken && settings.userId)
@@ -42,7 +41,7 @@ export function MailScreen({ settings }: { settings: AppSettings }) {
         setMessages([])
         setSelectedMessage(null)
         setView('list')
-        setDraft(emptyDraft(''))
+        setComposer(createMailComposer(''))
         setQuery('')
         setActiveQuery('')
     }, [settings.userId, settings.impersonationToken])
@@ -60,10 +59,10 @@ export function MailScreen({ settings }: { settings: AppSettings }) {
 
     function closeView() {
         if (busy) return
-        if (view === 'compose' && (draft.to || draft.subject || draft.textBody || draft.cc || draft.bcc)) {
+        if (view === 'compose' && hasMailDraftContent(draft)) {
             Alert.alert('Discard draft?', 'Your unsent message will be discarded.', [
                 { text: 'Keep editing', style: 'cancel' },
-                { text: 'Discard', style: 'destructive', onPress: () => { setDraft(emptyDraft('')); setView(selectedMessage ? 'message' : 'list') } },
+                { text: 'Discard', style: 'destructive', onPress: () => { setComposer(createMailComposer('')); setView(selectedMessage ? 'message' : 'list') } },
             ])
             return
         }
@@ -144,7 +143,8 @@ export function MailScreen({ settings }: { settings: AppSettings }) {
 
     function compose(mode: 'new' | 'reply' | 'replyAll' | 'forward') {
         if (!overview || busy) return
-        const next = emptyDraft(overview.mailboxUser)
+        const nextComposer = createMailComposer(overview.mailboxUser)
+        const next = nextComposer.draft
         if (mode !== 'new' && selectedMessage) {
             const message = selectedMessage
             next.subject = `${mode === 'forward' ? 'Fwd' : 'Re'}: ${message.subject.replace(/^(re|fwd):\s*/i, '')}`
@@ -163,23 +163,40 @@ export function MailScreen({ settings }: { settings: AppSettings }) {
                 }
             }
         }
-        setDraft(next)
-        setDraftKey(Crypto.randomUUID())
+        setComposer(nextComposer)
         setView('compose')
     }
 
     async function submit() {
-        if (busyRef.current || !draft.to.trim() || !draft.subject.trim()) return
+        if (busyRef.current || !canSendMail(draft)) return
         busyRef.current = true
         setBusy(true)
         try {
             await sendMail(settings, draft, draftKey)
-            setDraft(emptyDraft(''))
+            setComposer(createMailComposer(''))
             setSelectedMessage(null)
             setView('list')
             Alert.alert('Message sent')
             await refresh()
         } catch (cause) { Alert.alert('Unable to send mail', errorMessage(cause)) } finally { busyRef.current = false; setBusy(false) }
+    }
+
+    async function attachFiles() {
+        if (busyRef.current) return
+        const startedComposer = composer
+        busyRef.current = true
+        setBusy(true)
+        setPreparingAttachments(true)
+        try {
+            const attachments = await pickMailAttachments(startedComposer.draft)
+            if (attachments) setComposer(current => current === startedComposer ? editMailComposer(current, { attachments }) : current)
+        } catch (cause) {
+            Alert.alert('Unable to attach files', errorMessage(cause))
+        } finally {
+            busyRef.current = false
+            setPreparingAttachments(false)
+            setBusy(false)
+        }
     }
 
     async function attachment(item: MailAttachment) {
@@ -212,7 +229,7 @@ export function MailScreen({ settings }: { settings: AppSettings }) {
         setShowFolders(false)
     }
     const selectedFolder = overview?.mailboxes.find(item => item.id === overview.selectedMailboxId)
-    const field = (name: keyof Omit<MailDraft, 'mailboxUser'>, placeholder: string, multiline = false) => <TextInput accessibilityLabel={placeholder} value={draft[name]} onChangeText={value => { setDraft(previous => ({ ...previous, [name]: value })); setDraftKey(Crypto.randomUUID()) }} editable={!busy} placeholder={placeholder} placeholderTextColor={theme.textSoft} autoCapitalize={['to', 'cc', 'bcc'].includes(name) ? 'none' : 'sentences'} autoCorrect={!['to', 'cc', 'bcc'].includes(name)} multiline={multiline} style={[styles.input, multiline && { minHeight: 240, paddingTop: 14, textAlignVertical: 'top' }]} />
+    const field = (name: keyof Omit<MailDraft, 'mailboxUser' | 'attachments'>, placeholder: string, multiline = false) => <TextInput accessibilityLabel={placeholder} value={draft[name]} onChangeText={value => { setComposer(current => editMailComposer(current, { [name]: value })) }} editable={!busy} placeholder={placeholder} placeholderTextColor={theme.textSoft} autoCapitalize={['to', 'cc', 'bcc'].includes(name) ? 'none' : 'sentences'} autoCorrect={!['to', 'cc', 'bcc'].includes(name)} multiline={multiline} style={[styles.input, multiline && { minHeight: 240, paddingTop: 14, textAlignVertical: 'top' }]} />
 
     return (
         <Screen key={view} title={view === 'compose' ? 'New message' : 'Mail'} subtitle={overview?.mailboxAddress} left={view !== 'list' ? <PillButton label='Back' small onPress={closeView} disabled={busy} /> : undefined} right={view === 'list' ? <PillButton label='Compose' small tone='accent' onPress={() => compose('new')} disabled={!overview || loading || busy || !overview.canSend} /> : undefined}>
@@ -222,7 +239,13 @@ export function MailScreen({ settings }: { settings: AppSettings }) {
             {view === 'compose' && <GlassCard>
                 <Text style={styles.muted}>From: {overview?.mailboxAddress}</Text>
                 <View style={styles.stack}>{field('to', 'To')}{field('cc', 'Cc')}{field('bcc', 'Bcc')}{field('subject', 'Subject')}{field('textBody', 'Message', true)}
-                    <PillButton label={busy ? 'Sending…' : 'Send'} tone='accent' disabled={busy || !draft.to.trim() || !draft.subject.trim()} onPress={() => void submit()} />
+                    <PillButton label={preparingAttachments ? 'Reading files…' : 'Attach files'} disabled={busy} onPress={() => void attachFiles()} />
+                    {draft.attachments.map((item, index) => <View key={`${index}:${item.name}`} style={styles.message}>
+                        <Text style={{ color: theme.text }}>{item.name}</Text>
+                        <Text style={styles.caption}>{Math.ceil(item.size / 1024).toLocaleString()} KB</Text>
+                        <PillButton label={`Remove ${item.name}`} small disabled={busy} onPress={() => setComposer(current => editMailComposer(current, { attachments: current.draft.attachments.filter((_, position) => position !== index) }))} />
+                    </View>)}
+                    <PillButton label={preparingAttachments ? 'Reading files…' : busy ? 'Sending…' : 'Send'} tone='accent' disabled={busy || !canSendMail(draft)} onPress={() => void submit()} />
                 </View>
             </GlassCard>}
             {view === 'list' && <>
