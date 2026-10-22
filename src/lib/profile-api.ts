@@ -5,9 +5,43 @@ import { apiFetch } from './api'
 
 export type AccountIdentity = { id: string; name: string; username: string; email?: string; active?: boolean }
 export type AccountSession = {
-    token_id: number; id: string; ip: string | null; current: boolean; user_agent: string
+    token_id: number; id: string; ip: string | null; private_ip?: string; current: boolean; user_agent: string
     created_at: string; last_seen_at: string; revoked_at: string | null
     network?: { provider?: string | null; country?: string | null; region?: string | null; city?: string | null } | null
+}
+
+/** Device hints are descriptive; only the server's current flag identifies this session. */
+export function describeAccountSession(session: AccountSession) {
+    const agent = session.user_agent || ''
+    let device = 'Device details unavailable'
+    if (/hanasand[-_\s]?desktop|desktop[-_\s]?app|tauri|electron/i.test(agent)) device = 'Hanasand desktop app'
+    else if (/hanasand[-_\s]?mobile|mobile[-_\s]?app|reactnative|expo|okhttp/i.test(agent)) device = 'Mobile app'
+    else if (agent && !(!session.ip && /^Bun\//i.test(agent))) {
+        if (/curl|node|bun\/|monitor|playwright|python/i.test(agent)) device = 'Automation or API client'
+        else {
+            const os = /iphone/i.test(agent) ? 'iPhone' : /ipad/i.test(agent) ? 'iPad' : /android/i.test(agent) ? 'Android' : /windows/i.test(agent) ? 'Windows' : /macintosh|mac os x/i.test(agent) ? 'macOS' : /linux/i.test(agent) ? 'Linux' : ''
+            const browser = /Edg[AiOS]*\//i.test(agent) ? 'Edge' : /OPR\//i.test(agent) ? 'Opera' : /Firefox\/|FxiOS\//i.test(agent) ? 'Firefox' : /Chrome\/|CriOS\//i.test(agent) ? 'Chrome' : /Safari\//i.test(agent) ? 'Safari' : ''
+            device = browser && os ? `${browser} on ${os}` : browser || os || 'Unknown client'
+        }
+    }
+    const privateAddress = !session.ip && session.private_ip
+    const location = [...new Set([session.network?.city, session.network?.region, session.network?.country].filter(Boolean))].join(', ')
+    return {
+        device,
+        address: session.ip ? `Public IP ${session.ip}` : privateAddress ? `Private IP ${privateAddress}` : 'Public IP was not captured for this login',
+        network: privateAddress ? 'Private network' : session.network?.provider || 'Unavailable',
+        location: privateAddress ? 'Unavailable for private addresses' : location || 'Unavailable',
+    }
+}
+
+export function filterAccountSessions(sessions: AccountSession[], query: string) {
+    const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
+    if (!terms.length) return sessions
+    return sessions.filter(session => {
+        const details = describeAccountSession(session)
+        const searchable = [details.device, details.address, details.network, details.location, session.user_agent, session.current ? 'this device current session' : '', session.revoked_at ? 'revoked' : 'active'].join(' ').toLocaleLowerCase()
+        return terms.every(term => searchable.includes(term))
+    })
 }
 export type AccountPasskey = { credentialId: string; label: string; algorithm: string; createdAt: string; lastUsedAt: string | null }
 export type AccountSshKey = {
@@ -66,7 +100,10 @@ function list<T>(payload: Record<string, unknown>, key: string): T[] {
 export const fetchAccountIdentity = (settings: AppSettings) => accountRequest<AccountIdentity>(settings, `user/${encodeURIComponent(settings.userId)}`)
 export const updateAccountIdentity = (settings: AppSettings, name: string, username: string) => accountRequest<AccountIdentity>(settings, 'user/self', { method: 'PUT', body: JSON.stringify({ name: name.trim(), username: username.trim() }) })
 export const fetchAccountSessions = async (settings: AppSettings) => list<AccountSession>(await accountRequest(settings, 'auth/sessions'), 'sessions')
-export const revokeAccountSession = (settings: AppSettings, tokenId: number) => accountRequest(settings, `auth/sessions/${tokenId}`, { method: 'DELETE' })
+export async function revokeAccountSession(settings: AppSettings, tokenId: number) {
+    const result = await accountRequest<{ revoked: boolean }>(settings, `auth/sessions/${tokenId}`, { method: 'DELETE' })
+    if (result.revoked !== true) throw new Error('This session could not be revoked. Refresh sessions and try again.')
+}
 export const revokeOtherAccountSessions = (settings: AppSettings) => accountRequest(settings, 'auth/sessions/revoke', { method: 'POST', body: JSON.stringify({ keep_current: true }) })
 export const fetchAccountPasskeys = async (settings: AppSettings) => list<AccountPasskey>(await accountRequest(settings, 'auth/passkeys'), 'passkeys')
 export const removeAccountPasskey = (settings: AppSettings, id: string) => accountRequest(settings, `auth/passkeys/${encodeURIComponent(id)}`, { method: 'DELETE' })

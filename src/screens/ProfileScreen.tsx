@@ -7,6 +7,7 @@ import {
     addAccountSshKey, fetchAccountIdentity, fetchAccountPasskeys, fetchAccountSessions, fetchAccountSshKeys,
     fetchAccountSupportTickets, fetchSupportMessages, sendSupportMessage, nativePasskeysSupported, registerAccountPasskey, removeAccountPasskey,
     removeAccountSshKey, renameAccountPasskey, revokeAccountSession, revokeOtherAccountSessions, updateAccountIdentity,
+    describeAccountSession, filterAccountSessions,
     type AccountIdentity, type AccountPasskey, type AccountSession, type AccountSshKey, type SupportTicket, type SupportMessage,
 } from '../lib/profile-api'
 import { GlassCard, InlineNotice, LabeledInput, PillButton, Screen, SectionTitle } from '../components/ui'
@@ -35,6 +36,9 @@ export function ProfileScreen({ settings, onLogout, onDeleted, initialSection }:
     const [statsError, setStatsError] = useState('')
     const [passkeys, setPasskeys] = useState<AccountPasskey[]>([])
     const [sessions, setSessions] = useState<AccountSession[]>([])
+    const [sessionQuery, setSessionQuery] = useState('')
+    const [sessionDetailsId, setSessionDetailsId] = useState<number | null>(null)
+    const visibleSessions = useMemo(() => filterAccountSessions(sessions, sessionQuery), [sessions, sessionQuery])
     const [keys, setKeys] = useState<AccountSshKey[]>([])
     const [tickets, setTickets] = useState<SupportTicket[]>([])
     const [ticketId, setTicketId] = useState('')
@@ -67,6 +71,7 @@ export function ProfileScreen({ settings, onLogout, onDeleted, initialSection }:
                 const value = await fetchAccountPasskeys(settings)
                 if (active) setPasskeys(value)
             } else if (section === 'Sessions') {
+                if (active) setSessions([])
                 const value = await fetchAccountSessions(settings)
                 if (active) setSessions(value)
             } else if (section === 'SSH keys') {
@@ -166,16 +171,33 @@ export function ProfileScreen({ settings, onLogout, onDeleted, initialSection }:
                 </GlassCard>
             </>}
             {section === 'Sessions' && <GlassCard style={styles.card}>
-                <SectionTitle eyebrow='Security' title='Sessions' body='Review devices signed in to your account.' />
+                <SectionTitle eyebrow='Security' title='Sessions' body={loading ? 'Loading signed-in devices…' : error ? 'Session count unavailable' : `${sessions.filter(item => !item.revoked_at).length} active sessions · Review devices signed in to your account.`} />
                 <PillButton label='Revoke other sessions' tone='danger' disabled={busy || loading || !sessions.some(item => !item.current && !item.revoked_at)} onPress={() => confirm('Revoke other sessions?', 'Other devices will need to sign in again.', 'Revoke', () => revokeOtherAccountSessions(settings), 'Other sessions revoked.')} />
+                <LabeledInput label='Find a session' value={sessionQuery} onChangeText={setSessionQuery} placeholder='Device, IP address or location' autoCapitalize='none' autoCorrect={false} />
+                {!!sessionQuery && <PillButton small label='Clear search' onPress={() => setSessionQuery('')} />}
                 {!loading && !error && !sessions.length && <Text style={styles.meta}>No sessions found.</Text>}
-                {sessions.map(session => <View key={session.token_id} style={styles.item}>
-                    <Text style={styles.title}>{session.current ? 'This device' : session.user_agent || 'Device'}{session.revoked_at ? ' · Revoked' : ''}</Text>
-                    <Text selectable style={styles.meta}>{[session.ip, session.network?.city, session.network?.country, session.network?.provider].filter(Boolean).join(' · ') || 'Network not recorded'}</Text>
-                    <Text style={styles.meta}>Signed in {date(session.created_at)} · Last seen {date(session.last_seen_at)}</Text>
-                    {session.current && <Text style={styles.meta}>{Platform.OS} · {session.user_agent}</Text>}
-                    {!session.current && !session.revoked_at && <PillButton small label='Revoke session' tone='danger' disabled={busy} onPress={() => confirm('Revoke session?', 'This device will need to sign in again.', 'Revoke', () => revokeAccountSession(settings, session.token_id), 'Session revoked.')} />}
-                </View>)}
+                {!loading && !error && !!sessions.length && !visibleSessions.length && <Text style={styles.meta}>No sessions match your search.</Text>}
+                {visibleSessions.map(session => {
+                    const details = describeAccountSession(session)
+                    const expanded = sessionDetailsId === session.token_id
+                    return <View key={session.token_id} style={styles.item}>
+                        <Text style={styles.title}>{details.device}</Text>
+                        <Text style={styles.meta}>{session.current ? 'This device' : session.revoked_at ? 'Revoked' : 'Active'} · Last active {date(session.last_seen_at)}</Text>
+                        <Text style={styles.meta}>{details.location}</Text>
+                        <PillButton small label={expanded ? 'Hide device details' : 'View device details'} onPress={() => setSessionDetailsId(expanded ? null : session.token_id)} />
+                        {expanded && <>
+                            <Text selectable style={styles.meta}>{details.address}</Text>
+                            <Text selectable style={styles.meta}>ISP / network: {details.network}</Text>
+                            <Text selectable style={styles.meta}>Approximate location: {details.location}</Text>
+                            <Text style={styles.meta}>Signed in {date(session.created_at)}</Text>
+                            <Text selectable style={styles.fingerprint}>User agent: {session.user_agent || 'Not recorded'}</Text>
+                            {!session.revoked_at && (session.current
+                                ? <PillButton small label='Log out this device' tone='danger' disabled={busy} onPress={() => confirm('Log out this device?', 'End your current session and return to sign in.', 'Log out', onLogout, '')} />
+                                : <PillButton small label='Revoke session' tone='danger' disabled={busy} onPress={() => confirm(`Revoke ${details.device}?`, `${details.address}. This device will need to sign in again.`, 'Revoke', () => revokeAccountSession(settings, session.token_id), 'Session revoked.')} />)}
+                        </>}
+                    </View>
+                })}
+                <Text style={styles.meta}>Locations are approximate and may reflect a VPN or your provider’s network. IP geolocation by DB-IP.</Text>
             </GlassCard>}
             {section === 'SSH keys' && <GlassCard style={styles.card}>
                 <SectionTitle eyebrow='Security' title='SSH keys' body={`${keys.length} keys`} />
