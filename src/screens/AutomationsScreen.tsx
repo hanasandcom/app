@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { CalendarClock, Play, RefreshCw } from 'lucide-react-native'
-import { createAutomation, deleteAutomation, fetchAutomationDetails, fetchAutomations, runAutomationNow, updateAutomation } from '../lib/api'
+import { createAutomation, deleteAutomation, fetchAutomationDetails, fetchAutomationOverview, runAutomationNow, updateAutomation } from '../lib/api'
+import { automationEditError, automationInitialTab, automationSavePayload, defaultJsonRule, monitoringTypes, newAutomationDraft, toAutomationDraft, validateAutomationDraft } from '../lib/automation-contract'
 import type { AgentAutomation, AgentAutomationPayload, AgentAutomationRun, AppSettings } from '../types'
 import { changeWorkspaceCronJob, loadWorkspaceCronJobs, workspaceAccountKey, type WorkspaceCronJob } from '../lib/workspace-data'
 import { GlassCard, InlineNotice, PillButton, Screen } from '../components/ui'
@@ -11,11 +12,11 @@ import { useAppTheme } from '../theme/context'
 const defaultRunAt = () => new Date(Date.now() + 5 * 60_000).toISOString()
 const defaultTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 
-export function AutomationsScreen({ settings }: { settings: AppSettings }) {
-    return <AccountAutomations key={workspaceAccountKey(settings)} settings={settings} />
+export function AutomationsScreen({ settings, section = 'cron' }: { settings: AppSettings; section?: 'health' | 'cron' }) {
+    return <AccountAutomations key={`${workspaceAccountKey(settings)}:${section}`} settings={settings} section={section} />
 }
 
-function AccountAutomations({ settings }: { settings: AppSettings }) {
+function AccountAutomations({ settings, section }: { settings: AppSettings; section: 'health' | 'cron' }) {
     const theme = useAppTheme()
     const styles = useMemo(() => createStyles(theme), [theme])
     const [automations, setAutomations] = useState<AgentAutomation[]>([])
@@ -27,31 +28,21 @@ function AccountAutomations({ settings }: { settings: AppSettings }) {
     const [cronBusy, setCronBusy] = useState('')
     const [cronDrafts, setCronDrafts] = useState<Record<string, string>>({})
     const [showEditor, setShowEditor] = useState(false)
-    const [tab, setTab] = useState<'cron' | 'personal'>('cron')
+    const [tab, setTab] = useState<'cron' | 'personal'>(() => automationInitialTab(section))
+    const [canManageSystem, setCanManageSystem] = useState(false)
     const active = useRef(true)
     const detailsSequence = useRef(0)
     const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
     const [selectedId, setSelectedId] = useState('')
     const [busy, setBusy] = useState('')
-    const [draft, setDraft] = useState<AgentAutomationPayload>({
-        name: 'Check in later',
-        prompt: '',
-        scheduleKind: 'interval',
-        intervalMinutes: 30,
-        runAt: defaultRunAt(),
-        status: 'active',
-        actionType: 'agent_prompt',
-        timezone: defaultTimezone(),
-        modelName: null,
-        notifyOn: 'failure',
-    })
+    const [draft, setDraft] = useState<AgentAutomationPayload>(() => newAutomationDraft(section, defaultTimezone()))
 
     const selected = automations.find(item => item.id === selectedId) || null
 
     useEffect(() => {
         active.current = true
         void load()
-        void loadCronJobs()
+        if (section === 'cron') void loadCronJobs()
         return () => { active.current = false; if (retryTimer.current) clearTimeout(retryTimer.current) }
     }, [])
 
@@ -75,23 +66,28 @@ function AccountAutomations({ settings }: { settings: AppSettings }) {
         setBusy('load')
         setAutomationError('')
         try {
-            const next = await fetchAutomations(settings)
+            const overview = await fetchAutomationOverview(settings, section === 'cron' ? 'personal' : undefined)
+            const next = overview.automations
             if (!active.current) return
+            setCanManageSystem(overview.canManageSystem)
             setAutomations(next)
-            const nextSelected = selectId || next[0]?.id || ''
+            const nextSelected = next.find(item => item.id === selectId)?.id || next[0]?.id || ''
             setSelectedId(nextSelected)
             if (nextSelected) {
                 const details = await fetchAutomationDetails(settings, nextSelected)
                 if (!active.current) return
                 setRuns(details.runs)
-                if (details.automation) setDraft(toDraft(details.automation))
+                if (details.automation) {
+                    setDraft(toAutomationDraft(details.automation))
+                    setAutomations(rows => rows.map(row => row.id === details.automation!.id ? details.automation! : row))
+                }
             } else {
                 setRuns([])
             }
         } catch (error) {
-            if (active.current) setAutomationError(error instanceof Error ? error.message : 'Unable to load personal jobs.')
+            if (active.current) setAutomationError(error instanceof Error ? error.message : section === 'health' ? 'Unable to load health checks.' : 'Unable to load personal jobs.')
         } finally {
-            setBusy('')
+            if (active.current) setBusy('')
         }
     }
 
@@ -101,35 +97,42 @@ function AccountAutomations({ settings }: { settings: AppSettings }) {
         setRunsError('')
         setShowEditor(true)
         setSelectedId(automation.id)
-        setDraft(toDraft(automation))
+        setDraft(toAutomationDraft(automation))
         setBusy(`select-${automation.id}`)
         try {
             const details = await fetchAutomationDetails(settings, automation.id)
-            if (active.current && request === detailsSequence.current) setRuns(details.runs)
+            if (active.current && request === detailsSequence.current) {
+                setRuns(details.runs)
+                if (details.automation) {
+                    setDraft(toAutomationDraft(details.automation))
+                    setAutomations(rows => rows.map(row => row.id === details.automation!.id ? details.automation! : row))
+                }
+            }
         } catch (error) {
             if (active.current && request === detailsSequence.current) setRunsError(error instanceof Error ? error.message : 'Unable to load runs.')
         } finally {
-            setBusy('')
+            if (active.current) setBusy('')
         }
     }
 
     async function save() {
         if (busy) return
-        if (!draft.name.trim() || !draft.prompt.trim()) { Alert.alert('Name and prompt required', 'Add a name and prompt for this job.'); return }
-        if (draft.scheduleKind === 'interval' && (!draft.intervalMinutes || draft.intervalMinutes < 1)) { Alert.alert('Invalid interval', 'Enter an interval of at least one minute.'); return }
-        if (draft.scheduleKind === 'once' && (!draft.runAt || !Number.isFinite(Date.parse(draft.runAt)))) { Alert.alert('Invalid time', 'Enter a valid run time.'); return }
+        const validation = validateAutomationDraft(draft, selected, canManageSystem)
+        if (validation) { Alert.alert('Check settings', validation); return }
+        const payload = automationSavePayload(draft)
         setBusy('save')
         try {
             const automation = selected
-                ? await updateAutomation(settings, selected.id, draft)
-                : await createAutomation(settings, draft)
+                ? await updateAutomation(settings, selected.id, payload)
+                : await createAutomation(settings, payload)
+            if (!active.current) return
             setSelectedId(automation?.id || '')
-            if (automation) setDraft(toDraft(automation))
+            if (automation) setDraft(toAutomationDraft(automation))
             await load(automation?.id || '')
         } catch (error) {
             Alert.alert('Unable to save automation', error instanceof Error ? error.message : 'Request failed.')
         } finally {
-            setBusy('')
+            if (active.current) setBusy('')
         }
     }
 
@@ -138,12 +141,13 @@ function AccountAutomations({ settings }: { settings: AppSettings }) {
         setBusy('delete')
         try {
             await deleteAutomation(settings, selected.id)
+            if (!active.current) return
             newAutomation()
             await load('')
         } catch (error) {
             Alert.alert('Unable to remove automation', error instanceof Error ? error.message : 'Request failed.')
         } finally {
-            setBusy('')
+            if (active.current) setBusy('')
         }
     }
 
@@ -152,11 +156,12 @@ function AccountAutomations({ settings }: { settings: AppSettings }) {
         setBusy('run')
         try {
             await runAutomationNow(settings, selected.id)
+            if (!active.current) return
             await load(selected.id)
         } catch (error) {
             Alert.alert('Unable to queue run', error instanceof Error ? error.message : 'Request failed.')
         } finally {
-            setBusy('')
+            if (active.current) setBusy('')
         }
     }
 
@@ -174,26 +179,15 @@ function AccountAutomations({ settings }: { settings: AppSettings }) {
         setShowEditor(true)
         setSelectedId('')
         setRuns([])
-        setDraft({
-            name: 'Check in later',
-            prompt: '',
-            scheduleKind: 'interval',
-            intervalMinutes: 30,
-            runAt: defaultRunAt(),
-            status: 'active',
-            actionType: 'agent_prompt',
-            timezone: defaultTimezone(),
-            modelName: null,
-            notifyOn: 'failure',
-        })
+        setDraft(newAutomationDraft(section, defaultTimezone()))
     }
 
     return (
-        <Screen title='Automations' subtitle='Scheduled jobs'>
-            <View style={styles.actions}>
+        <Screen title={section === 'health' ? 'Health Checks' : 'Cron Jobs'} subtitle={section === 'health' ? 'Service checks and alerts' : 'Scheduled jobs'}>
+            {section === 'cron' && <View style={styles.actions}>
                 <PillButton label='Cron Jobs' tone={tab === 'cron' ? 'accent' : 'default'} onPress={() => setTab('cron')} small />
                 <PillButton label='Personal jobs' tone={tab === 'personal' ? 'accent' : 'default'} onPress={() => setTab('personal')} small />
-            </View>
+            </View>}
             {tab === 'cron' ? <>
                 <GlassCard style={styles.editor}>
                     <Text style={styles.sectionTitle}>Cron Jobs · {cronJobs.length}</Text>
@@ -220,8 +214,8 @@ function AccountAutomations({ settings }: { settings: AppSettings }) {
                 </GlassCard>)}
             </> : <>
                 <View style={styles.actions}>
-                    <PillButton label='New personal job' onPress={newAutomation} small disabled={!!busy} />
-                    <PillButton label={busy === 'load' ? 'Loading…' : 'Refresh personal jobs'} disabled={!!busy} onPress={() => void load()} small />
+                    <PillButton label={section === 'health' ? 'New health check' : 'New personal job'} onPress={newAutomation} small disabled={!!busy} />
+                    <PillButton label={busy === 'load' ? 'Loading…' : section === 'health' ? 'Refresh health checks' : 'Refresh personal jobs'} disabled={!!busy} onPress={() => void load()} small />
                 </View>
                 <InlineNotice message={automationError} />
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.automationRail}>
@@ -229,13 +223,16 @@ function AccountAutomations({ settings }: { settings: AppSettings }) {
                         <GlassCard key={automation.id} style={[styles.automationCard, automation.id === selectedId && styles.selectedCard]}>
                             <Text style={styles.cardTitle} numberOfLines={1}>{automation.name}</Text>
                             <Text style={styles.cardBody} numberOfLines={2}>{automation.prompt}</Text>
+                            <Text style={styles.cardMeta}>{automation.actionType} · {automation.monitoringType}</Text>
+                            <Text style={styles.cardMeta}>{automation.status} · {automation.lastStatus || 'Not run yet'}</Text>
+                            {!!automation.targetUrl && <Text style={styles.cardBody} numberOfLines={2}>{automation.targetUrl}</Text>}
                             <Text style={styles.cardMeta}>{formatSchedule(automation)}</Text>
                             <PillButton label='Edit' disabled={!!busy} onPress={() => void selectAutomation(automation)} small />
                         </GlassCard>
                     ))}
                     {!automations.length && (
                         <GlassCard style={styles.emptyCard}>
-                            <Text style={styles.cardTitle}>No jobs yet</Text>
+                            <Text style={styles.cardTitle}>{section === 'health' ? 'No health checks yet' : 'No jobs yet'}</Text>
                             <Text style={styles.cardBody}>Create one and the server will run it even if this app is closed.</Text>
                         </GlassCard>
                     )}
@@ -247,24 +244,28 @@ function AccountAutomations({ settings }: { settings: AppSettings }) {
                         <Text style={styles.sectionTitle}>{selected ? 'Edit automation' : 'New automation'}</Text>
                     </View>
                     <Field disabled={!!busy} label='Name' value={draft.name} onChangeText={name => setDraft({ ...draft, name })} />
-                    <Field disabled={!!busy} label='Prompt' value={draft.prompt} onChangeText={prompt => setDraft({ ...draft, prompt })} multiline />
+                    <Field disabled={!!busy} label='Description' value={draft.prompt} onChangeText={prompt => setDraft({ ...draft, prompt })} multiline />
                     <View style={styles.row}>
-                        <PillButton label={draft.scheduleKind === 'interval' ? 'Recurring' : 'Once'} onPress={() => setDraft({ ...draft, scheduleKind: draft.scheduleKind === 'interval' ? 'once' : 'interval' })} small />
-                        <PillButton label={draft.actionType === 'agent_prompt' ? 'Agent' : 'Echo test'} onPress={() => setDraft({ ...draft, actionType: draft.actionType === 'agent_prompt' ? 'echo' : 'agent_prompt' })} small />
-                        <PillButton label={draft.status === 'active' ? 'Active' : 'Paused'} onPress={() => setDraft({ ...draft, status: draft.status === 'active' ? 'paused' : 'active' })} small />
-                        <PillButton label={`Notify ${draft.notifyOn || 'failure'}`} onPress={() => setDraft({ ...draft, notifyOn: draft.notifyOn === 'failure' ? 'always' : draft.notifyOn === 'always' ? 'never' : 'failure' })} small />
+                        <PillButton disabled={!!busy || draft.monitoringType === 'push'} label={draft.scheduleKind === 'interval' ? 'Recurring' : 'Once'} onPress={() => setDraft({ ...draft, scheduleKind: draft.scheduleKind === 'interval' ? 'once' : 'interval' })} small />
+                        {(['agent_prompt', 'system_alert', 'echo', ...(canManageSystem ? ['mail_health_check'] : [])] as AgentAutomationPayload['actionType'][]).map(action => <PillButton key={action} label={action === 'agent_prompt' ? 'Monitoring' : action === 'system_alert' ? 'Scheduled message' : action === 'mail_health_check' ? 'Mail health' : 'History reminder'} tone={draft.actionType === action ? 'accent' : 'default'} disabled={!!busy || selected?.monitoringType === 'push' || selected?.actionType === 'organization_report'} onPress={() => setDraft({ ...draft, actionType: action, ...(action !== 'agent_prompt' && draft.monitoringType === 'push' ? { monitoringType: 'fetch' } : {}) })} small />)}
+                        <PillButton disabled={!!busy} label={draft.status === 'active' ? 'Active' : 'Paused'} onPress={() => setDraft({ ...draft, status: draft.status === 'active' ? 'paused' : 'active' })} small />
+                        <PillButton disabled={!!busy} label={`Notify ${draft.notifyOn || 'failure'}`} onPress={() => setDraft({ ...draft, notifyOn: draft.notifyOn === 'failure' ? 'always' : draft.notifyOn === 'always' ? 'never' : 'failure' })} small />
                     </View>
+                    <InlineNotice message={automationEditError(draft)} />
+                    {draft.actionType === 'organization_report' && <Text style={styles.cardMeta}>Organization report · {draft.organizationId}</Text>}
+                    {draft.actionType === 'agent_prompt' && <MonitoringFields draft={draft} selected={selected} disabled={!!busy} onChange={setDraft} />}
                     <Field disabled={!!busy} label='Timezone' value={draft.timezone || 'UTC'} onChangeText={timezone => setDraft({ ...draft, timezone })} />
-                    <Field disabled={!!busy} label='Model preference' value={draft.modelName || ''} onChangeText={modelName => setDraft({ ...draft, modelName: modelName.trim() || null })} />
+                    <Field disabled={!!busy} label={canManageSystem ? 'Notification destinations · one per line' : 'Discord webhook URLs · one per line'} value={(draft.notificationDestinations || []).join('\n')} onChangeText={value => { const destinations = value.split('\n').map(item => item.trim()).filter(Boolean); setDraft({ ...draft, notificationDestinations: destinations, modelName: destinations[0] || null }) }} multiline />
+                    {draft.notifyOn !== 'never' && !draft.modelName && <Text style={styles.cardMeta}>No delivery destination configured.</Text>}
                     {draft.scheduleKind === 'interval' ? (
-                        <Field disabled={!!busy} label='Every minutes' keyboardType='number-pad' value={`${draft.intervalMinutes || 30}`} onChangeText={value => setDraft({ ...draft, intervalMinutes: Number(value) || 30 })} />
+                        <Field disabled={!!busy || draft.monitoringType === 'push'} label='Interval · minutes' keyboardType='number-pad' value={draft.intervalMinutes === null || draft.intervalMinutes === undefined ? '' : String(draft.intervalMinutes)} onChangeText={value => setDraft({ ...draft, intervalMinutes: value === '' ? null : Number(value) })} />
                     ) : (
                         <Field disabled={!!busy} label='Run at ISO time' value={draft.runAt || defaultRunAt()} onChangeText={runAt => setDraft({ ...draft, runAt })} />
                     )}
                     <View style={styles.actions}>
-                        <PillButton label={busy === 'save' ? 'Saving' : selected ? 'Save' : 'Create'} onPress={() => void save()} tone='accent' disabled={!!busy} />
-                        {selected ? <PillButton label='Run' disabled={!!busy} onPress={() => Alert.alert('Run personal job now?', selected.name, [{ text: 'Cancel', style: 'cancel' }, { text: 'Run now', onPress: () => void runNow() }])} small /> : null}
-                        {selected ? <PillButton label='Delete' disabled={!!busy} onPress={() => Alert.alert('Delete personal job?', selected.name, [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => void remove() }])} tone='danger' small /> : null}
+                        <PillButton label={busy === 'save' ? 'Saving' : selected ? 'Save changes' : 'Create'} onPress={() => void save()} tone='accent' disabled={!!busy || !!automationEditError(draft)} />
+                        {selected ? <PillButton label='Run' disabled={!!busy} onPress={() => Alert.alert('Run this check now?', selected.name, [{ text: 'Cancel', style: 'cancel' }, { text: 'Run now', onPress: () => void runNow() }])} small /> : null}
+                        {selected ? <PillButton label='Delete' disabled={!!busy} onPress={() => Alert.alert('Delete this automation?', selected.name, [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => void remove() }])} tone='danger' small /> : null}
                     </View>
                     <InlineNotice message={selected?.pausedReason || undefined} tone='info' />
                 </GlassCard>}
@@ -292,6 +293,41 @@ function AccountAutomations({ settings }: { settings: AppSettings }) {
     )
 }
 
+function MonitoringFields({ draft, selected, disabled, onChange }: { draft: AgentAutomationPayload; selected: AgentAutomation | null; disabled: boolean; onChange: (next: AgentAutomationPayload) => void }) {
+    const theme = useAppTheme()
+    const styles = useMemo(() => createStyles(theme), [theme])
+    const [advanced, setAdvanced] = useState(false)
+    const type = draft.monitoringType || 'fetch'
+    const rule = draft.jsonRule || defaultJsonRule
+    const patchRule = (change: Partial<typeof rule>) => onChange({ ...draft, jsonRule: { ...rule, ...change } })
+    return <View style={styles.editor}>
+        <Text style={styles.label}>Check type</Text>
+        <View style={styles.actions}>{monitoringTypes.map(value => <PillButton key={value} label={value === 'push' ? 'External events' : value.toUpperCase()} small tone={type === value ? 'accent' : 'default'} disabled={disabled || selected?.monitoringType === 'push' || value === 'push' && !!selected} onPress={() => onChange({ ...draft, monitoringType: value, ...(value === 'push' ? { targetUrl: '', timeoutSeconds: 180, retryCount: 0, intervalMinutes: 1, scheduleKind: 'interval', expectedDown: false, upsideDown: false } : { timeoutSeconds: 5 }) })} />)}</View>
+        <Field disabled={disabled || selected?.monitoringType === 'push'} label={type === 'push' ? 'Source ID' : type === 'tcp' || type === 'ssh' ? 'Host and optional port' : 'URL to check'} value={draft.targetUrl || ''} onChangeText={targetUrl => onChange({ ...draft, targetUrl })} />
+        {type === 'push' && <Text style={styles.cardMeta}>External events use a one-minute heartbeat. Existing source IDs and check types cannot be changed.</Text>}
+        {type === 'json' && <>
+            <Field disabled={disabled} label='JSON field · dots for nested fields, * for array items' value={rule.path} onChangeText={path => patchRule({ path })} />
+            <Text style={styles.label}>Combine values</Text>
+            <View style={styles.actions}>{(['max', 'min', 'avg', 'first'] as const).map(aggregate => <PillButton key={aggregate} label={aggregate} tone={rule.aggregate === aggregate ? 'accent' : 'default'} disabled={disabled} small onPress={() => patchRule({ aggregate })} />)}</View>
+            <Text style={styles.label}>Alert when</Text>
+            <View style={styles.actions}>{([['gt', '>'], ['gte', '≥'], ['lt', '<'], ['lte', '≤'], ['eq', '='], ['ne', '≠']] as const).map(([operator, label]) => <PillButton key={operator} label={label} tone={rule.operator === operator ? 'accent' : 'default'} disabled={disabled} small onPress={() => patchRule({ operator })} />)}</View>
+            <Field disabled={disabled} label='Comparison value' value={String(rule.value)} onChangeText={raw => patchRule({ value: raw.trim() && Number.isFinite(Number(raw)) ? Number(raw) : raw === 'true' ? true : raw === 'false' ? false : raw })} />
+        </>}
+        <Field disabled={disabled} label={type === 'push' ? 'Mark offline after · seconds' : 'Response timeout · seconds'} keyboardType='number-pad' value={draft.timeoutSeconds === null || draft.timeoutSeconds === undefined ? '' : String(draft.timeoutSeconds)} onChangeText={value => onChange({ ...draft, timeoutSeconds: value === '' ? null : Number(value) })} />
+        {type !== 'push' && <>
+            <Field disabled={disabled} label='Retries before failure · 0 to 5' keyboardType='number-pad' value={draft.retryCount === null || draft.retryCount === undefined ? '' : String(draft.retryCount)} onChangeText={value => onChange({ ...draft, retryCount: value === '' ? null : Number(value) })} />
+            <PillButton label={advanced ? 'Hide request options' : 'Request options'} small disabled={disabled} onPress={() => setAdvanced(value => !value)} />
+            {advanced && <>
+                <Field disabled={disabled} label='User agent' value={draft.userAgent || ''} onChangeText={userAgent => onChange({ ...draft, userAgent })} />
+                <View style={styles.actions}>
+                    {([['followRedirects', 'Follow redirects'], ['expectedDown', 'Expected down'], ['upsideDown', 'Invert result'], ['notifyWarnings', 'Notify warnings']] as const).map(([key, label]) => <PillButton key={key} label={`${label}: ${draft[key] ? 'Yes' : 'No'}`} tone={draft[key] ? 'accent' : 'default'} small disabled={disabled} onPress={() => onChange({ ...draft, [key]: !draft[key] })} />)}
+                </View>
+                <Text style={styles.cardMeta}>Expected down treats downtime as maintenance. Invert result reverses the expected result. Warnings report successful checks taking at least one second.</Text>
+            </>}
+        </>}
+    </View>
+}
+
 function Field({ label, value, onChangeText, multiline = false, keyboardType, disabled }: { label: string, value: string, onChangeText: (value: string) => void, multiline?: boolean, keyboardType?: 'default' | 'number-pad', disabled?: boolean }) {
     const theme = useAppTheme()
     const styles = useMemo(() => createStyles(theme), [theme])
@@ -304,6 +340,7 @@ function Field({ label, value, onChangeText, multiline = false, keyboardType, di
                 onChangeText={onChangeText}
                 multiline={multiline}
                 keyboardType={keyboardType || 'default'}
+                autoCapitalize='none'
                 style={[styles.input, multiline && styles.textarea]}
                 placeholderTextColor={theme.textMuted}
             />
@@ -311,20 +348,6 @@ function Field({ label, value, onChangeText, multiline = false, keyboardType, di
     )
 }
 
-function toDraft(automation: AgentAutomation): AgentAutomationPayload {
-    return {
-        name: automation.name,
-        prompt: automation.prompt,
-        scheduleKind: automation.scheduleKind,
-        intervalMinutes: automation.intervalMinutes || 30,
-        runAt: automation.runAt || defaultRunAt(),
-        status: automation.status === 'paused' ? 'paused' : 'active',
-        actionType: automation.actionType,
-        timezone: automation.timezone || defaultTimezone(),
-        modelName: automation.modelName || null,
-        notifyOn: automation.notifyOn || 'failure',
-    }
-}
 
 function formatDate(value?: string | null) {
     if (!value) return 'Not scheduled'

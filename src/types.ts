@@ -260,15 +260,31 @@ export type DesktopScreenshot = {
     imageBase64?: string
 }
 
+export type AutomationMonitoringType = 'fetch' | 'post' | 'tcp' | 'ssh' | 'json' | 'push'
+export type AutomationActionType = 'agent_prompt' | 'echo' | 'mail_health_check' | 'system_alert' | 'organization_report'
+export type AutomationJsonRule = { path: string; operator: 'gt' | 'gte' | 'lt' | 'lte' | 'eq' | 'ne'; value: number | boolean | string; aggregate: 'max' | 'min' | 'avg' | 'first' }
+
 export type AgentAutomation = {
     id: string
     name: string
     prompt: string
+    targetUrl: string | null
+    monitoringType: AutomationMonitoringType
+    jsonRule: AutomationJsonRule | null
+    followRedirects: boolean
+    userAgent: string | null
+    expectedDown: boolean
+    upsideDown: boolean
+    timeoutSeconds: number
+    retryCount: number
+    organizationId: string | null
+    notificationDestinations: string[]
+    notifyWarnings: boolean
     scheduleKind: 'once' | 'interval'
     intervalMinutes: number | null
     runAt: string | null
     status: 'active' | 'paused' | 'archived'
-    actionType: 'agent_prompt' | 'echo'
+    actionType: AutomationActionType
     timezone: string
     modelName: string | null
     notifyOn: 'never' | 'failure' | 'always'
@@ -301,11 +317,23 @@ export type AgentAutomationRun = {
 export type AgentAutomationPayload = {
     name: string
     prompt: string
+    targetUrl?: string | null
+    monitoringType?: AutomationMonitoringType
+    jsonRule?: AutomationJsonRule | null
+    followRedirects?: boolean
+    userAgent?: string | null
+    expectedDown?: boolean
+    upsideDown?: boolean
+    timeoutSeconds?: number | null
+    retryCount?: number | null
+    organizationId?: string | null
+    notificationDestinations?: string[]
+    notifyWarnings?: boolean
     scheduleKind: 'once' | 'interval'
     intervalMinutes?: number | null
     runAt?: string | null
     status: 'active' | 'paused'
-    actionType: 'agent_prompt' | 'echo'
+    actionType: AutomationActionType
     timezone?: string
     modelName?: string | null
     notifyOn?: 'never' | 'failure' | 'always'

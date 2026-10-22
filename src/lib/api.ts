@@ -1,4 +1,5 @@
 import * as Crypto from 'expo-crypto'
+import { normalizeAutomation } from './automation-contract'
 import type { AgentAutomation, AgentAutomationPayload, AgentAutomationRun, AiFileSummary, AiRunDetails, AiToolUseSummary, AppSettings, DashboardRole, DashboardUser, DashboardUserRoleAssignment, DesktopAgentPresence, DesktopAgentStatus, GptClient, HanasandAuthSession, MailAddress, MailboxItem, MailMessage, MailMessageSummary, MailOverview, MailSendResult, ManagedCronJob, Note, ShareSummary, ShareTreeItem } from '../types'
 import { AuthenticationError, PendingDeletionError } from './api-errors'
 import { trustedDesktopAgentEndpoints } from './desktop-agent-endpoints'
@@ -1438,19 +1439,17 @@ async function mutateDashboardUserRole(settings: AppSettings, userId: string, ro
     return body
 }
 
-export async function fetchAutomations(settings: AppSettings) {
+export async function fetchAutomations(settings: AppSettings, scope?: 'personal') {
+    return (await fetchAutomationOverview(settings, scope)).automations
+}
+
+export async function fetchAutomationOverview(settings: AppSettings, scope?: 'personal') {
     requireAppAuth(settings, 'load automations')
-
-    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'automations'), {
-        headers: headers(settings),
-    })
-    const body = await readJsonObject(response, {})
-    if (!response.ok) {
-        throw new Error(String(asRecord(body).error || 'Unable to load automations.'))
-    }
-
-    const automations = asRecord(body).automations
-    return Array.isArray(automations) ? automations.map(normalizeAutomation).filter(Boolean) as AgentAutomation[] : []
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, `automations${scope ? '?scope=personal' : ''}`), { headers: headers(settings) })
+    const body = asRecord(await readJsonObject(response, {}))
+    if (!response.ok) throw new Error(String(body.error || 'Unable to load automations.'))
+    if (!Array.isArray(body.automations)) throw new Error('The automation service returned an invalid response.')
+    return { automations: body.automations.map(normalizeAutomation).filter((row): row is AgentAutomation => row !== null), canManageSystem: body.canManageSystem === true }
 }
 
 export async function fetchAutomationDetails(settings: AppSettings, id: string) {
@@ -1541,37 +1540,6 @@ async function mutateAutomation(settings: AppSettings, path: string, method: 'PO
     }
 
     return normalizeAutomation(asRecord(body).automation)
-}
-
-function normalizeAutomation(value: unknown): AgentAutomation | null {
-    const entry = asRecord(value)
-    const id = stringValue(entry.id)
-    if (!id) return null
-
-    return {
-        id,
-        name: stringValue(entry.name) || 'Automation',
-        prompt: stringValue(entry.prompt),
-        scheduleKind: stringValue(entry.scheduleKind) === 'once' ? 'once' : 'interval',
-        intervalMinutes: typeof entry.intervalMinutes === 'number' ? entry.intervalMinutes : null,
-        runAt: stringValue(entry.runAt) || null,
-        status: stringValue(entry.status) === 'paused' ? 'paused' : stringValue(entry.status) === 'archived' ? 'archived' : 'active',
-        actionType: stringValue(entry.actionType) === 'echo' ? 'echo' : 'agent_prompt',
-        timezone: stringValue(entry.timezone) || 'UTC',
-        modelName: stringValue(entry.modelName) || null,
-        notifyOn: stringValue(entry.notifyOn) === 'always' ? 'always' : stringValue(entry.notifyOn) === 'never' ? 'never' : 'failure',
-        nextRunAt: stringValue(entry.nextRunAt) || null,
-        lastRunAt: stringValue(entry.lastRunAt) || null,
-        lastCompletedAt: stringValue(entry.lastCompletedAt) || null,
-        lastStatus: stringValue(entry.lastStatus) || null,
-        lastResult: stringValue(entry.lastResult) || null,
-        lastError: stringValue(entry.lastError) || null,
-        consecutiveFailures: Number(entry.consecutiveFailures) || 0,
-        pausedReason: stringValue(entry.pausedReason) || null,
-        runCount: Number(entry.runCount) || 0,
-        createdAt: stringValue(entry.createdAt),
-        updatedAt: stringValue(entry.updatedAt),
-    }
 }
 
 function normalizeAutomationRun(value: unknown): AgentAutomationRun | null {
