@@ -429,7 +429,7 @@ export function HomeScreen({
                     <PillButton small label='New chat' disabled={busy || workspaceLoading} onPress={startNewConversation} />
                     <PillButton small label={pendingMessageSync.current.size ? 'Retry sync' : 'Refresh'} disabled={busy || workspaceLoading} onPress={() => void refreshWorkspace()} />
                 </View>
-                {!!activeConversation && <Text numberOfLines={1} style={styles.macStatusText}>{activeConversation.title}</Text>}
+                {!!activeConversation && <Text numberOfLines={1} style={styles.conversationTitle}>{activeConversation.title}</Text>}
                 <InlineNotice message={workspaceError} />
                 {workspaceLoading && <Text style={styles.emptyChat}>Loading conversations…</Text>}
                 {historyVisible && <ScrollView style={{ maxHeight: 180 }} contentContainerStyle={{ gap: 6 }}>
@@ -584,7 +584,7 @@ export function HomeScreen({
                             )}
                         </View>
                     )) : (
-                        <Text style={styles.emptyChat}>Start a conversation with Hanasand GPT or choose a previous chat.</Text>
+                        <Text style={styles.emptyChat}>Start a conversation or choose a previous chat.</Text>
                     )}
                 </ScrollView>
 
@@ -631,7 +631,7 @@ function createStyles(theme: ThemePalette) {
         aiScreen: { flex: 1, paddingBottom: 96, gap: 0 },
         aiRoot: { flex: 1, gap: 8 },
         macWindow: {
-            minHeight: 78,
+            minHeight: 44,
             borderRadius: 22,
             borderWidth: 1,
             borderColor: theme.surfaceBorderSoft,
@@ -641,12 +641,13 @@ function createStyles(theme: ThemePalette) {
         macPreview: { width: '100%', height: 118 },
         macPlaceholder: {
             flex: 1,
-            minHeight: 78,
+            minHeight: 44,
             flexDirection: 'row',
             alignItems: 'center',
             gap: 8,
             paddingHorizontal: 14,
         },
+        conversationTitle: { color: theme.textMuted, fontSize: 12, lineHeight: 16 },
         macStatusText: { flex: 1, color: theme.textMuted, fontSize: 12, lineHeight: 16 },
         promptShell: {
             width: '100%',
