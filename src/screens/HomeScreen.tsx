@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { ArrowUp, Sparkles, Square } from 'lucide-react-native'
 import type { AiChatMessage, AppSettings, DesktopAgentStatus, GptClient } from '../types'
-import { askCodex, fetchDesktopAgentStatus, fetchDesktopScreenshot, runDesktopAgentCommand } from '../lib/api'
+import { askChatGptPortal, askCodex, fetchDesktopAgentStatus, fetchDesktopScreenshot, isHanasandOrganizationMember, runDesktopAgentCommand } from '../lib/api'
 import { Screen } from '../components/ui'
 import { spacing, type ThemePalette } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
@@ -40,6 +40,8 @@ export function HomeScreen({
     const styles = useMemo(() => createStyles(theme), [theme])
     const [prompt, setPrompt] = useState('')
     const [busy, setBusy] = useState(false)
+    const [canUseChatGpt, setCanUseChatGpt] = useState(false)
+    const [selectedAgent, setSelectedAgent] = useState<'hanasand' | 'chatgpt'>('hanasand')
     const [clients, setClients] = useState<GptClient[]>([])
     const [desktopStatus, setDesktopStatus] = useState<DesktopAgentStatus | null>(null)
     const [desktopIssue, setDesktopIssue] = useState('')
@@ -106,6 +108,16 @@ export function HomeScreen({
     useEffect(() => {
         void refreshDesktopStatus(false)
     }, [settings.desktopAgentBaseUrl])
+
+    useEffect(() => {
+        let active = true
+        void isHanasandOrganizationMember(settings).then(value => {
+            if (active) setCanUseChatGpt(value)
+        }).catch(() => {
+            if (active) setCanUseChatGpt(false)
+        })
+        return () => { active = false }
+    }, [settings.apiBaseUrl, settings.authToken, settings.userId])
 
     useEffect(() => {
         if (!settings.apiBaseUrl.trim()) {
@@ -389,6 +401,20 @@ export function HomeScreen({
             return
         }
 
+        if (selectedAgent === 'chatgpt' && canUseChatGpt) {
+            try {
+                const context = aiMessagesRef.current.slice(-10).map(message => `${message.role}: ${message.content}`).join('\n')
+                const conversationId = `mobile-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
+                const message = await askChatGptPortal(settings, trimmed, context, conversationId)
+                await saveMessages([...baseMessages, { id: `${Date.now()}-assistant`, role: 'assistant', content: message, createdAt: Date.now() }])
+            } catch (cause) {
+                await saveMessages([...baseMessages, { id: `${Date.now()}-assistant`, role: 'assistant', content: cause instanceof Error ? cause.message : 'ChatGPT request failed.', createdAt: Date.now(), error: true }])
+            } finally {
+                setBusy(false)
+            }
+            return
+        }
+
         const socket = socketRef.current
         if (socket && socket.readyState === WebSocket.OPEN && bestClient) {
             const conversationId = `${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -583,6 +609,15 @@ export function HomeScreen({
                     )}
                 </ScrollView>
 
+                {canUseChatGpt && (
+                    <View style={{ flexDirection: 'row', alignSelf: 'flex-start', gap: 8, marginBottom: 2 }}>
+                        {([['hanasand', 'Hanasand GPT'], ['chatgpt', 'ChatGPT']] as const).map(([agent, label]) => (
+                            <Pressable key={agent} accessibilityRole='button' accessibilityState={{ selected: selectedAgent === agent }} onPress={() => setSelectedAgent(agent)} style={{ borderRadius: 999, borderWidth: 1, borderColor: selectedAgent === agent ? theme.accent : theme.surfaceBorderSoft, backgroundColor: selectedAgent === agent ? theme.accentSoft : theme.ambientNeutral, paddingHorizontal: 12, paddingVertical: 7 }}>
+                                <Text style={{ color: theme.text, fontSize: 12, fontWeight: '700' }}>{label}</Text>
+                            </Pressable>
+                        ))}
+                    </View>
+                )}
                 <View style={styles.promptShell}>
                     <Sparkles color={theme.textMuted} size={15} strokeWidth={2.1} />
                     <TextInput

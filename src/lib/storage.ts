@@ -14,7 +14,7 @@ export const defaultSettings: AppSettings = {
     themeMode: 'obsidian',
     workspaceMode: 'coding',
     siteBaseUrl: 'https://hanasand.com',
-    apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL || 'https://hanasand.com/api',
+    apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL || 'https://api.hanasand.com/api',
     cdnBaseUrl: 'https://cdn.hanasand.com/api',
     authToken: '',
     userId: '',
@@ -108,6 +108,13 @@ function normalizeSettings(value: unknown): AppSettings {
         ...partial,
         themeMode,
         workspaceMode,
+    }
+
+    // Older app builds pointed general API calls at the website origin. Keep
+    // custom API hosts intact while migrating that known default to the
+    // canonical API host used by the website.
+    if (merged.apiBaseUrl.replace(/\/+$/, '') === 'https://hanasand.com/api') {
+        merged.apiBaseUrl = defaultSettings.apiBaseUrl
     }
 
     merged.siteBaseUrl = secureUrlOrDefault(merged.siteBaseUrl, defaultSettings.siteBaseUrl)

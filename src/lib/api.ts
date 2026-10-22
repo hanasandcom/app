@@ -6,6 +6,7 @@ import { requestPinnedDesktopAgent } from './pinned-desktop-transport'
 export { AuthenticationError, PendingDeletionError } from './api-errors'
 
 const desktopAgentRequestBodyBytes = 64 * 1024
+const defaultMailApiBaseUrl = process.env.EXPO_PUBLIC_MAIL_API_BASE_URL || 'https://mail.hanasand.com/api'
 const desktopAgentCoverTrafficIntervalMs = 1_000
 const desktopAgentPresenceCacheMs = 15_000
 const desktopAgentMaximumQueuedRequests = 32
@@ -99,6 +100,18 @@ function joinUrl(base: string, path: string) {
     const next = cleanPath ? `${cleanBase}/${cleanPath}` : cleanBase
     assertSecureTransport(next)
     return next
+}
+
+function identityUrl(settings: AppSettings, path: string) {
+    const defaultApiBase = process.env.EXPO_PUBLIC_API_BASE_URL || 'https://api.hanasand.com/api'
+    const defaultSiteBase = 'https://hanasand.com'
+    return baseUrl(settings.apiBaseUrl) === baseUrl(defaultApiBase) && baseUrl(settings.siteBaseUrl) === defaultSiteBase
+        ? joinUrl(settings.siteBaseUrl, `api/${pathPart(path)}`)
+        : joinUrl(settings.apiBaseUrl, path)
+}
+
+function mailUrl(path: string) {
+    return joinUrl(defaultMailApiBaseUrl, path)
 }
 
 async function fetchDesktopAgentPresence(settings: AppSettings) {
@@ -481,7 +494,7 @@ export async function loginToHanasand(settings: AppSettings, username: string, p
     if (!id || !password) {
         throw new Error('Enter username and password.')
     }
-    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'auth/mobile/login'), {
+    const response = await apiFetch(settings, identityUrl(settings, 'auth/mobile/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ id, password }),
@@ -491,7 +504,7 @@ export async function loginToHanasand(settings: AppSettings, username: string, p
 
 export async function loginWithHanasandPasskey(settings: AppSettings, username: string) {
     const { get } = await import('react-native-passkeys')
-    const optionsUrl = new URL(joinUrl(settings.apiBaseUrl, 'auth/passkeys/authenticate/options'))
+    const optionsUrl = new URL(identityUrl(settings, 'auth/passkeys/authenticate/options'))
     if (username.trim()) optionsUrl.searchParams.set('username', username.trim())
     const optionsResponse = await apiFetch(undefined, optionsUrl, { headers: { Accept: 'application/json' } })
     const optionsPayload = asRecord(await readJsonResponse(optionsResponse))
@@ -502,7 +515,7 @@ export async function loginWithHanasandPasskey(settings: AppSettings, username: 
 
     const credential = await get(request as Parameters<typeof get>[0])
     if (!credential) throw new Error('Passkey sign-in was canceled.')
-    const response = await apiFetch(undefined, joinUrl(settings.apiBaseUrl, 'auth/mobile/passkeys/authenticate/verify'), {
+    const response = await apiFetch(undefined, identityUrl(settings, 'auth/mobile/passkeys/authenticate/verify'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ challengeId: optionsPayload.challengeId, credential }),
@@ -511,7 +524,7 @@ export async function loginWithHanasandPasskey(settings: AppSettings, username: 
 }
 
 export async function exchangeHanasandMobileSsoCode(settings: AppSettings, code: string, verifier: string) {
-    const response = await apiFetch(undefined, joinUrl(settings.apiBaseUrl, 'auth/mobile/sso/exchange'), {
+    const response = await apiFetch(undefined, identityUrl(settings, 'auth/mobile/sso/exchange'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ code, verifier }),
@@ -520,7 +533,7 @@ export async function exchangeHanasandMobileSsoCode(settings: AppSettings, code:
 }
 
 export async function isHanasandGoogleSignInConfigured(settings: AppSettings) {
-    const response = await apiFetch(undefined, joinUrl(settings.apiBaseUrl, 'auth/social/providers'), {
+    const response = await apiFetch(undefined, identityUrl(settings, 'auth/social/providers'), {
         headers: { Accept: 'application/json' },
     })
     const payload = asRecord(await readJsonResponse(response))
@@ -868,7 +881,7 @@ export async function fetchMailOverview(settings: AppSettings, mailboxId?: strin
     if (mailboxId) search.set('mailboxId', mailboxId)
     if (messageId) search.set('messageId', messageId)
 
-    const response = await apiFetch(settings, `${joinUrl(settings.apiBaseUrl, 'mail/overview')}?${search.toString()}`, {
+    const response = await apiFetch(settings, `${mailUrl('mail/overview')}?${search.toString()}`, {
         headers: headers(settings),
     })
 
@@ -885,13 +898,13 @@ export async function fetchMailOverview(settings: AppSettings, mailboxId?: strin
     return normalizeMailOverview(body)
 }
 
-export async function postMailAction(settings: AppSettings, messageId: string, action: string, targetMailboxId?: string) {
+export async function postMailAction(settings: AppSettings, messageId: string, action: string, targetMailboxId?: string, mailboxUser?: string) {
     requireAppAuth(settings, 'update mail')
 
-    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, `mail/message/${segment(messageId)}/action`), {
+    const response = await apiFetch(settings, mailUrl(`mail/message/${segment(messageId)}/action`), {
         method: 'POST',
         headers: headers(settings),
-        body: JSON.stringify({ action, targetMailboxId }),
+        body: JSON.stringify({ action, targetMailboxId, mailboxUser }),
     })
 
     if (!response.ok) {
@@ -900,13 +913,13 @@ export async function postMailAction(settings: AppSettings, messageId: string, a
     }
 }
 
-export async function createMailbox(settings: AppSettings, name: string) {
+export async function createMailbox(settings: AppSettings, name: string, mailboxUser?: string) {
     requireAppAuth(settings, 'create mailbox folders')
 
-    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'mail/mailboxes'), {
+    const response = await apiFetch(settings, mailUrl('mail/mailboxes'), {
         method: 'POST',
         headers: headers(settings),
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, mailboxUser }),
     })
 
     if (!response.ok) {
@@ -925,7 +938,7 @@ export async function sendMailMessage(settings: AppSettings, body: {
 }) {
     requireAppAuth(settings, 'send mail')
 
-    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'mail/send'), {
+    const response = await apiFetch(settings, mailUrl('mail/send'), {
         method: 'POST',
         headers: headers(settings),
         body: JSON.stringify(body),
@@ -989,6 +1002,59 @@ export async function askCodex(settings: AppSettings, prompt: string, context?: 
     }
 }
 
+export async function isHanasandOrganizationMember(settings: AppSettings) {
+    requireAppAuth(settings, 'check organization access')
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'organizations'), { headers: headers(settings) })
+    if (!response.ok) return false
+    const payload = asRecord(await response.json().catch(() => ({})))
+    const organizations = Array.isArray(payload.organizations) ? payload.organizations : []
+    return organizations.some(value => {
+        const organization = asRecord(value)
+        const active = stringValue(organization.lifecycleStatus || organization.lifecycle_status).toLowerCase()
+        return stringValue(organization.slug).toLowerCase() === 'hanasand' && (!active || active === 'active')
+    })
+}
+
+export async function askChatGptPortal(settings: AppSettings, prompt: string, context: string, conversationId: string): Promise<string> {
+    requireAppAuth(settings, 'use ChatGPT')
+    const threadId = `chatgpt-${conversationId}`
+    const form = new FormData()
+    form.append('prompt', prompt)
+    form.append('conversationId', conversationId)
+    form.append('threadId', threadId)
+    form.append('priority', 'next')
+    form.append('context', JSON.stringify(context ? [{ role: 'user', content: context }] : []))
+    const requestHeaders = new Headers(headers(settings))
+    requestHeaders.delete('Content-Type')
+    const response = await apiFetch(settings, identityUrl(settings, 'prompt'), {
+        method: 'POST',
+        headers: requestHeaders,
+        body: form,
+    })
+    const payload = asRecord(await response.json().catch(() => ({})))
+    if (!response.ok) {
+        const error = asRecord(payload.error)
+        throw new Error(String(error.message || payload.error || 'Unable to send to ChatGPT.'))
+    }
+
+    const deadline = Date.now() + 180_000
+    while (Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 2500))
+        const query = new URLSearchParams({ conversationId, threadId })
+        const resultResponse = await apiFetch(settings, `${identityUrl(settings, 'prompt')}?${query}`, { headers: headers(settings) })
+        const state = asRecord(await resultResponse.json().catch(() => ({})))
+        if (!resultResponse.ok) {
+            const error = asRecord(state.error)
+            throw new Error(String(error.message || state.error || 'Unable to load ChatGPT response.'))
+        }
+        const items = Array.isArray(state.items) ? state.items : []
+        const latest = asRecord(items[items.length - 1])
+        if (latest.status === 'done') return stringValue(latest.result) || 'ChatGPT completed without a text response.'
+        if (latest.status === 'error') throw new Error(stringValue(latest.error) || 'ChatGPT could not complete the request.')
+    }
+    throw new Error('ChatGPT is still working. Open Hanasand in a browser to check the request queue.')
+}
+
 export async function fetchAiModels(settings: AppSettings) {
     if (!settings.apiBaseUrl.trim()) {
         return []
@@ -1018,6 +1084,27 @@ export async function fetchUserShares(settings: AppSettings) {
     }
 
     return Array.isArray(body) ? body.map(normalizeShare).filter(Boolean) as ShareSummary[] : []
+}
+
+export type CdnUserFile = { id: string; name: string; type: string; uploadedAt: string; sizeBytes?: number }
+
+export async function fetchCdnUserFiles(settings: AppSettings): Promise<CdnUserFile[]> {
+    requireCdnAuth(settings, 'load your image library')
+    const url = `${joinUrl(settings.cdnBaseUrl, `files/user/${segment(settings.userId)}`)}?limit=100&offset=0`
+    const response = await apiFetch(settings, url, { headers: headers(settings) })
+    const body = await response.json().catch(() => [])
+    if (!response.ok) throw new Error(String(asRecord(body).error || 'Unable to load your Hanasand library.'))
+    if (!Array.isArray(body)) throw new Error('The Hanasand library returned an unexpected response.')
+    return body.map(item => {
+        const file = asRecord(item)
+        return {
+            id: stringValue(file.id),
+            name: stringValue(file.name) || 'Image',
+            type: stringValue(file.type),
+            uploadedAt: stringValue(file.uploaded_at) || stringValue(file.uploadedAt),
+            sizeBytes: numberValue(file.size_bytes) ?? numberValue(file.sizeBytes),
+        }
+    }).filter(file => file.id && file.type.startsWith('image/'))
 }
 
 export async function createShare(settings: AppSettings, payload: { id: string; content: string; name?: string; path?: string; type?: string }) {
@@ -1180,6 +1267,33 @@ export async function fetchNotes(settings: AppSettings) {
     }
 
     return Array.isArray(body) ? body.map(normalizeNote).filter(Boolean) as Note[] : []
+}
+
+export type MobileProfileStats = {
+    loginDays: Array<{ day: string; logins: number }>
+    counts: { organizations: number; containers: number; vms: number; shares: number; articles: number }
+}
+
+export async function fetchProfileStats(settings: AppSettings): Promise<MobileProfileStats> {
+    requireAppAuth(settings, 'load profile details')
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, `user/${segment(settings.userId)}/profile-stats`), { headers: headers(settings) })
+    const body = await response.json().catch(() => ({}))
+    if (!response.ok) throw new Error(String((body as { error?: string }).error || 'Unable to load profile details.'))
+    const value = asRecord(body)
+    const counts = asRecord(value.counts)
+    return {
+        loginDays: Array.isArray(value.loginDays) ? value.loginDays.map(item => {
+            const day = asRecord(item)
+            return { day: stringValue(day.day), logins: numberValue(day.logins) ?? 0 }
+        }).filter(item => item.day) : [],
+        counts: {
+            organizations: numberValue(counts.organizations) ?? 0,
+            containers: numberValue(counts.containers) ?? 0,
+            vms: numberValue(counts.vms) ?? 0,
+            shares: numberValue(counts.shares) ?? 0,
+            articles: numberValue(counts.articles) ?? 0,
+        },
+    }
 }
 
 export async function createNote(settings: AppSettings, payload: { title: string; content: string }) {

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Animated, Dimensions, Image, PanResponder, Text, View } from 'react-native'
 import * as MediaLibrary from 'expo-media-library'
 import type { ImageReviewAsset, SwipeDecision } from '../types'
+import type { AppSettings } from '../types'
+import { fetchCdnUserFiles, type CdnUserFile } from '../lib/api'
 import { GlassCard, InlineNotice, PillButton, Screen, SectionTitle } from '../components/ui'
 import { spacing } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
@@ -9,7 +11,7 @@ import { useAppTheme } from '../theme/context'
 const CARD_WIDTH = Dimensions.get('window').width - 48
 const SWIPE_THRESHOLD = 110
 
-export function ImagesScreen() {
+export function ImagesScreen({ settings }: { settings: AppSettings }) {
     const theme = useAppTheme()
     const [permissionResponse, requestPermission] = MediaLibrary.usePermissions()
     const [assets, setAssets] = useState<ImageReviewAsset[]>([])
@@ -18,12 +20,30 @@ export function ImagesScreen() {
     const [history, setHistory] = useState<string[]>([])
     const [busy, setBusy] = useState(false)
     const [loadError, setLoadError] = useState('')
+    const [cloudImages, setCloudImages] = useState<CdnUserFile[]>([])
+    const [cloudLoading, setCloudLoading] = useState(false)
+    const [cloudError, setCloudError] = useState('')
+    const [view, setView] = useState<'cloud' | 'device'>('cloud')
     const translate = useRef(new Animated.ValueXY()).current
     const loadSequenceRef = useRef(0)
 
     useEffect(() => {
         void loadAssets()
     }, [permissionResponse?.granted])
+
+    useEffect(() => {
+        let active = true
+        setCloudLoading(true)
+        setCloudError('')
+        void fetchCdnUserFiles(settings).then(files => {
+            if (active) setCloudImages(files)
+        }).catch(error => {
+            if (active) setCloudError(error instanceof Error ? error.message : 'Unable to load your Hanasand library.')
+        }).finally(() => {
+            if (active) setCloudLoading(false)
+        })
+        return () => { active = false }
+    }, [settings.cdnBaseUrl, settings.authToken, settings.userId])
 
     async function loadAssets() {
         const requestId = loadSequenceRef.current + 1
@@ -119,6 +139,32 @@ export function ImagesScreen() {
     const remaining = Math.max(assets.length - index, 0)
     const discardCount = useMemo(() => Object.values(decisions).filter(value => value === 'discard').length, [decisions])
 
+    if (view === 'cloud') {
+        return (
+            <Screen title='Images' subtitle='Your Hanasand CDN library'>
+                <GlassCard>
+                    <SectionTitle eyebrow='Hanasand library' title={cloudLoading ? 'Loading images…' : `${cloudImages.length} images`} body='Images stored in your Hanasand CDN account.' />
+                    <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
+                        <PillButton label='Hanasand library' onPress={() => setView('cloud')} tone='accent' small />
+                        <PillButton label='Review device photos' onPress={() => setView('device')} small />
+                        <PillButton label='Refresh' onPress={() => {
+                            setCloudLoading(true)
+                            void fetchCdnUserFiles(settings).then(setCloudImages).catch(error => setCloudError(error instanceof Error ? error.message : 'Unable to load your Hanasand library.')).finally(() => setCloudLoading(false))
+                        }} small disabled={cloudLoading} />
+                    </View>
+                    {!!cloudError && <View style={{ marginTop: spacing.md }}><InlineNotice message={cloudError} /></View>}
+                </GlassCard>
+                {cloudImages.length ? cloudImages.map(file => (
+                    <GlassCard key={file.id}>
+                        <Image source={{ uri: `${settings.cdnBaseUrl.replace(/\/+$/, '')}/files/${encodeURIComponent(file.id)}` }} style={{ width: '100%', height: 280, borderRadius: 20, backgroundColor: theme.ambientNeutral }} resizeMode='contain' />
+                        <Text style={{ marginTop: spacing.sm, color: theme.text, fontWeight: '700' }}>{file.name}</Text>
+                        {!!file.uploadedAt && <Text style={{ marginTop: 4, color: theme.textMuted, fontSize: 12 }}>{new Date(file.uploadedAt).toLocaleDateString()}</Text>}
+                    </GlassCard>
+                )) : !cloudLoading && !cloudError ? <GlassCard><SectionTitle eyebrow='Library' title='No images yet' body='Images uploaded to cdn.hanasand.com will appear here.' /></GlassCard> : null}
+            </Screen>
+        )
+    }
+
     const panResponder = useMemo(
         () => PanResponder.create({
             onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > 12,
@@ -143,7 +189,8 @@ export function ImagesScreen() {
             <Screen title='Images' subtitle=''>
                 <GlassCard>
                     <SectionTitle eyebrow='Permission required' title='Photo access needed' />
-                    <View style={{ marginTop: spacing.md }}>
+                    <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
+                        <PillButton label='Hanasand library' onPress={() => setView('cloud')} small />
                         <PillButton label='Allow photo library access' onPress={() => void requestPermission()} tone='accent' />
                     </View>
                 </GlassCard>
@@ -157,6 +204,7 @@ export function ImagesScreen() {
                 <SectionTitle eyebrow='Review' title={current ? `${remaining} left` : 'Complete'} />
                 <InlineNotice message={loadError} />
                 <View style={{ flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap', marginTop: spacing.md }}>
+                    <PillButton label='Hanasand library' onPress={() => setView('cloud')} small />
                     <PillButton label='Undo last' onPress={undoLast} small disabled={busy || !history.length} />
                     <PillButton label={busy ? 'Working...' : `Delete marked (${discardCount})`} onPress={() => void deleteDeferred()} tone='danger' small disabled={busy || !discardCount} />
                 </View>

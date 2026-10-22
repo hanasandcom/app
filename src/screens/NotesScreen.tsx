@@ -85,6 +85,8 @@ export function NotesScreen({ settings }: { settings: AppSettings }) {
     const [selectedId, setSelectedId] = useState('')
     const [draft, setDraft] = useState(emptyDraft)
     const [menuOpen, setMenuOpen] = useState(false)
+    const [loading, setLoading] = useState(true)
+    const [loadError, setLoadError] = useState('')
     const hydratedRef = useRef(false)
     const syncingRef = useRef(false)
     const configured = Boolean(settings.apiBaseUrl.trim() && settings.authToken.trim() && settings.userId.trim())
@@ -118,6 +120,8 @@ export function NotesScreen({ settings }: { settings: AppSettings }) {
     }, [selectedId])
 
     async function hydrate() {
+        setLoading(true)
+        setLoadError('')
         const local = await loadLocalNotes()
         let next = local
 
@@ -127,14 +131,18 @@ export function NotesScreen({ settings }: { settings: AppSettings }) {
                 const pendingLocal = local.filter(note => note.syncState === 'pending')
                 const remoteIds = new Set(remote.map(note => note.id))
                 next = sortNotes([...remote, ...pendingLocal.filter(note => !remoteIds.has(note.id))])
-            } catch {
+            } catch (error) {
+                setLoadError(error instanceof Error ? error.message : 'Unable to load shared Hanasand notes.')
                 next = local
             }
+        } else {
+            setLoadError('Sign in to load notes shared with the Hanasand website.')
         }
 
         hydratedRef.current = true
         setNotes(next)
         setSelectedId(next[0]?.id || '')
+        setLoading(false)
     }
 
     async function loadLocalNotes() {
@@ -219,6 +227,10 @@ export function NotesScreen({ settings }: { settings: AppSettings }) {
                 </Pressable>
             )}
         >
+            {(loading || loadError) && <View style={{ paddingHorizontal: 14, paddingBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Text style={{ flex: 1, color: theme.textMuted, fontSize: 12 }}>{loading ? 'Syncing notes with Hanasand…' : loadError}</Text>
+                {!loading && <Pressable accessibilityRole='button' onPress={() => void hydrate()} style={{ paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999, backgroundColor: theme.ambientNeutral }}><Text style={{ color: theme.text, fontWeight: '700', fontSize: 12 }}>Retry</Text></Pressable>}
+            </View>}
             <View style={styles.editor}>
                 <TextInput
                     value={draft.title}

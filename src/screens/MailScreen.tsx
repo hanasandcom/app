@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Pressable, Text, TextInput, View } from 'react-native'
-import type { AppSettings, MailOverview, SavedMailboxConnection } from '../types'
+import type { AppSettings, MailOverview } from '../types'
 import { createMailbox, fetchMailOverview, postMailAction, sendMailMessage } from '../lib/api'
 import { GlassCard, InlineNotice, LabeledInput, PillButton, Screen, SectionTitle } from '../components/ui'
 import { spacing, type ThemePalette } from '../theme/tokens'
@@ -16,7 +16,7 @@ const emptyOverview: MailOverview = {
     selectedMessage: null,
 }
 
-export function MailScreen({ settings, mailboxConnections, onSaveMailboxConnections }: { settings: AppSettings; mailboxConnections: SavedMailboxConnection[]; onSaveMailboxConnections: (items: SavedMailboxConnection[]) => void }) {
+export function MailScreen({ settings }: { settings: AppSettings }) {
     const theme = useAppTheme()
     const styles = useMemo(() => createStyles(theme), [theme])
     const [overview, setOverview] = useState<MailOverview>(emptyOverview)
@@ -31,10 +31,6 @@ export function MailScreen({ settings, mailboxConnections, onSaveMailboxConnecti
     const [sending, setSending] = useState(false)
     const [mailActionBusy, setMailActionBusy] = useState<'archive' | 'trash' | 'read' | 'flag' | ''>('')
     const [mailboxName, setMailboxName] = useState('')
-    const [connectionLabel, setConnectionLabel] = useState('')
-    const [connectionEmail, setConnectionEmail] = useState('')
-    const [imapHost, setImapHost] = useState('imap.gmail.com')
-    const [smtpHost, setSmtpHost] = useState('smtp.gmail.com')
     const loadSequenceRef = useRef(0)
 
     useEffect(() => {
@@ -86,7 +82,7 @@ export function MailScreen({ settings, mailboxConnections, onSaveMailboxConnecti
         }
         setMailActionBusy(type)
         try {
-            await postMailAction(settings, selectedMessageId, type)
+            await postMailAction(settings, selectedMessageId, type, undefined, overview.mailboxUser)
             await load()
         } catch (cause) {
             Alert.alert('Mail action failed', cause instanceof Error ? cause.message : 'Unable to update the message.')
@@ -105,7 +101,7 @@ export function MailScreen({ settings, mailboxConnections, onSaveMailboxConnecti
             return
         }
         try {
-            await createMailbox(settings, mailboxName.trim())
+            await createMailbox(settings, mailboxName.trim(), overview.mailboxUser)
             setMailboxName('')
             await load()
         } catch (cause) {
@@ -147,35 +143,6 @@ export function MailScreen({ settings, mailboxConnections, onSaveMailboxConnecti
         }
     }
 
-    function saveConnection() {
-        if (!connectionLabel.trim() || !connectionEmail.trim()) {
-            Alert.alert('Missing connector details', 'Add a label and mailbox email first.')
-            return
-        }
-        const email = connectionEmail.trim().toLowerCase()
-        const next = {
-            id: mailboxConnections.find(connection => connection.email.toLowerCase() === email)?.id || `${Date.now()}`,
-            label: connectionLabel.trim(),
-            email,
-            imapHost: imapHost.trim(),
-            smtpHost: smtpHost.trim(),
-        }
-        onSaveMailboxConnections([next, ...mailboxConnections.filter(connection => connection.email.toLowerCase() !== email)])
-        setConnectionLabel('')
-        setConnectionEmail('')
-    }
-
-    function removeConnection(connection: SavedMailboxConnection) {
-        Alert.alert('Remove mailbox connector?', connection.label, [
-            { text: 'Cancel', style: 'cancel' },
-            {
-                text: 'Remove',
-                style: 'destructive',
-                onPress: () => onSaveMailboxConnections(mailboxConnections.filter(item => item.id !== connection.id)),
-            },
-        ])
-    }
-
     return (
         <Screen title='Mail' subtitle=''>
             <GlassCard>
@@ -190,6 +157,7 @@ export function MailScreen({ settings, mailboxConnections, onSaveMailboxConnecti
 
             <GlassCard>
                 <SectionTitle eyebrow='Inbox' title={loading ? 'Refreshing...' : overview.mailboxAddress} />
+                <View style={{ marginTop: spacing.sm, alignSelf: 'flex-start' }}><PillButton label={loading ? 'Refreshing…' : 'Refresh'} onPress={() => void load()} small disabled={loading} /></View>
                 {!!error && (
                     <View style={{ marginTop: spacing.md }}>
                         <InlineNotice message={error} />
@@ -237,7 +205,7 @@ export function MailScreen({ settings, mailboxConnections, onSaveMailboxConnecti
                 <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
                     {!overview.messages.length && (
                         <View style={{ borderRadius: 20, padding: 14, borderWidth: 1, borderColor: theme.surfaceBorderSoft, backgroundColor: theme.ambientNeutral }}>
-                            <Text style={{ color: theme.text, fontWeight: '700' }}>{mailConfigured ? 'No messages' : 'Connect mail in Utilities'}</Text>
+                            <Text style={{ color: theme.text, fontWeight: '700' }}>{mailConfigured ? 'No messages in this folder' : 'Sign in to load your mail'}</Text>
                         </View>
                     )}
                     {overview.messages.map(message => (
@@ -271,23 +239,10 @@ export function MailScreen({ settings, mailboxConnections, onSaveMailboxConnecti
             )}
 
             <GlassCard>
-                <SectionTitle eyebrow='Setup' title='Folders + connectors' />
+                <SectionTitle eyebrow='Mailbox' title='Folders' />
                 <View style={{ gap: spacing.md, marginTop: spacing.md }}>
                     <LabeledInput label='New mailbox folder' value={mailboxName} onChangeText={setMailboxName} placeholder='Receipts, Travel, Clients…' />
                     <PillButton label={loading ? 'Working...' : 'Create folder'} onPress={addMailbox} disabled={loading || !mailConfigured} />
-                    <LabeledInput label='Connection label' value={connectionLabel} onChangeText={setConnectionLabel} placeholder='Work Gmail' />
-                    <LabeledInput label='Mailbox email' value={connectionEmail} onChangeText={setConnectionEmail} placeholder='me@example.com' />
-                    <LabeledInput label='IMAP host' value={imapHost} onChangeText={setImapHost} />
-                    <LabeledInput label='SMTP host' value={smtpHost} onChangeText={setSmtpHost} />
-                    <PillButton label='Save mailbox connector' onPress={saveConnection} tone='accent' />
-                    {mailboxConnections.map(connection => (
-                        <View key={connection.id} style={{ borderRadius: 18, padding: 14, borderWidth: 1, borderColor: theme.surfaceBorderSoft, backgroundColor: theme.ambientNeutral, gap: 4 }}>
-                            <Text style={{ color: theme.text, fontWeight: '700' }}>{connection.label}</Text>
-                            <Text style={{ color: theme.textMuted }}>{connection.email}</Text>
-                            <Text style={{ color: theme.textSoft, fontSize: 12 }}>{connection.imapHost} · {connection.smtpHost}</Text>
-                            <PillButton label='Remove' onPress={() => removeConnection(connection)} tone='danger' small />
-                        </View>
-                    ))}
                 </View>
             </GlassCard>
         </Screen>

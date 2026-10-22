@@ -13,7 +13,7 @@ export type RootTabParamList = {
     Notes: undefined
     Images: undefined
     Automations: undefined
-    Control: undefined
+    Explore: undefined
 }
 
 export type AppSettings = {

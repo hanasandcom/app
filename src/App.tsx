@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react'
 import { NavigationContainer, DarkTheme } from '@react-navigation/native'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
-import { Alert, AppState, Platform, Pressable, Text, View } from 'react-native'
+import { AppState, Platform, Pressable, Text, View } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
 import * as SystemUI from 'expo-system-ui'
-import { AlarmClockCheck, Bot, Images, Mail, ScanLine, SlidersHorizontal, StickyNote, UserRound } from 'lucide-react-native'
-import type { AiChatMessage, AppSettings, AuthenticatorEntry, RootTabParamList, SavedMailboxConnection } from './types'
+import { AlarmClockCheck, Bot, Compass, Images, Mail, ScanLine, StickyNote, UserRound } from 'lucide-react-native'
+import type { AiChatMessage, AppSettings, RootTabParamList } from './types'
 import { SettingsDrawer } from './components/SettingsDrawer'
 import { SettingsDrawerProvider } from './components/ui'
 import { HomeScreen } from './screens/HomeScreen'
@@ -14,15 +14,15 @@ import { LoginScreen } from './screens/LoginScreen'
 import { MailScreen } from './screens/MailScreen'
 import { ScannerScreen } from './screens/ScannerScreen'
 import { ImagesScreen } from './screens/ImagesScreen'
-import { ControlScreen } from './screens/ControlScreen'
+import { ExploreScreen } from './screens/ExploreScreen'
 import { NotesScreen } from './screens/NotesScreen'
 import { ProfileScreen } from './screens/ProfileScreen'
 import { PendingDeletionScreen } from './screens/PendingDeletionScreen'
 import { AutomationsScreen } from './screens/AutomationsScreen'
-import { loadAiChat, loadAuthenticatorEntries, loadMailboxConnections, loadSettings, saveAiChat, saveAuthenticatorEntries, saveMailboxConnections, saveSettings } from './lib/storage'
+import { loadAiChat, loadSettings, saveAiChat, saveSettings } from './lib/storage'
 import { getThemePalette, palette } from './theme/tokens'
 import { AppThemeProvider } from './theme/context'
-import { PendingDeletionError, refreshHanasandSession, startDesktopAgentCoverTraffic, startMobileImpersonation, stopDesktopAgentCoverTraffic, stopMobileImpersonation } from './lib/api'
+import { PendingDeletionError, refreshHanasandSession, startDesktopAgentCoverTraffic, stopDesktopAgentCoverTraffic, stopMobileImpersonation } from './lib/api'
 import { classifyRefreshFailure } from './lib/session'
 
 const Tab = createBottomTabNavigator<RootTabParamList>()
@@ -35,7 +35,7 @@ const tabIcons = {
     Notes: StickyNote,
     Images: Images,
     Automations: AlarmClockCheck,
-    Control: SlidersHorizontal,
+    Explore: Compass,
 } as const
 
 void SystemUI.setBackgroundColorAsync(palette.background)
@@ -52,8 +52,6 @@ export default function App() {
     const [settings, setSettings] = useState<AppSettings | null>(null)
     const [bootstrapError, setBootstrapError] = useState('')
     const [bootstrapAttempt, setBootstrapAttempt] = useState(0)
-    const [mailboxConnections, setMailboxConnections] = useState<SavedMailboxConnection[]>([])
-    const [authenticatorEntries, setAuthenticatorEntries] = useState<AuthenticatorEntry[]>([])
     const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([])
     const [settingsOpen, setSettingsOpen] = useState(false)
     const [pendingDeletion, setPendingDeletion] = useState<{ id: string, restoreToken: string, deletionScheduledAt: string } | null>(null)
@@ -63,10 +61,8 @@ export default function App() {
         void (async () => {
             setBootstrapError('')
             try {
-                const [nextSettings, nextMailboxConnections, nextAuthenticatorEntries, nextAiMessages] = await Promise.all([
+                const [nextSettings, nextAiMessages] = await Promise.all([
                     loadSettings(),
-                    safeLoad(loadMailboxConnections, [] as SavedMailboxConnection[]),
-                    loadAuthenticatorEntries(),
                     safeLoad(loadAiChat, [] as AiChatMessage[]),
                 ])
                 let hydratedSettings = nextSettings
@@ -99,8 +95,6 @@ export default function App() {
                 if (!active) return
                 if (AppState.currentState === 'active') startDesktopAgentCoverTraffic(hydratedSettings)
                 setSettings(hydratedSettings)
-                setMailboxConnections(nextMailboxConnections)
-                setAuthenticatorEntries(nextAuthenticatorEntries)
                 setAiMessages(nextAiMessages)
             } catch (error) {
                 if (active) setBootstrapError(error instanceof Error ? error.message : 'Secure local data could not be loaded.')
@@ -135,16 +129,6 @@ export default function App() {
         setSettings(next)
     }
 
-    async function handleSaveMailboxConnections(next: SavedMailboxConnection[]) {
-        await saveMailboxConnections(next)
-        setMailboxConnections(next)
-    }
-
-    async function handleSaveAuthenticatorEntries(next: AuthenticatorEntry[]) {
-        await saveAuthenticatorEntries(next)
-        setAuthenticatorEntries(next)
-    }
-
     async function handleSaveAiMessages(next: AiChatMessage[]) {
         await saveAiChat(next)
         setAiMessages(next)
@@ -174,23 +158,6 @@ export default function App() {
         }
         await saveSettings(next)
         setSettings(next)
-    }
-
-    async function handleImpersonate(user: { id: string; name?: string }) {
-        try {
-            const session = await startMobileImpersonation(settings!, user.id)
-            const next = {
-                ...settings!,
-                impersonationToken: session.token,
-                impersonatingUserId: session.targetId,
-                impersonatingUserName: session.targetName,
-            }
-            await saveSettings(next)
-            setSettings(next)
-        } catch (error) {
-            console.warn(error)
-            Alert.alert('Impersonation failed', error instanceof Error ? error.message : 'Unable to start impersonation.')
-        }
     }
 
     async function returnToOwnView() {
@@ -277,7 +244,7 @@ export default function App() {
                 <SettingsDrawerProvider openSettings={() => setSettingsOpen(true)}>
                     <NavigationContainer
                         linking={{
-                            prefixes: ['hanasandapp://'],
+                            prefixes: ['hanasand://'],
                             config: {
                                 screens: {
                                     Home: 'home',
@@ -286,7 +253,7 @@ export default function App() {
                                     Scan: 'scan',
                                     Notes: 'notes',
                                     Images: 'images',
-                                    Control: 'control',
+                                    Explore: 'explore',
                                 },
                             },
                         }}
@@ -342,18 +309,18 @@ export default function App() {
                                 {() => <ProfileScreen settings={settings} onLogout={clearSession} onDeleted={clearSession} />}
                             </Tab.Screen>
                             <Tab.Screen name='Mail'>
-                                {() => <MailScreen settings={settings} mailboxConnections={mailboxConnections} onSaveMailboxConnections={handleSaveMailboxConnections} />}
+                                {() => <MailScreen settings={settings} />}
                             </Tab.Screen>
                             <Tab.Screen name='Scan' component={ScannerScreen} />
                             <Tab.Screen name='Notes'>
                                 {() => <NotesScreen settings={settings} />}
                             </Tab.Screen>
-                            <Tab.Screen name='Images' component={ImagesScreen} />
+                            <Tab.Screen name='Images'>{() => <ImagesScreen settings={settings} />}</Tab.Screen>
                             <Tab.Screen name='Automations'>
                                 {() => <AutomationsScreen settings={settings} />}
                             </Tab.Screen>
-                            <Tab.Screen name='Control'>
-                                {() => <ControlScreen settings={settings} onSaveSettings={handleSaveSettings} onImpersonate={handleImpersonate} authenticatorEntries={authenticatorEntries} onSaveAuthenticatorEntries={handleSaveAuthenticatorEntries} />}
+                            <Tab.Screen name='Explore'>
+                                {() => <ExploreScreen settings={settings} />}
                             </Tab.Screen>
                         </Tab.Navigator>
                         {!!settings.impersonatingUserId && (
