@@ -20,7 +20,14 @@ describe('native website navigation', () => {
         expect(nativeToolForPath('/subscription')).toBe('subscription')
         expect(nativeToolForPath('/system/hosts')).toBe('hosts')
         expect(nativeToolForPath('/system/updates')).toBe('host-updates')
+        expect(nativeToolForPath('/ti/profiles')).toBe('intel-profiles')
+        expect(nativeToolForPath('/ti/timeliness')).toBe('delivery-health')
+        expect(nativeToolForPath('/organizations/api-keys')).toBe('api-keys')
         expect(nativeToolForPath('/unknown')).toBeUndefined()
+        const items = leaves(siteNavigation('synthetic-user'))
+        for (const path of ['/ti/profiles', '/ti/timeliness', '/organizations/api-keys']) {
+            expect(items.find(item => item.path === path)?.tab).toBe('Tools')
+        }
     })
     it('uses the maintained full status API without the public seven-check projection', () => {
         const status = workspacePageDefinition('/status')

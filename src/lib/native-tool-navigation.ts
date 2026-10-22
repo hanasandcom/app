@@ -6,6 +6,9 @@ const tools: Record<string, RootTabParamList['Tools']['tool']> = {
     '/subscription': 'subscription',
     '/system/updates': 'host-updates',
     '/system/hosts': 'hosts',
+    '/ti/profiles': 'intel-profiles',
+    '/ti/timeliness': 'delivery-health',
+    '/organizations/api-keys': 'api-keys',
 }
 
 export function nativeToolForPath(path?: string) {

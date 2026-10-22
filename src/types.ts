@@ -16,7 +16,7 @@ export type RootTabParamList = {
     Explore: undefined
     Organizations: undefined
     WorkspacePage: { path: string; title: string }
-    Tools: { tool: 'threat-search' | 'password-check' | 'subscription' | 'host-updates' | 'hosts' }
+    Tools: { tool: 'threat-search' | 'password-check' | 'subscription' | 'host-updates' | 'hosts' | 'intel-profiles' | 'delivery-health' | 'api-keys' }
 }
 
 export type AppSettings = {

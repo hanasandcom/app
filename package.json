@@ -15,7 +15,7 @@
     "android": "expo run:android",
     "lint": "eslint index.ts ./src",
     "lint:fix": "eslint index.ts ./src --fix",
-    "test:mobile": "bun test src/lib/storage.test.ts src/lib/session.test.ts src/lib/api.test.ts src/lib/desktop-agent-endpoints.test.ts src/lib/site-navigation.test.ts && bun test src/lib/ai-workspace.test.ts && bun test src/lib/workspace-data.test.ts && bun test src/lib/profile-sessions.test.ts && bun test src/lib/mail-api.test.ts && bun test src/lib/device-proof.test.ts && bun test src/lib/device-proof-concurrency.test.ts && bun test src/lib/workspace-pages.test.ts && bun test src/lib/threat-search.test.ts && bun test src/lib/password-check.test.ts && bun test src/lib/account-system-tools.test.ts && bun test src/lib/automation-contract.test.ts && bun test src/lib/automation-api.test.ts",
+    "test:mobile": "bun test src/lib/storage.test.ts src/lib/session.test.ts src/lib/api.test.ts src/lib/desktop-agent-endpoints.test.ts src/lib/site-navigation.test.ts && bun test src/lib/ai-workspace.test.ts && bun test src/lib/workspace-data.test.ts && bun test src/lib/profile-sessions.test.ts && bun test src/lib/mail-api.test.ts && bun test src/lib/device-proof.test.ts && bun test src/lib/device-proof-concurrency.test.ts && bun test src/lib/workspace-pages.test.ts && bun test src/lib/threat-search.test.ts && bun test src/lib/password-check.test.ts && bun test src/lib/account-system-tools.test.ts && bun test src/lib/automation-contract.test.ts && bun test src/lib/automation-api.test.ts && bun test src/lib/intelligence.test.ts && bun test src/lib/organization-tools.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

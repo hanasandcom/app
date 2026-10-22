@@ -15,7 +15,9 @@ Then use the Expo CLI to open a development build or simulator. The repository a
 
 The workspace API defaults to `https://api.hanasand.com/api`. Mobile authentication and browser-backed AI routes use `https://hanasand.com/api`; mail uses `https://mail.hanasand.com/api`, and image libraries use `https://cdn.hanasand.com/api`. To point a development build at another API, set `EXPO_PUBLIC_API_BASE_URL` before starting Expo. Password, passkey, Google, and configured SSO sign-in are available on the login screen; see [mobile authentication](docs/mobile-authentication.md) for the service routes and provider setup. Native app metadata, identifiers, permissions, and the current app version are in [`app.json`](app.json).
 
-Hanasand sessions are bound to a P-256 device key. The app stores the private key in device-only SecureStore and signs authenticated requests with DPoP proofs. Existing sessions without a device key require signing in again after the Identity migration.
+New Hanasand sessions are bound to a P-256 device key. The app stores the private key in device-only SecureStore and signs authenticated requests with DPoP proofs.
+
+The optional [native route check](docs/native-route-checks.md) exercises account reads from a compiled native app, using its existing session. Mocked transport tests cannot establish that deployed services accept a fresh device-bound session.
 
 ## Workspaces and navigation
 
