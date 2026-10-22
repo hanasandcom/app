@@ -11,7 +11,8 @@ async function request(settings: AppSettings, service: 'api' | 'cdn', path: stri
     const url = new URL(`${base.replace(/\/+$/, '')}/${path}`)
     if (url.protocol !== 'https:') throw new Error('A secure HTTPS connection is required.')
     const headers = new Headers(init.headers)
-    headers.set('Content-Type', 'application/json')
+    if (typeof FormData !== 'undefined' && init.body instanceof FormData) headers.delete('Content-Type')
+    else headers.set('Content-Type', 'application/json')
     if (service === 'cdn') {
         // The CDN album and favorite routes use the same session token through cookies.
         headers.set('Cookie', `id=${encodeURIComponent(settings.userId)}; access_token=${encodeURIComponent(settings.authToken)}`)
@@ -63,6 +64,34 @@ export async function loadGalleryAlbums(settings: AppSettings): Promise<GalleryA
 
 export async function favoriteGalleryFile(settings: AppSettings, id: string, favorite: boolean) {
     await request(settings, 'cdn', `files/${encodeURIComponent(id)}/favorite`, { method: 'PATCH', body: JSON.stringify({ favorite }) })
+}
+
+export const galleryMaxPhotoBytes = 50 * 1024 * 1024
+export type GalleryUploadPhoto = { uri: string, name: string, type?: string, size: number }
+const galleryPhotoTypes: Record<string, string> = {
+    jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif',
+    webp: 'image/webp', avif: 'image/avif', heic: 'image/heic', heif: 'image/heif',
+}
+
+export async function uploadGalleryPhoto(settings: AppSettings, photo: GalleryUploadPhoto): Promise<GalleryFile> {
+    if (!/^(file|content):\/\//.test(photo.uri)) throw new Error('Choose a photo available on this device.')
+    if (!photo.name.trim() || photo.name.length > 255 || /[\r\n\0]/.test(photo.name)) throw new Error('Choose a photo with a valid file name.')
+    if (!Number.isFinite(photo.size) || photo.size <= 0 || photo.size > galleryMaxPhotoBytes) throw new Error('Photos must be between 1 byte and 50 MB.')
+    const extension = photo.name.split('.').pop()?.toLowerCase() || ''
+    const type = Object.values(galleryPhotoTypes).includes(photo.type || '') ? photo.type! : galleryPhotoTypes[extension]
+    if (!type) throw new Error('Choose a JPEG, PNG, GIF, WebP, AVIF, or HEIC photo.')
+    // The upload route also permits guests. Verify the account before sending bytes.
+    const session = await request(settings, 'cdn', 'auth/session')
+    if (session.id !== settings.userId) throw new Error('Sign in again before uploading photos.')
+    const form = new FormData()
+    form.append('file', { uri: photo.uri, name: photo.name, type } as unknown as Blob)
+    form.append('name', photo.name)
+    form.append('type', type)
+    const body = await request(settings, 'cdn', 'files', { method: 'POST', body: form })
+    if (typeof body.id !== 'string' || !body.id || body.owner !== settings.userId) {
+        throw new Error('Upload ownership could not be confirmed. Refresh your library before retrying.')
+    }
+    return { id: body.id, name: photo.name, type }
 }
 
 export function galleryImageUrl(settings: AppSettings, id: string, thumbnail = false) {

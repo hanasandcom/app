@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Animated, Dimensions, Image, Modal, PanResponder, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import { Alert, Animated, Dimensions, Image, Linking, Modal, PanResponder, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import { File as LocalFile } from 'expo-file-system'
 import * as MediaLibrary from 'expo-media-library'
 import type { ImageReviewAsset, SwipeDecision } from '../types'
 import type { AppSettings } from '../types'
-import { favoriteGalleryFile, galleryImageUrl, loadGalleryAlbums, loadGalleryPage, workspaceAccountKey, type GalleryAlbum, type GalleryFile, type GalleryFilter } from '../lib/workspace-data'
+import { favoriteGalleryFile, galleryImageUrl, loadGalleryAlbums, loadGalleryPage, uploadGalleryPhoto, workspaceAccountKey, type GalleryAlbum, type GalleryFile, type GalleryFilter } from '../lib/workspace-data'
 import { GlassCard, InlineNotice, PillButton, Screen, SectionTitle } from '../components/ui'
 import { spacing } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
@@ -18,6 +19,7 @@ export function ImagesScreen({ settings }: { settings: AppSettings }) {
 function CloudLibrary({ settings }: { settings: AppSettings }) {
     const theme = useAppTheme()
     const [device, setDevice] = useState(false)
+    const [uploadOpen, setUploadOpen] = useState(false)
     const [files, setFiles] = useState<GalleryFile[]>([])
     const [albums, setAlbums] = useState<GalleryAlbum[]>([])
     const [filter, setFilter] = useState<GalleryFilter>({ search: '', favorites: false, albumId: '' })
@@ -77,6 +79,7 @@ function CloudLibrary({ settings }: { settings: AppSettings }) {
             <View style={{ gap: spacing.sm }}>
                 <TextInput accessibilityLabel='Search images' placeholder='Search images or places' placeholderTextColor={theme.textSoft} value={filter.search} onChangeText={search => changeFilter({ ...filter, search })} style={{ color: theme.text, padding: 12, borderRadius: 12, backgroundColor: theme.ambientNeutral }} />
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+                    <PillButton label='Upload photos' tone='accent' small onPress={() => setUploadOpen(true)} />
                     <PillButton label='Library' tone={!filter.favorites && !filter.albumId ? 'accent' : 'default'} small onPress={() => changeFilter({ ...filter, favorites: false, albumId: '' })} />
                     <PillButton label='Favorites' tone={filter.favorites ? 'accent' : 'default'} small onPress={() => changeFilter({ ...filter, favorites: true, albumId: '' })} />
                     <PillButton label={loading ? 'Loading…' : 'Refresh'} small disabled={loading} onPress={() => void load(false)} />
@@ -97,6 +100,10 @@ function CloudLibrary({ settings }: { settings: AppSettings }) {
         </View>
         {!files.length && !loading && !error && <GlassCard><SectionTitle eyebrow='Library' title='No images found' body={filter.search || filter.favorites || filter.albumId ? 'Try another search or library.' : 'Images in your CDN account appear here.'} /></GlassCard>}
         {hasMore && <PillButton label={loading ? 'Loading…' : 'Load more'} disabled={loading} onPress={() => void load(true)} />}
+        {uploadOpen && <PhotoUploadPicker settings={settings} onClose={() => setUploadOpen(false)} onUploaded={() => {
+            changeFilter({ search: '', favorites: false, albumId: '' })
+            void loadAlbums()
+        }} />}
         <Modal visible={!!preview} animationType='fade' onRequestClose={() => setPreview(null)}>
             <View style={{ flex: 1, backgroundColor: theme.backgroundRaised, padding: 24, paddingTop: 64, gap: 16 }}>
                 <PillButton label='Close image' onPress={() => setPreview(null)} />
@@ -104,6 +111,124 @@ function CloudLibrary({ settings }: { settings: AppSettings }) {
             </View>
         </Modal>
     </Screen>
+}
+
+function PhotoUploadPicker({ settings, onClose, onUploaded }: { settings: AppSettings, onClose: () => void, onUploaded: () => void }) {
+    const theme = useAppTheme()
+    const [permission, requestPermission] = MediaLibrary.usePermissions()
+    const [photos, setPhotos] = useState<MediaLibrary.Asset[]>([])
+    const [selected, setSelected] = useState(new Set<string>())
+    const [loading, setLoading] = useState(false)
+    const [busy, setBusy] = useState(false)
+    const [stopping, setStopping] = useState(false)
+    const [error, setError] = useState('')
+    const [progress, setProgress] = useState('')
+    const [uploadedCount, setUploadedCount] = useState(0)
+    const [hasMore, setHasMore] = useState(false)
+    const cursor = useRef<string | undefined>(undefined)
+    const active = useRef(true)
+    const loadingRef = useRef(false)
+    const uploading = useRef(false)
+    const stopRequested = useRef(false)
+    useEffect(() => () => { active.current = false; stopRequested.current = true }, [])
+    useEffect(() => { if (permission?.granted) void loadPhotos(false) }, [permission?.granted])
+
+    async function loadPhotos(more: boolean) {
+        if (loadingRef.current || uploading.current) return
+        loadingRef.current = true
+        setLoading(true)
+        setError('')
+        if (!more) setSelected(new Set())
+        try {
+            const result = await MediaLibrary.getAssetsAsync({ mediaType: 'photo', first: 60, sortBy: ['creationTime'], ...(more && cursor.current ? { after: cursor.current } : {}) })
+            if (!active.current) return
+            setPhotos(current => more ? [...current, ...result.assets.filter(photo => !current.some(item => item.id === photo.id))] : result.assets)
+            cursor.current = result.endCursor
+            setHasMore(result.hasNextPage)
+        } catch (cause) { if (active.current) setError(cause instanceof Error ? cause.message : 'Unable to load device photos.') }
+        finally { loadingRef.current = false; if (active.current) setLoading(false) }
+    }
+    function togglePhoto(id: string) {
+        if (uploading.current) return
+        setSelected(current => {
+            const next = new Set(current)
+            if (next.has(id)) next.delete(id)
+            else next.add(id)
+            return next
+        })
+    }
+    async function uploadSelected() {
+        if (uploading.current || !selected.size) return
+        uploading.current = true
+        stopRequested.current = false
+        setBusy(true)
+        setStopping(false)
+        setError('')
+        const chosen = photos.filter(photo => selected.has(photo.id))
+        let completed = 0
+        try {
+            for (const [index, photo] of chosen.entries()) {
+                if (!active.current || stopRequested.current) break
+                setProgress(`Uploading ${index + 1} of ${chosen.length} · ${photo.filename}`)
+                // Resolve only explicitly selected assets after the Upload action.
+                const info = await MediaLibrary.getAssetInfoAsync(photo.id, { shouldDownloadFromNetwork: true })
+                if (!active.current || stopRequested.current) break
+                const uri = info.localUri || info.uri
+                const file = new LocalFile(uri)
+                if (!file.exists) throw new Error('This photo is not available on the device.')
+                await uploadGalleryPhoto(settings, { uri, name: info.filename, type: file.type, size: file.size })
+                completed++
+                if (!active.current) break
+                setUploadedCount(current => current + 1)
+                setSelected(current => { const next = new Set(current); next.delete(photo.id); return next })
+                // The standard CDN endpoint admits one upload per second per account.
+                if (index < chosen.length - 1 && !stopRequested.current) await new Promise(resolve => setTimeout(resolve, 1100))
+            }
+        } catch (cause) { if (active.current) setError(cause instanceof Error ? cause.message : 'Unable to upload this photo. Retry the remaining selection.') }
+        finally {
+            uploading.current = false
+            if (active.current) {
+                setBusy(false)
+                setProgress('')
+                if (completed) onUploaded()
+            }
+        }
+    }
+    const buttonStyle = { color: theme.text, fontSize: 12 } as const
+    return <Modal visible animationType='slide' onRequestClose={() => { if (!uploading.current) onClose() }}>
+        <View style={{ flex: 1, backgroundColor: theme.backgroundRaised, padding: 20, paddingTop: 64, gap: spacing.md }}>
+            <Text style={{ color: theme.text, fontSize: 24, fontWeight: '700' }}>Upload photos</Text>
+            <Text style={{ color: theme.textMuted }}>Select the photos to add to your Hanasand library.</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+                <PillButton label={uploadedCount ? 'View library' : 'Cancel'} disabled={busy} small onPress={onClose} />
+                {permission?.granted && <PillButton label={busy ? 'Uploading…' : `Upload ${selected.size} photo${selected.size === 1 ? '' : 's'}`} tone='accent' disabled={busy || !selected.size || loading} small onPress={() => void uploadSelected()} />}
+                {busy && <PillButton label={stopping ? 'Stopping…' : 'Stop after current'} disabled={stopping} small onPress={() => { stopRequested.current = true; setStopping(true) }} />}
+            </View>
+            {!!uploadedCount && <Text style={buttonStyle}>{uploadedCount} photo{uploadedCount === 1 ? '' : 's'} added to your library.</Text>}
+            {!!progress && <Text accessibilityLiveRegion='polite' style={{ color: theme.textMuted }}>{progress}</Text>}
+            {!!error && <InlineNotice message={error} />}
+            {!permission?.granted ? <View style={{ gap: spacing.sm }}>
+                <PillButton label={permission?.canAskAgain === false ? 'Open photo settings' : 'Choose photo access'} tone='accent' onPress={() => {
+                    const action = permission?.canAskAgain === false ? Linking.openSettings() : requestPermission()
+                    void action.catch(() => setError('Unable to request photo access. Check this app’s photo permissions in Settings.'))
+                }} />
+                <Text style={{ color: theme.textMuted }}>Photo access is needed to select photos from this device.</Text>
+            </View> : <>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+                    <PillButton label={loading ? 'Loading…' : 'Refresh device photos'} disabled={loading || busy} small onPress={() => void loadPhotos(false)} />
+                    {permission.accessPrivileges === 'limited' && <PillButton label='Choose more photos' disabled={loading || busy} small onPress={() => { void MediaLibrary.presentPermissionsPickerAsync().then(() => loadPhotos(false)).catch(() => setError('Unable to change photo access.')) }} />}
+                </View>
+                <ScrollView contentContainerStyle={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+                    {photos.map(photo => <Pressable key={photo.id} accessibilityRole='checkbox' accessibilityLabel={`Select ${photo.filename}`} accessibilityState={{ checked: selected.has(photo.id), disabled: busy }} disabled={busy} onPress={() => togglePhoto(photo.id)} style={{ width: '30%', gap: 4 }}>
+                        <Image source={{ uri: photo.uri }} style={{ width: '100%', aspectRatio: 1, borderRadius: 12, borderWidth: selected.has(photo.id) ? 3 : 0, borderColor: theme.accent, backgroundColor: theme.ambientNeutral }} />
+                        <Text numberOfLines={1} style={buttonStyle}>{selected.has(photo.id) ? '✓ ' : ''}{photo.filename}</Text>
+                    </Pressable>)}
+                    {!photos.length && !loading && <Text style={{ color: theme.textMuted }}>No photos available. Check the selected photo access or refresh.</Text>}
+                    {hasMore && <PillButton label={loading ? 'Loading…' : 'Load more photos'} disabled={loading || busy} small onPress={() => void loadPhotos(true)} />}
+                </ScrollView>
+            </>}
+        </View>
+    </Modal>
 }
 
 function DevicePhotoReview({ onBack }: { onBack: () => void }) {
