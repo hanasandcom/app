@@ -7,6 +7,18 @@ function leaves(items: SiteNavigationItem[]): SiteNavigationItem[] {
 }
 
 describe('native website navigation', () => {
+    it('uses both explicit case collections in every investigation and organization view', () => {
+        const canonical = workspacePageDefinition('/cases')!.sections
+        for (const path of ['/cases', '/organizations/events', '/organizations/activity']) {
+            const page = workspacePageDefinition(path)!
+            const cases = page.sections.filter(section => section.endpoint.startsWith('api/cases'))
+            expect(cases.map(section => section.endpoint)).toEqual(canonical.map(section => section.endpoint))
+            expect(cases.map(section => new URL(section.endpoint, 'https://synthetic.invalid').searchParams.get('collection'))).toEqual(['intelligence', 'monitoring'])
+            expect(cases[0].cursorParam).toBe('cursor')
+            expect(cases[0].cursorPath).toBe('nextCursor')
+            expect(page.requiresOrganization).toBe(path === '/cases' ? undefined : true)
+        }
+    })
     it('resolves each native Tools menu leaf to a distinct registered workflow', () => {
         const visit = (items: ReturnType<typeof siteNavigation>) => {
             for (const item of items) {

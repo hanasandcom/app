@@ -195,6 +195,10 @@ const vmFields: WorkspaceField[] = [['Status', 'status'], ['Reason', 'status_rea
 const fileFields: WorkspaceField[] = [['Name', 'path|filename|alias|id'], ['Owner', 'owner'], ['Updated', 'timestamp|updated_at|updated|last_updated', 'date'], ['Content', 'content']]
 const logFields: WorkspaceField[] = [['Service', 'service|normalized.service'], ['Level', 'level|normalized.level|normalized.severity'], ['Message', 'message|normalized.message'], ['Host', 'host|normalized.host'], ['Time', 'created_at|event_timestamp', 'date'], ['Source', 'source']]
 const eventFields: WorkspaceField[] = [['Status', 'status'], ['Severity', 'severity'], ['Summary', 'summary|description'], ['Created', 'createdAt|firstSeenAt|alertedAt', 'date'], ['Updated', 'updatedAt', 'date']]
+const caseSections: WorkspaceSection[] = [
+    { label: 'Intelligence cases', endpoint: 'api/cases?collection=intelligence&page=1', origin: 'site', listPath: 'items|cases', titlePath: 'title', fields: [...eventFields, ['Owner', 'assignedOwner'], ['Review', 'reviewState']], cursorPath: 'nextCursor', cursorParam: 'cursor' },
+    { label: 'Monitoring cases', endpoint: 'api/cases?collection=monitoring&view=summary', origin: 'site', listPath: 'items|cases', titlePath: 'title', fields: [...eventFields, ['Priority', 'priority'], ['Owner', 'assignedOwner']] },
+]
 const definitions: WorkspacePageDefinition[] = [
     { path: '/system', sections: [
         { label: 'Host', endpoint: 'system/snapshot', titlePath: 'systemTelemetry.system.os', fields: [['Operating system', 'systemTelemetry.system.os'], ['Load', 'systemTelemetry.system.load'], ['Memory used', 'systemTelemetry.system.memory.used', 'bytes'], ['Memory total', 'systemTelemetry.system.memory.total', 'bytes'], ['Memory usage', 'systemTelemetry.system.memory.percent', 'percent'], ['Disk', 'systemTelemetry.system.disk'], ['Temperature', 'systemTelemetry.system.temperature'], ['Processes', 'systemTelemetry.system.processes'], ['Updated', 'generated_at', 'date']] },
@@ -208,10 +212,7 @@ const definitions: WorkspacePageDefinition[] = [
         { label: 'Incidents', endpoint: 'api/status?dashboard=true', origin: 'status', statusFeed: true, listPath: 'incidents', titlePath: 'title', fields: [['Service', 'service'], ['Status', 'status'], ['Impact', 'impact'], ['Started', 'started_at', 'date'], ['Resolved', 'resolved_at', 'date'], ['Summary', 'summary']], detailEndpoint: 'api/status?incident=:id', detailObjectPath: 'incidents', detailFields: [['Status', 'status'], ['Service', 'service'], ['Check', 'check_name'], ['Started', 'started_at', 'date'], ['Resolved', 'resolved_at', 'date'], ['Summary', 'summary'], ['Cause', 'cause'], ['Updates', 'updates', 'updates']] },
         { label: 'Daily history', endpoint: 'api/status?dashboard=true', origin: 'status', statusFeed: true, listPath: 'history', titlePath: 'check_name', fields: [['Service', 'service'], ['Day', 'date'], ['Status', 'status'], ['Samples', 'samples'], ['Healthy', 'healthy_samples'], ['Degraded', 'degraded_samples'], ['Failed', 'failed_samples'], ['Incidents', 'incident_ids']] },
     ] },
-    { path: '/cases', sections: [
-        { label: 'Intelligence cases', endpoint: 'api/cases?collection=intelligence&page=1', origin: 'site', listPath: 'items|cases', titlePath: 'title', fields: [...eventFields, ['Owner', 'assignedOwner'], ['Review', 'reviewState']], cursorPath: 'nextCursor', cursorParam: 'cursor' },
-        { label: 'Monitoring cases', endpoint: 'api/cases?collection=monitoring&view=summary', origin: 'site', listPath: 'items|cases', titlePath: 'title', fields: [...eventFields, ['Priority', 'priority'], ['Owner', 'assignedOwner']] },
-    ] },
+    { path: '/cases', sections: caseSections },
     { path: '/repositories', sections: [
         { label: 'Repositories', endpoint: 'projects/user/:userId', listPath: '', titlePath: 'alias', fields: [['Owner', 'owner'], ['Files', 'file_count'], ['Size', 'total_size', 'bytes'], ['Updated', 'last_updated', 'date']], detailEndpoint: 'project/:id', detailKey: 'alias', detailObjectPath: 'share', detailTreePath: 'tree', detailFields: fileFields },
         { label: 'Files', endpoint: 'share/user/:userId', listPath: '', titlePath: 'path|filename|alias|id', fields: fileFields, detailEndpoint: 'share/:id', detailKey: 'id' },
@@ -248,9 +249,9 @@ const definitions: WorkspacePageDefinition[] = [
     ] },
     { path: '/organizations/events', requiresOrganization: true, sections: [
         { label: 'Events', endpoint: 'api/findings/alerts', origin: 'site', listPath: 'alerts|items|results', titlePath: 'title|id', fields: eventFields },
-        { label: 'Cases', endpoint: 'api/cases', origin: 'site', listPath: 'cases|items|results', titlePath: 'title|id', fields: eventFields },
+        ...caseSections,
     ] },
-    { path: '/organizations/activity', requiresOrganization: true, sections: [{ label: 'Recent events', endpoint: 'api/findings/alerts', origin: 'site', listPath: 'alerts|items|results', titlePath: 'title|id', fields: eventFields }, { label: 'Recent cases', endpoint: 'api/cases', origin: 'site', listPath: 'cases|items|results', titlePath: 'title|id', fields: eventFields }] },
+    { path: '/organizations/activity', requiresOrganization: true, sections: [{ label: 'Recent events', endpoint: 'api/findings/alerts', origin: 'site', listPath: 'alerts|items|results', titlePath: 'title|id', fields: eventFields }, ...caseSections.map(section => ({ ...section, label: `Recent ${section.label.toLowerCase()}` }))] },
 ]
 
 export function workspacePageDefinition(path: string) {

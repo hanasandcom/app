@@ -120,6 +120,27 @@ describe('maintained workspace API contracts', () => {
         expect(workspaceSectionNotice({ warnings: ['Monitoring unavailable', { secret: 'ignored' }] }, sections[0])).toBe('Monitoring unavailable')
     })
 
+    it('preserves tenant scope and intelligence pagination in organization case views', () => {
+        for (const path of ['/organizations/events', '/organizations/activity']) {
+            const sections = workspacePageDefinition(path)!.sections.filter(section => section.endpoint.startsWith('api/cases'))
+            for (const section of sections) {
+                const url = new URL(workspaceRequestUrl(settings, section, undefined, undefined, 'next'))
+                expect(url.origin).toBe('https://site.example.test')
+                expect(url.pathname).toBe('/api/cases')
+                expect(url.searchParams.get('organizationId')).toBe('synthetic-org')
+                if (url.searchParams.get('collection') === 'intelligence') {
+                    expect(url.searchParams.get('page')).toBeNull()
+                    expect(url.searchParams.get('cursor')).toBe('next')
+                    expect(workspaceRows({ items: [{ id: 'case' }], nextCursor: 'next' }, section)).toEqual([{ id: 'case' }])
+                } else {
+                    expect(url.searchParams.get('collection')).toBe('monitoring')
+                    expect(url.searchParams.get('view')).toBe('summary')
+                    expect(url.searchParams.get('cursor')).toBeNull()
+                }
+            }
+        }
+    })
+
     it('preserves organization and impersonation scope and rejects plaintext and malformed payloads', async () => {
         const definition: WorkspaceSection = { label: 'Scoped records', endpoint: 'organizations/:organizationId/items/:userId', listPath: 'items', fields: [] }
         const impersonated = { ...settings, impersonatingUserId: 'other/user', impersonationToken: 'synthetic-impersonation' }
