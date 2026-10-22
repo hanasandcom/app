@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Switch, Text, TextInput, View } from 'react-native'
 import type { AppSettings } from '../types'
 import { GlassCard, InlineNotice, PillButton, Screen } from '../components/ui'
 import { useAppTheme } from '../theme/context'
-import { createRuleDraft, ruleDraftChanged, rulesImpersonationActive, createOrganizationRule, loadOrganizationRule, loadOrganizationRules, previewOrganizationRule, RuleRequestError, rulePreviewWindow, rulesAccountScope, setOrganizationRuleEnabled, updateOrganizationRule, type OrganizationRule, type RuleCategory, type RuleCondition, type RuleDefinition, type RuleDetail, type RuleDraft, type RulePreview, type RulePreviewWindow, type RulesContext } from '../lib/organization-rules'
+import { createRuleDraft, ruleDraftChanged, rulesImpersonationActive, canPreviewOrganizationRule, createOrganizationRule, loadOrganizationRule, loadOrganizationRules, previewOrganizationRule, RuleRequestError, rulePreviewWindow, rulesAccountScope, setOrganizationRuleEnabled, updateOrganizationRule, type OrganizationRule, type RuleCategory, type RuleCondition, type RuleDefinition, type RuleDetail, type RuleDraft, type RulePreview, type RulePreviewWindow, type RulesContext } from '../lib/organization-rules'
 
 export function RulesScreen(props: { settings: AppSettings, category: RuleCategory }) {
     const identity = rulesAccountScope(props.settings)
@@ -49,6 +49,10 @@ function RulesWorkspace({ settings, category }: { settings: AppSettings, categor
     const filtered = context?.rules.filter(rule => `${rule.name} ${rule.id} ${rule.explanation} ${rule.family || ''}`.toLowerCase().includes(query.trim().toLowerCase())) || []
     const visible = filtered.slice(page * 30, (page + 1) * 30)
     const isBuiltin = detail?.rule.source === 'hanasand'
+    const canPreview = useMemo(() => {
+        try { return canPreviewOrganizationRule(isBuiltin ? JSON.parse(definitionJson) : draft?.definition) }
+        catch { return false }
+    }, [isBuiltin, definitionJson, draft])
     const dirty = !!draft && (ruleDraftChanged(draft, detail ? draftOf(detail.rule) : createRuleDraft(category)) || isBuiltin && definitionJson !== JSON.stringify(detail.rule.definition, null, 2))
     function startRead() {
         controller.current?.abort(); controller.current = new AbortController()
@@ -172,7 +176,8 @@ function RulesWorkspace({ settings, category }: { settings: AppSettings, categor
                 {detail && <PillButton label={detail.rule.enabled ? 'Disable rule' : 'Enable rule'} tone={detail.rule.enabled ? 'danger' : 'default'} disabled={!editable || busy || loading || conflict} onPress={() => confirm(detail.rule.enabled ? 'Disable rule?' : 'Enable rule?', 'This changes handling of future events. The rule and its history are retained; Unsaved editor changes will be discarded.', () => { void write(() => setOrganizationRuleEnabled(settings, context, detail, !detail.rule.enabled)) }, detail.rule.enabled)} />}
             </GlassCard>
             <GlassCard><Text style={heading}>Preview stored matches</Text><Text style={text}>Read-only sample using these field conditions. It does not apply, reprocess, or execute a rule. Built-in thresholds and correlations are not simulated.</Text>
-                <View style={row}>{([1, 24, 168] as const).map(value => <PillButton key={value} small label={`${hours === value ? '✓ ' : ''}${value === 1 ? '1 hour' : value === 24 ? '24 hours' : '7 days'}`} disabled={busy || loading} onPress={() => { setHours(value); setPreview(null); setPreviewWindow(null) }} />)}<PillButton label='Check matches' disabled={busy || loading} onPress={() => { void checkMatches() }} /></View>
+                {!canPreview && <Text style={text}>Add valid field conditions to preview stored matches.</Text>}
+                <View style={row}>{([1, 24, 168] as const).map(value => <PillButton key={value} small label={`${hours === value ? '✓ ' : ''}${value === 1 ? '1 hour' : value === 24 ? '24 hours' : '7 days'}`} disabled={busy || loading} onPress={() => { setHours(value); setPreview(null); setPreviewWindow(null) }} />)}<PillButton label='Check matches' disabled={!canPreview || busy || loading} onPress={() => { void checkMatches() }} /></View>
                 {preview && <><Text style={text}>{preview.count} matches in {preview.scanned} checked events{preview.cursor ? ' · More events remain' : ''}. Counts describe this sample, not all history.</Text>
                     {preview.events.slice(0, 10).map(event => <View key={event.id} style={{ gap: 4 }}><Text style={text}>{new Date(event.timestamp).toLocaleString()}</Text><Text selectable style={[text, { fontFamily: 'monospace' }]}>{JSON.stringify(event.normalized, null, 2).slice(0, 3000)}</Text></View>)}
                     <Text style={text}>Showing up to 10 example events from this checked sample.</Text><PillButton label='Check next sample' disabled={!preview.cursor || busy || loading} onPress={() => { void checkMatches(true) }} /></>}

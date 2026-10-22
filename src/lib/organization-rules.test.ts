@@ -200,3 +200,10 @@ describe('rule editor safeguards', () => {
         expect(api.createRuleDraft('detection').definition.stage).toBe('detect')
     })
 })
+
+it('offers stored previews only for valid field conditions, including unsaved definitions', () => {
+    expect(api.canPreviewOrganizationRule(builtin.definition)).toBe(false)
+    expect(api.canPreviewOrganizationRule(custom.definition)).toBe(true)
+    for (const value of [null, {}, { conditions: [] }, { conditions: [{ path: 'event_type', operator: 'equals', value: '' }] }]) expect(api.canPreviewOrganizationRule(value)).toBe(false)
+    expect(api.canPreviewOrganizationRule({ ...builtin.definition, conditions: custom.definition.conditions })).toBe(true)
+})

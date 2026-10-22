@@ -103,6 +103,9 @@ export function validateRuleConditions(value: unknown): RuleCondition[] {
         return { ...condition, path, operator, value: match } as RuleCondition
     })
 }
+export function canPreviewOrganizationRule(definition: unknown) {
+    try { validateRuleConditions(object(definition).conditions); return true } catch { return false }
+}
 function metadata(draft: RuleDraft) {
     const name = draft.name.trim(), explanation = draft.explanation.trim()
     if (name.length < 2 || name.length > 120 || explanation.length < 10 || explanation.length > 500) throw new Error('Use a name of 2–120 characters and description of 10–500 characters.')
