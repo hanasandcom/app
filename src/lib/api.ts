@@ -43,6 +43,30 @@ function headers(settings: AppSettings) {
     return next
 }
 
+async function apiFetch(settings: AppSettings | undefined, input: RequestInfo | URL, init: RequestInit = {}) {
+    const requestUrl = String(input)
+    const url = new URL(requestUrl)
+    const managed = url.protocol === 'https:' && (url.hostname === 'hanasand.com' || url.hostname.endsWith('.hanasand.com'))
+    if (!managed) return fetch(input, init)
+
+    const requestHeaders = new Headers(init.headers)
+    if (settings) {
+        for (const [name, value] of Object.entries(headers(settings))) {
+            if (value) requestHeaders.set(name, value)
+        }
+    }
+    const { createDeviceProof, getDevicePublicJwk } = await import('./device-proof')
+    const devicePublicJwk = await getDevicePublicJwk()
+    requestHeaders.set('x-device-public-jwk', JSON.stringify(devicePublicJwk))
+    if (settings?.authToken) {
+        const signed = await createDeviceProof(settings.authToken, init.method || 'GET', requestUrl)
+        requestHeaders.set('dpop', signed.proof)
+        requestHeaders.set('x-device-proof-url', signed.url)
+        requestHeaders.set('x-device-proof-method', (init.method || 'GET').toUpperCase())
+    }
+    return fetch(input, { ...init, headers: requestHeaders })
+}
+
 function requireAppAuth(settings: AppSettings, purpose: string) {
     if (!settings.apiBaseUrl || !settings.authToken || !settings.userId) {
         throw new Error(`Log in again to ${purpose}.`)
@@ -91,7 +115,7 @@ async function fetchDesktopAgentPresence(settings: AppSettings) {
     }
     cachedDesktopAgentPresence = cache
     cache.pending = (async () => {
-        const response = await fetch(joinUrl(settings.apiBaseUrl, 'desktop-agent/presence'), {
+        const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'desktop-agent/presence'), {
             headers: headers(settings),
         })
         if (!response.ok) {
@@ -457,7 +481,7 @@ export async function loginToHanasand(settings: AppSettings, username: string, p
     if (!id || !password) {
         throw new Error('Enter username and password.')
     }
-    const response = await fetch(joinUrl(settings.apiBaseUrl, `auth/login/${segment(id)}`), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, `auth/login/${segment(id)}`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ password }),
@@ -471,7 +495,7 @@ export async function createHanasandAccount(settings: AppSettings, username: str
     if (!id || !displayName || !password) {
         throw new Error('Enter username, name, and password.')
     }
-    const response = await fetch(joinUrl(settings.apiBaseUrl, 'user'), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'user'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ id, name: displayName, password }),
@@ -481,7 +505,7 @@ export async function createHanasandAccount(settings: AppSettings, username: str
 
 export async function refreshHanasandSession(settings: AppSettings) {
     requireAppAuth(settings, 'refresh your login session')
-    const response = await fetch(joinUrl(settings.apiBaseUrl, `auth/token/${segment(settings.userId)}`), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, `auth/token/${segment(settings.userId)}`), {
         headers: headers(settings),
     })
     return normalizeAuthSession(await readJsonResponse(response))
@@ -490,7 +514,7 @@ export async function refreshHanasandSession(settings: AppSettings) {
 export async function requestPasswordResetCode(settings: AppSettings, username: string) {
     const id = username.trim()
     if (!id) throw new Error('Type your username first.')
-    const response = await fetch(joinUrl(settings.apiBaseUrl, 'auth/password-reset/request'), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'auth/password-reset/request'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ id }),
@@ -502,7 +526,7 @@ export async function verifyPasswordResetCode(settings: AppSettings, username: s
     const id = username.trim()
     const resetCode = code.trim()
     if (!id || !/^\d{6}$/.test(resetCode)) throw new Error('Enter the 6 digit code.')
-    const response = await fetch(joinUrl(settings.apiBaseUrl, 'auth/password-reset/verify'), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'auth/password-reset/verify'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ id, code: resetCode }),
@@ -516,7 +540,7 @@ export async function verifyPasswordResetCode(settings: AppSettings, username: s
 export async function completePasswordReset(settings: AppSettings, username: string, resetToken: string, password: string) {
     const id = username.trim()
     if (!id || !resetToken || !password) throw new Error('Reset session expired. Send a new code.')
-    const response = await fetch(joinUrl(settings.apiBaseUrl, 'auth/password-reset/complete'), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'auth/password-reset/complete'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ id, resetToken, password }),
@@ -526,7 +550,7 @@ export async function completePasswordReset(settings: AppSettings, username: str
 
 export async function deleteHanasandAccount(settings: AppSettings) {
     requireAppAuth(settings, 'delete your account')
-    const response = await fetch(joinUrl(settings.apiBaseUrl, 'user/self'), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'user/self'), {
         method: 'DELETE',
         headers: headers(settings),
     })
@@ -534,7 +558,7 @@ export async function deleteHanasandAccount(settings: AppSettings) {
 }
 
 export async function restoreHanasandAccount(settings: AppSettings, id: string, restoreToken: string) {
-    const response = await fetch(joinUrl(settings.apiBaseUrl, 'user/restore'), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'user/restore'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ id, restoreToken }),
@@ -802,7 +826,7 @@ export async function fetchMailOverview(settings: AppSettings, mailboxId?: strin
     if (mailboxId) search.set('mailboxId', mailboxId)
     if (messageId) search.set('messageId', messageId)
 
-    const response = await fetch(`${joinUrl(settings.apiBaseUrl, 'mail/overview')}?${search.toString()}`, {
+    const response = await apiFetch(settings, `${joinUrl(settings.apiBaseUrl, 'mail/overview')}?${search.toString()}`, {
         headers: headers(settings),
     })
 
@@ -822,7 +846,7 @@ export async function fetchMailOverview(settings: AppSettings, mailboxId?: strin
 export async function postMailAction(settings: AppSettings, messageId: string, action: string, targetMailboxId?: string) {
     requireAppAuth(settings, 'update mail')
 
-    const response = await fetch(joinUrl(settings.apiBaseUrl, `mail/message/${segment(messageId)}/action`), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, `mail/message/${segment(messageId)}/action`), {
         method: 'POST',
         headers: headers(settings),
         body: JSON.stringify({ action, targetMailboxId }),
@@ -837,7 +861,7 @@ export async function postMailAction(settings: AppSettings, messageId: string, a
 export async function createMailbox(settings: AppSettings, name: string) {
     requireAppAuth(settings, 'create mailbox folders')
 
-    const response = await fetch(joinUrl(settings.apiBaseUrl, 'mail/mailboxes'), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'mail/mailboxes'), {
         method: 'POST',
         headers: headers(settings),
         body: JSON.stringify({ name }),
@@ -859,7 +883,7 @@ export async function sendMailMessage(settings: AppSettings, body: {
 }) {
     requireAppAuth(settings, 'send mail')
 
-    const response = await fetch(joinUrl(settings.apiBaseUrl, 'mail/send'), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'mail/send'), {
         method: 'POST',
         headers: headers(settings),
         body: JSON.stringify(body),
@@ -875,7 +899,7 @@ export async function sendMailMessage(settings: AppSettings, body: {
 
 export async function triggerServerAction(url: string, settings?: AppSettings) {
     assertSecureTransport(url)
-    const response = await fetch(url, {
+    const response = await apiFetch(settings, url, {
         method: 'POST',
         headers: settings ? headers(settings) : undefined,
     })
@@ -889,7 +913,7 @@ export async function triggerServerAction(url: string, settings?: AppSettings) {
 
 export async function fetchServerText(url: string, settings?: AppSettings) {
     assertSecureTransport(url)
-    const response = await fetch(url, {
+    const response = await apiFetch(settings, url, {
         headers: settings ? headers(settings) : undefined,
     })
 
@@ -903,7 +927,7 @@ export async function fetchServerText(url: string, settings?: AppSettings) {
 export async function askCodex(settings: AppSettings, prompt: string, context?: string): Promise<AiRunDetails> {
     requireAppAuth(settings, 'use Codex in-app')
 
-    const response = await fetch(joinUrl(settings.apiBaseUrl, settings.codexApiPath), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, settings.codexApiPath), {
         method: 'POST',
         headers: headers(settings),
         body: JSON.stringify({ prompt, context }),
@@ -928,7 +952,7 @@ export async function fetchAiModels(settings: AppSettings) {
         return []
     }
 
-    const response = await fetch(joinUrl(settings.apiBaseUrl, 'ai/models'), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'ai/models'), {
         headers: headers(settings),
     })
     const body = await response.json().catch(() => ({} as Record<string, unknown>))
@@ -943,7 +967,7 @@ export async function fetchAiModels(settings: AppSettings) {
 export async function fetchUserShares(settings: AppSettings) {
     requireCdnAuth(settings, 'load shares')
 
-    const response = await fetch(joinUrl(settings.cdnBaseUrl, `share/user/${segment(settings.userId)}`), {
+    const response = await apiFetch(settings, joinUrl(settings.cdnBaseUrl, `share/user/${segment(settings.userId)}`), {
         headers: headers(settings),
     })
     const body = await response.json().catch(() => ([]))
@@ -957,7 +981,7 @@ export async function fetchUserShares(settings: AppSettings) {
 export async function createShare(settings: AppSettings, payload: { id: string; content: string; name?: string; path?: string; type?: string }) {
     requireCdnAuth(settings, 'create shares')
 
-    const response = await fetch(joinUrl(settings.cdnBaseUrl, 'share'), {
+    const response = await apiFetch(settings, joinUrl(settings.cdnBaseUrl, 'share'), {
         method: 'POST',
         headers: headers(settings),
         body: JSON.stringify(payload),
@@ -977,7 +1001,7 @@ export async function createShare(settings: AppSettings, payload: { id: string; 
 export async function updateShare(settings: AppSettings, id: string, updates: { path?: string; content?: string; name?: string }) {
     requireCdnAuth(settings, 'update shares')
 
-    const response = await fetch(joinUrl(settings.cdnBaseUrl, `share/${segment(id)}`), {
+    const response = await apiFetch(settings, joinUrl(settings.cdnBaseUrl, `share/${segment(id)}`), {
         method: 'PUT',
         headers: headers(settings),
         body: JSON.stringify(updates),
@@ -997,7 +1021,7 @@ export async function updateShare(settings: AppSettings, id: string, updates: { 
 export async function deleteShare(settings: AppSettings, id: string) {
     requireCdnAuth(settings, 'delete shares')
 
-    const response = await fetch(joinUrl(settings.cdnBaseUrl, `share/${segment(id)}`), {
+    const response = await apiFetch(settings, joinUrl(settings.cdnBaseUrl, `share/${segment(id)}`), {
         method: 'DELETE',
         headers: headers(settings),
     })
@@ -1010,7 +1034,7 @@ export async function deleteShare(settings: AppSettings, id: string) {
 export async function setShareLock(settings: AppSettings, id: string, locked: boolean) {
     requireCdnAuth(settings, 'lock shares')
 
-    const response = await fetch(joinUrl(settings.cdnBaseUrl, `share/lock/${segment(id)}`), {
+    const response = await apiFetch(settings, joinUrl(settings.cdnBaseUrl, `share/lock/${segment(id)}`), {
         method: 'PUT',
         headers: headers(settings),
         body: JSON.stringify({ locked }),
@@ -1030,7 +1054,7 @@ export async function setShareLock(settings: AppSettings, id: string, locked: bo
 export async function fetchShareTree(settings: AppSettings, id: string) {
     requireCdnAuth(settings, 'load share trees')
 
-    const response = await fetch(joinUrl(settings.cdnBaseUrl, `share/tree/${segment(id)}`), {
+    const response = await apiFetch(settings, joinUrl(settings.cdnBaseUrl, `share/tree/${segment(id)}`), {
         headers: headers(settings),
     })
     const body = await response.json().catch(() => [])
@@ -1046,7 +1070,7 @@ export async function fetchTopDomains(settings: AppSettings) {
         return []
     }
 
-    const response = await fetch(`${joinUrl(settings.cdnBaseUrl, 'traffic/tps')}?fresh=1`, {
+    const response = await apiFetch(settings, `${joinUrl(settings.cdnBaseUrl, 'traffic/tps')}?fresh=1`, {
         headers: headers(settings),
     })
     const body = await response.json().catch(() => ([]))
@@ -1105,7 +1129,7 @@ export async function fetchDesktopScreenshot(settings: AppSettings) {
 export async function fetchNotes(settings: AppSettings) {
     requireAppAuth(settings, 'load notes')
 
-    const response = await fetch(joinUrl(settings.apiBaseUrl, 'notes'), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'notes'), {
         headers: headers(settings),
     })
     const body = await response.json().catch(() => ([]))
@@ -1119,7 +1143,7 @@ export async function fetchNotes(settings: AppSettings) {
 export async function createNote(settings: AppSettings, payload: { title: string; content: string }) {
     requireAppAuth(settings, 'save notes')
 
-    const response = await fetch(joinUrl(settings.apiBaseUrl, 'notes'), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'notes'), {
         method: 'POST',
         headers: headers(settings),
         body: JSON.stringify({ ...payload, source: 'app' }),
@@ -1139,7 +1163,7 @@ export async function createNote(settings: AppSettings, payload: { title: string
 export async function updateNote(settings: AppSettings, id: string, payload: { title: string; content: string }) {
     requireAppAuth(settings, 'save notes')
 
-    const response = await fetch(joinUrl(settings.apiBaseUrl, `notes/${segment(id)}`), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, `notes/${segment(id)}`), {
         method: 'PUT',
         headers: headers(settings),
         body: JSON.stringify({ ...payload, source: 'app' }),
@@ -1159,7 +1183,7 @@ export async function updateNote(settings: AppSettings, id: string, payload: { t
 export async function deleteNote(settings: AppSettings, id: string) {
     requireAppAuth(settings, 'delete notes')
 
-    const response = await fetch(joinUrl(settings.apiBaseUrl, `notes/${segment(id)}`), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, `notes/${segment(id)}`), {
         method: 'DELETE',
         headers: headers(settings),
     })
@@ -1172,7 +1196,7 @@ export async function deleteNote(settings: AppSettings, id: string) {
 export async function fetchDashboardUsers(settings: AppSettings) {
     requireAppAuth(settings, 'load users')
 
-    const response = await fetch(joinUrl(settings.apiBaseUrl, 'users'), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'users'), {
         headers: headers(settings),
     })
     const body = await readJsonObject(response, [])
@@ -1186,7 +1210,7 @@ export async function fetchDashboardUsers(settings: AppSettings) {
 export async function fetchDashboardRoles(settings: AppSettings) {
     requireAppAuth(settings, 'load roles')
 
-    const response = await fetch(joinUrl(settings.apiBaseUrl, 'roles'), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'roles'), {
         headers: headers(settings),
     })
     const body = await readJsonObject(response, [])
@@ -1200,7 +1224,7 @@ export async function fetchDashboardRoles(settings: AppSettings) {
 export async function fetchDashboardUserRoles(settings: AppSettings, userId: string) {
     requireAppAuth(settings, 'load user roles')
 
-    const response = await fetch(joinUrl(settings.apiBaseUrl, `roles/user/${segment(userId)}`), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, `roles/user/${segment(userId)}`), {
         headers: headers(settings),
     })
     const body = await readJsonObject(response, [])
@@ -1217,7 +1241,7 @@ export async function startMobileImpersonation(settings: AppSettings, userId: st
         throw new Error('You are already viewing your own account.')
     }
 
-    const response = await fetch(joinUrl(settings.apiBaseUrl, 'impersonation/start'), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'impersonation/start'), {
         method: 'POST',
         headers: headers({ ...settings, impersonationToken: '', impersonatingUserId: '', impersonatingUserName: '' }),
         body: JSON.stringify({ target_id: userId }),
@@ -1238,7 +1262,7 @@ export async function startMobileImpersonation(settings: AppSettings, userId: st
 
 export async function stopMobileImpersonation(settings: AppSettings) {
     if (!settings.impersonationToken || !settings.authToken || !settings.userId) return
-    await fetch(joinUrl(settings.apiBaseUrl, 'impersonation'), {
+    await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'impersonation'), {
         method: 'DELETE',
         headers: headers(settings),
     }).catch(() => {})
@@ -1247,7 +1271,7 @@ export async function stopMobileImpersonation(settings: AppSettings) {
 export async function setDashboardUserActive(settings: AppSettings, userId: string, active: boolean) {
     requireAppAuth(settings, 'update users')
 
-    const response = await fetch(joinUrl(settings.apiBaseUrl, `user/${segment(userId)}/active`), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, `user/${segment(userId)}/active`), {
         method: 'PUT',
         headers: headers(settings),
         body: JSON.stringify({ active }),
@@ -1270,7 +1294,7 @@ async function mutateDashboardUserRole(settings: AppSettings, userId: string, ro
     requireAppAuth(settings, assigned ? 'assign roles' : 'remove roles')
 
     const action = assigned ? 'assign' : 'unassign'
-    const response = await fetch(joinUrl(settings.apiBaseUrl, `role/${action}/${segment(userId)}`), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, `role/${action}/${segment(userId)}`), {
         method: 'POST',
         headers: headers(settings),
         body: JSON.stringify({ role_id: roleId }),
@@ -1286,7 +1310,7 @@ async function mutateDashboardUserRole(settings: AppSettings, userId: string, ro
 export async function fetchAutomations(settings: AppSettings) {
     requireAppAuth(settings, 'load automations')
 
-    const response = await fetch(joinUrl(settings.apiBaseUrl, 'automations'), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'automations'), {
         headers: headers(settings),
     })
     const body = await readJsonObject(response, {})
@@ -1301,7 +1325,7 @@ export async function fetchAutomations(settings: AppSettings) {
 export async function fetchAutomationDetails(settings: AppSettings, id: string) {
     requireAppAuth(settings, 'load automation runs')
 
-    const response = await fetch(joinUrl(settings.apiBaseUrl, `automations/${segment(id)}`), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, `automations/${segment(id)}`), {
         headers: headers(settings),
     })
     const body = await readJsonObject(response, {})
@@ -1330,7 +1354,7 @@ export async function deleteAutomation(settings: AppSettings, id: string) {
 export async function runAutomationNow(settings: AppSettings, id: string) {
     requireAppAuth(settings, 'run automations')
 
-    const response = await fetch(joinUrl(settings.apiBaseUrl, `automations/${segment(id)}/run`), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, `automations/${segment(id)}/run`), {
         method: 'POST',
         headers: headers(settings),
     })
@@ -1343,7 +1367,7 @@ export async function runAutomationNow(settings: AppSettings, id: string) {
 export async function fetchManagedCronJobs(settings: AppSettings) {
     requireAppAuth(settings, 'load system cron jobs')
 
-    const response = await fetch(joinUrl(settings.apiBaseUrl, 'system/cron'), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'system/cron'), {
         headers: headers(settings),
     })
     const body = await readJsonObject(response, {})
@@ -1358,7 +1382,7 @@ export async function fetchManagedCronJobs(settings: AppSettings) {
 export async function updateManagedCronJob(settings: AppSettings, id: string, payload: { schedule?: string, enabled?: boolean }) {
     requireAppAuth(settings, 'update system cron jobs')
 
-    const response = await fetch(joinUrl(settings.apiBaseUrl, `system/cron/${segment(id)}`), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, `system/cron/${segment(id)}`), {
         method: 'PUT',
         headers: headers(settings),
         body: JSON.stringify(payload),
@@ -1375,7 +1399,7 @@ export async function updateManagedCronJob(settings: AppSettings, id: string, pa
 async function mutateAutomation(settings: AppSettings, path: string, method: 'POST' | 'PUT' | 'DELETE', payload?: AgentAutomationPayload) {
     requireAppAuth(settings, 'save automations')
 
-    const response = await fetch(joinUrl(settings.apiBaseUrl, path), {
+    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, path), {
         method,
         headers: headers(settings),
         body: payload ? JSON.stringify(payload) : undefined,

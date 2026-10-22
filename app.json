@@ -1,15 +1,14 @@
 {
   "expo": {
-    "name": "Hanasand App",
-    "slug": "hanasand-app",
-    "scheme": "hanasandapp",
+    "name": "hanasand",
+    "slug": "hanasand",
+    "owner": "hanasand",
+    "scheme": "hanasand",
     "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
       "icon": "./assets/icon.png",
@@ -24,12 +23,7 @@
         "NSPhotoLibraryAddUsageDescription": "Save exported PDFs and attachments when needed."
       }
     },
-    "plugins": [
-      "expo-camera",
-      "expo-media-library",
-      "expo-secure-store",
-      "expo-sharing"
-    ],
+    "plugins": ["expo-camera", "expo-media-library", "expo-secure-store", "expo-sharing"],
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -47,6 +41,11 @@
       ],
       "package": "com.hanasand.app",
       "usesCleartextTraffic": false
+    },
+    "extra": {
+      "eas": {
+        "projectId": "0960d5bf-f739-497e-8d78-d4438108dde8"
+      }
     }
   }
 }
