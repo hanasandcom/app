@@ -63,7 +63,7 @@ describe('maintained workspace API contracts', () => {
 
     it('uses website log routing and actual rows/cursor/query contracts for all log views', () => {
         for (const path of ['/logs', '/logs/realtime', '/logs/search']) {
-            const definition = workspacePageDefinition(path)!.sections[0]
+            const definition = workspacePageDefinition(path)!.sections.find(section => section.listPath === 'rows')!
             const url = new URL(workspaceRequestUrl(settings, definition, undefined, 'synthetic search', 'cursor/next'))
             expect(url.origin).toBe('https://site.example.test')
             expect(url.pathname).toBe('/api/backend/logs/search')
@@ -74,6 +74,40 @@ describe('maintained workspace API contracts', () => {
             expect(workspaceRows({ rows: [{ id: 'log' }], next_cursor: 'next' }, definition)).toEqual([{ id: 'log' }])
             if (path === '/logs/realtime') expect(url.searchParams.get('severity')).toBe('high,critical')
         }
+    })
+
+    it('renders dashboard counters and processing evidence even when the recent event sample is empty', () => {
+        const sections = workspacePageDefinition('/logs')!.sections
+        const payload = {
+            rows: [], counts: [{ severity: 'high', count: 12 }, { severity: 'critical', count: 0 }],
+            services: [{ service: 'synthetic-api', count: 12 }], hours: 24,
+            generated_at: '2026-10-23T10:00:00Z',
+            processing: { updated_at: '2026-10-23T09:59:00Z', last_error: 'Synthetic processing delay', skipped_events: 3, pending_commands: { count: 2 }, catchup: { remaining: 4, processed: 8, last_error: 'Synthetic catchup delay' } },
+            secret: 'never-render',
+        }
+        expect(sections.map(section => section.label)).toEqual(['Overview', 'Severity counts', 'Most active services', 'Recent events'])
+        expect(new Set(sections.map(section => workspaceRequestUrl(settings, section, undefined, 'synthetic search'))).size).toBe(1)
+        for (const section of sections) {
+            const params = new URL(workspaceRequestUrl(settings, section, undefined, undefined, 'unused')).searchParams
+            expect(params.get('stats')).toBe('1')
+            expect(params.has('paginate')).toBe(false)
+            expect(params.has('cursor')).toBe(false)
+        }
+        const overview = workspaceRows(payload, sections[0])[0]
+        const fields = Object.fromEntries(sections[0].fields.map(field => [field[0], workspaceFieldValue(overview, field)]))
+        expect(fields['Window (hours)']).toBe('24')
+        expect(fields['Processing delay']).toBe('Synthetic processing delay')
+        expect(fields['Excluded from detection']).toBe('3')
+        expect(fields['Pending commands']).toBe('2')
+        expect(fields['Catchup remaining']).toBe('4')
+        expect(fields['Catchup error']).toBe('Synthetic catchup delay')
+        expect(Object.values(fields)).not.toContain('never-render')
+        const counts = workspaceRows(payload, sections[1])
+        expect(counts).toEqual(payload.counts)
+        expect(workspaceFieldValue(counts[1], sections[1].fields[1])).toBe('0')
+        expect(workspaceRows(payload, sections[2])).toEqual(payload.services)
+        expect(workspaceRows(payload, sections[3])).toEqual([])
+        expect(workspaceFieldValue({}, sections[0].fields[2])).toBeNull()
     })
 
     it('keeps case collection cursors separate and exposes partial-source warnings', () => {

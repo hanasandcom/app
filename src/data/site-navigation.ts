@@ -220,12 +220,21 @@ const definitions: WorkspacePageDefinition[] = [
     ...['/logs', '/logs/realtime', '/logs/search'].map(path => {
         const dashboard = path === '/logs'
         const realtime = path === '/logs/realtime'
-        return { path, sections: [{
-            label: realtime ? 'Recent high severity logs' : 'Logs',
+        const sections: WorkspaceSection[] = [{
+            label: realtime ? 'Recent high severity logs' : dashboard ? 'Recent events' : 'Logs',
             endpoint: `api/backend/logs/search?hours=24&hql=Logs%20%7C%20take%20${realtime ? 100 : 200}${dashboard ? '&stats=1' : '&paginate=1'}${realtime ? '&realtime=1&severity=high,critical' : ''}`,
             origin: 'site' as const, listPath: 'rows', titlePath: 'normalized.message|id', fields: logFields, searchParam: 'search',
             cursorPath: dashboard ? undefined : 'next_cursor', cursorParam: dashboard ? undefined : 'cursor',
-        }] }
+        }]
+        if (dashboard) {
+            const shared = { endpoint: sections[0].endpoint, origin: 'site' as const, searchParam: 'search' }
+            sections.unshift(
+                { ...shared, label: 'Overview', fields: [['Window (hours)', 'hours'], ['Generated', 'generated_at', 'date'], ['Processor updated', 'processing.updated_at', 'date'], ['Processing delay', 'processing.last_error'], ['Excluded from detection', 'processing.skipped_events'], ['Pending commands', 'processing.pending_commands.count'], ['Catchup remaining', 'processing.catchup.remaining'], ['Catchup processed', 'processing.catchup.processed'], ['Catchup updated', 'processing.catchup.updated_at', 'date'], ['Catchup error', 'processing.catchup.last_error']] },
+                { ...shared, label: 'Severity counts', listPath: 'counts', titlePath: 'severity', fields: [['Severity', 'severity'], ['Events', 'count']] },
+                { ...shared, label: 'Most active services', listPath: 'services', titlePath: 'service', fields: [['Service', 'service'], ['Events', 'count']] },
+            )
+        }
+        return { path, sections }
     }),
     { path: '/logs/errors', sections: [{ label: 'Errors', endpoint: 'api/backend/logs/errors?limit=150', origin: 'site', listPath: 'errors', titlePath: 'message|error_code', fields: [...logFields, ['Status code', 'status_code'], ['Path', 'path'], ['Error code', 'error_code']] }] },
     ...['match', 'analysis', 'detection'].map(category => ({ path: `/rules/${category}`, requiresOrganization: true, sections: [{ label: `${category[0].toUpperCase()}${category.slice(1)} rules`, endpoint: `rules?view=list&category=${category}`, listPath: 'rules', titlePath: 'name|id', fields: [['Description', 'description'], ['Enabled', 'enabled'], ['Matches', 'hitCount'], ['Updated', 'updatedAt|updated_at', 'date']] as WorkspaceField[], detailEndpoint: 'rules/:id', detailKey: 'id', detailObjectPath: 'rule', detailFields: [['Name', 'name'], ['Description', 'description'], ['Enabled', 'enabled'], ['Stage', 'definition.stage'], ['Action', 'definition.action'], ['Query', 'definition.query']] as WorkspaceField[] }] })),
