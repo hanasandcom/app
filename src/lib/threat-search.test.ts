@@ -1,0 +1,60 @@
+import { beforeEach, describe, expect, it, mock } from 'bun:test'
+import type { AppSettings } from '../types'
+const calls: Array<{ settings: AppSettings; url: string; init: RequestInit }> = []
+let response = () => Response.json({})
+mock.module('./api', () => ({ apiFetch: async (settings: AppSettings, url: string, init: RequestInit) => { calls.push({ settings, url, init }); return response() } }))
+const api = await import('./threat-search')
+const settings = { siteBaseUrl: 'https://hanasand.com', userId: 'synthetic-user', authToken: 'synthetic-token', impersonationToken: '', selectedOrganizationId: 'personal' } as AppSettings
+const signal = () => new AbortController().signal
+const result = (extra: Record<string, unknown> = {}) => ({ query: 'Example actor', summary: 'Source-reported activity.', status: 'partial', sources: [{ id: 's1', name: 'Public source', url: 'https://example.test/report', secret: 'not-rendered' }], recentActivity: [{ title: 'Source claim', detail: 'Unverified claim', sourceIds: ['s1'], url: 'javascript:alert(1)' }], ...extra })
+beforeEach(() => { calls.length = 0; response = () => Response.json(result()) })
+
+describe('native threat search contract', () => {
+    it('uses the website query API and preserves source attribution with explicit fields only', async () => {
+        const data = await api.searchThreatIntel(settings, ' Example actor ', signal())
+        const url = new URL(calls[0].url)
+        expect(url.pathname).toBe('/api/ti/search')
+        expect(url.searchParams.get('q')).toBe('Example actor')
+        expect(url.searchParams.get('cached')).toBe('true')
+        expect(data.activity[0].sourceIds).toEqual(['s1'])
+        expect(data.activity[0].url).toBeNull()
+        expect(data.sources[0].url).toBe('https://example.test/report')
+        expect(JSON.stringify(data)).not.toContain('not-rendered')
+        expect(calls[0].init.signal).toBeInstanceOf(AbortSignal)
+    })
+    it('rejects invalid queries and stale/malformed responses instead of mislabeling them', async () => {
+        for (const query of ['', 'x', 'x'.repeat(201)]) await expect(api.searchThreatIntel(settings, query, signal())).rejects.toThrow('2 and 200')
+        expect(calls).toHaveLength(0)
+        response = () => Response.json(result({ query: 'Different actor' }))
+        await expect(api.searchThreatIntel(settings, 'Example actor', signal())).rejects.toThrow('invalid response')
+        response = () => Response.json({ query: 'Example actor', summary: 'incomplete' })
+        await expect(api.searchThreatIntel(settings, 'Example actor', signal())).rejects.toThrow('invalid response')
+    })
+    it('keeps catalog-only identity distinct from current activity and bounds refresh cadence', () => {
+        const data = api.normalizeThreatResult(result({ actorIdentity: { catalogMatched: true, activityEvidenceAvailable: false, candidates: [{ canonicalName: 'Example', sourceUrl: 'https://example.test/catalog' }] }, refreshAfterSeconds: 0 }), 'Example actor')
+        expect(data.catalogOnly).toBe(true)
+        expect(data.candidates[0].url).toBe('https://example.test/catalog')
+        expect(data.refreshAfterSeconds).toBe(3)
+        expect(api.normalizeThreatResult(result({ mode: 'unavailable', status: undefined }), 'Example actor').status).toBe('unavailable')
+    })
+    it('uses maintained TI account-saved search CRUD and keeps it isolated from impersonation', async () => {
+        response = () => Response.json({ savedSearches: [{ query: 'Example actor', saved_at: '2026-10-22' }] })
+        expect(await api.loadSavedThreatSearches(settings, signal())).toEqual([{ query: 'Example actor', savedAt: '2026-10-22' }])
+        expect(calls[0].url).toBe('https://ti.hanasand.com/api/backend/ti/saved-searches')
+        await api.changeSavedThreatSearch(settings, 'Example actor', true, signal())
+        expect(calls[1].init.method).toBe('POST')
+        expect(JSON.parse(String(calls[1].init.body))).toEqual({ query: 'Example actor' })
+        await api.changeSavedThreatSearch(settings, 'Example actor', false, signal())
+        expect(calls[2].init.method).toBe('DELETE')
+        expect(new URL(calls[2].url).searchParams.get('query')).toBe('Example actor')
+        await expect(api.changeSavedThreatSearch({ ...settings, impersonationToken: 'synthetic-other-view' }, 'Example actor', true, signal())).rejects.toThrow('own account')
+        expect(calls).toHaveLength(3)
+        expect(api.threatAccountKey(settings)).not.toBe(api.threatAccountKey({ ...settings, userId: 'other-user' }))
+    })
+    it('rejects insecure URLs and reports service errors without raw response rendering', async () => {
+        await expect(api.searchThreatIntel({ ...settings, siteBaseUrl: 'http://example.test' }, 'Example actor', signal())).rejects.toThrow('HTTPS')
+        response = () => Response.json({ error: { message: 'Access denied' } }, { status: 403 })
+        await expect(api.searchThreatIntel(settings, 'Example actor', signal())).rejects.toThrow('Access denied')
+        for (const url of ['javascript:alert(1)', 'https://user:password@example.test', 'http://example.test', 'not a url']) expect(api.safeEvidenceUrl(url)).toBeNull()
+    })
+})
