@@ -159,3 +159,55 @@ describe('shared mobile AI workspace', () => {
         expect(calls).toHaveLength(0)
     })
 })
+
+
+describe('AI history readiness', () => {
+    const account = api.aiAccountScope(settings)
+    const member = { scope: account, status: 'member' as const }
+    const ready = { scope: api.aiPortalHistoryScope(account, 'chat'), status: 'ready' as const }
+    it('requires complete current portal history for both agents in a persisted eligible chat', () => {
+        expect(api.aiConversationContextReady(account, 'chat', true, member, ready)).toBe(true)
+        for (const state of ['loading', 'error'] as const) {
+            expect(api.aiConversationContextReady(account, 'chat', true, member, { ...ready, status: state })).toBe(false)
+            expect(api.aiConversationContextReady(account, 'chat', true, { scope: account, status: state }, ready)).toBe(false)
+        }
+        expect(api.aiConversationContextReady(account, 'other-chat', true, member, ready)).toBe(false)
+    })
+    it('old account/service/organization/impersonation readiness cannot unlock a new scope', () => {
+        for (const changed of [{ authToken: 'new-token' }, { userId: 'other' }, { selectedOrganizationId: 'other-org' }, { siteBaseUrl: 'https://other.test' }, { apiBaseUrl: 'https://other.test/api' }, { impersonatingUserId: 'other' }, { impersonationToken: 'other-token' }]) {
+            const next = api.aiAccountScope({ ...settings, ...changed })
+            expect(next).not.toBe(account)
+            expect(api.aiConversationContextReady(next, 'chat', true, member, ready)).toBe(false)
+            expect(api.aiConversationContextReady(next, 'chat', true, { ...member, scope: next }, ready)).toBe(false)
+        }
+    })
+    it('fresh Hanasand chats have no history dependency; verified nonmembers need no portal request', () => {
+        for (const status of ['loading', 'error'] as const) expect(api.aiConversationContextReady(account, 'fresh', false, { scope: '', status }, { scope: '', status: 'loading' })).toBe(true)
+        expect(api.aiConversationContextReady(account, 'chat', true, { scope: account, status: 'nonmember' }, { scope: '', status: 'loading' })).toBe(true)
+        expect(api.aiConversationContextReady(account, 'chat', true, { scope: 'old', status: 'nonmember' }, ready)).toBe(false)
+    })
+    it('a successful scoped retry restores readiness without accepting old history', () => {
+        const failed = { scope: ready.scope, status: 'error' as const }
+        expect(api.aiConversationContextReady(account, 'chat', true, member, failed)).toBe(false)
+        expect(api.aiConversationContextReady(account, 'chat', true, member, ready)).toBe(true)
+    })
+    it('requires verified membership for fresh ChatGPT while preserving fresh Hanasand and uncertain-submit guards', () => {
+        for (const status of ['loading', 'error', 'nonmember'] as const) {
+            const lookup = { scope: account, status }
+            expect(api.aiAgentCanSubmit('hanasand', true, account, lookup, false)).toBe(true)
+            expect(api.aiAgentCanSubmit('chatgpt', true, account, lookup, false)).toBe(false)
+        }
+        expect(api.aiAgentCanSubmit('chatgpt', true, account, member, false)).toBe(true)
+        expect(api.aiAgentCanSubmit('chatgpt', true, account, member, true)).toBe(false)
+        expect(api.aiAgentCanSubmit('chatgpt', true, 'other', member, false)).toBe(false)
+        expect(api.aiAgentCanSubmit('hanasand', false, account, member, false)).toBe(false)
+    })
+    it('historical assistant labels use message provenance, never composer selection', () => {
+        const assistant = { id: 'legacy', role: 'assistant' as const, content: 'Old answer', createdAt: 1 }
+        expect(api.aiMessageLabel(assistant)).toBe('Assistant')
+        expect(api.aiMessageLabel({ ...assistant, modelName: null })).toBe('Assistant')
+        expect(api.aiMessageLabel({ ...assistant, modelName: 'Hanasand GPT' })).toBe('Hanasand GPT')
+        expect(api.aiMessageLabel({ ...assistant, modelName: 'ChatGPT' })).toBe('ChatGPT')
+        expect(api.aiMessageLabel({ ...assistant, role: 'user' })).toBe('You')
+    })
+})

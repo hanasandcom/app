@@ -1018,17 +1018,24 @@ export async function askCodex(settings: AppSettings, prompt: string, context?: 
     }
 }
 
-export async function isHanasandOrganizationMember(settings: AppSettings) {
+export async function isHanasandOrganizationMember(settings: AppSettings, signal?: AbortSignal) {
     requireAppAuth(settings, 'check organization access')
-    const response = await apiFetch(settings, joinUrl(organizationListBase(settings), 'organizations'), { headers: headers(settings) })
-    if (!response.ok) return false
-    const payload = asRecord(await response.json().catch(() => ({})))
-    const organizations = Array.isArray(payload.organizations) ? payload.organizations : []
-    return organizations.some(value => {
-        const organization = asRecord(value)
-        const active = stringValue(organization.lifecycleStatus || organization.lifecycle_status).toLowerCase()
-        return stringValue(organization.slug).toLowerCase() === 'hanasand' && (!active || active === 'active')
-    })
+    const controller = new AbortController()
+    const abort = () => controller.abort()
+    if (signal?.aborted) controller.abort()
+    else signal?.addEventListener('abort', abort, { once: true })
+    const timeout = setTimeout(abort, 20000)
+    try {
+        const response = await apiFetch(settings, joinUrl(organizationListBase(settings), 'organizations'), { headers: headers(settings), signal: controller.signal })
+        if (!response.ok) throw new Error(response.status === 401 ? 'Your session could not be verified. Sign in again.' : 'Organization access could not be checked.')
+        const payload = asRecord(await response.json().catch(() => null))
+        if (!Array.isArray(payload.organizations)) throw new Error('Organization access returned an invalid response.')
+        return payload.organizations.some(value => {
+            const organization = asRecord(value)
+            const active = stringValue(organization.lifecycleStatus || organization.lifecycle_status).toLowerCase()
+            return stringValue(organization.slug).toLowerCase() === 'hanasand' && (!active || active === 'active')
+        })
+    } finally { clearTimeout(timeout); signal?.removeEventListener('abort', abort) }
 }
 
 export async function fetchAiModels(settings: AppSettings) {

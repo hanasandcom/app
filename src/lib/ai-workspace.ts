@@ -30,6 +30,25 @@ export type PromptPortalItem = {
 }
 export type PromptContextMessage = { role: 'user' | 'assistant'; content: string; modelName?: string; files?: Array<{ itemId: string; fileId: string }> }
 
+export type AiMembershipState = { scope: string; status: 'loading' | 'member' | 'nonmember' | 'error'; error?: string }
+export type AiPortalHistoryState = { scope: string; status: 'loading' | 'ready' | 'error' }
+export function aiAccountScope(settings: AppSettings) {
+    // Memory-only scope: never persist, render, or log credentials.
+    return JSON.stringify([settings.siteBaseUrl, settings.apiBaseUrl, settings.userId, settings.authToken, settings.impersonatingUserId, settings.impersonationToken, settings.selectedOrganizationId])
+}
+export function aiPortalHistoryScope(account: string, conversationId: string) { return JSON.stringify([account, conversationId]) }
+export function aiConversationContextReady(account: string, conversationId: string, persisted: boolean, membership: AiMembershipState, history: AiPortalHistoryState) {
+    if (!persisted) return true
+    if (membership.scope !== account || membership.status === 'loading' || membership.status === 'error') return false
+    return membership.status === 'nonmember' || history.scope === aiPortalHistoryScope(account, conversationId) && history.status === 'ready'
+}
+export function aiAgentCanSubmit(agent: 'hanasand' | 'chatgpt', contextReady: boolean, account: string, membership: AiMembershipState, uncertain: boolean) {
+    return contextReady && (agent === 'hanasand' || membership.scope === account && membership.status === 'member' && !uncertain)
+}
+export function aiMessageLabel(message: WorkspaceMessage) {
+    return message.role === 'user' ? 'You' : message.modelName || (message.role === 'tool' ? 'Tool' : 'Assistant')
+}
+
 function endpoint(base: string, path: string) {
     const url = `${base.trim().replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`
     if (new URL(url).protocol !== 'https:') throw new Error('Use HTTPS for AI services.')

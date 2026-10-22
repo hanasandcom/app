@@ -389,3 +389,19 @@ describe('native organization membership discovery', () => {
         expect(sent?.get('authorization')).toBe('Bearer test-token')
     })
 })
+
+
+it('membership discovery distinguishes verified empty membership from unavailable or malformed responses', async () => {
+    mockFetch(async () => Response.json({ organizations: [] }))
+    expect(await isHanasandOrganizationMember(settings)).toBe(false)
+    for (const status of [401, 403, 502, 503]) {
+        mockFetch(async () => Response.json({ error: 'Synthetic failure' }, { status }))
+        await expect(isHanasandOrganizationMember(settings)).rejects.toThrow(status === 401 ? 'Sign in again' : 'could not be checked')
+    }
+    for (const body of ['{}', 'null', '{']) {
+        mockFetch(async () => new Response(body))
+        await expect(isHanasandOrganizationMember(settings)).rejects.toThrow('invalid response')
+    }
+    mockFetch(async () => { throw new Error('Synthetic offline') })
+    await expect(isHanasandOrganizationMember(settings)).rejects.toThrow('Synthetic offline')
+})

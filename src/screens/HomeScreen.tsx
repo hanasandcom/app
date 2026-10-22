@@ -6,7 +6,7 @@ import { ArrowUp, Sparkles } from 'lucide-react-native'
 import type { AiChatMessage, AppSettings, DesktopAgentStatus } from '../types'
 import { fetchDesktopAgentStatus, fetchDesktopScreenshot, isHanasandOrganizationMember, runDesktopAgentCommand } from '../lib/api'
 import { InlineNotice, PillButton, Screen } from '../components/ui'
-import { createAiConversation, fetchAiWorkspace, fetchChatGptActivity, submitChatGptPrompt, workspaceMessages, conversationContext, newConversation, nextAiMessageTimestamp, persistAiMessage, runHanasandPrompt, type AiConversation, type WorkspaceMessage, type PromptPortalItem } from '../lib/ai-workspace'
+import { createAiConversation, fetchAiWorkspace, fetchChatGptActivity, submitChatGptPrompt, aiAccountScope, aiPortalHistoryScope, aiConversationContextReady, aiAgentCanSubmit, aiMessageLabel, type AiMembershipState, type AiPortalHistoryState, workspaceMessages, conversationContext, newConversation, nextAiMessageTimestamp, persistAiMessage, runHanasandPrompt, type AiConversation, type WorkspaceMessage, type PromptPortalItem } from '../lib/ai-workspace'
 import { spacing, type ThemePalette } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
 
@@ -28,7 +28,8 @@ export function HomeScreen({
     const styles = useMemo(() => createStyles(theme), [theme])
     const [prompt, setPrompt] = useState('')
     const [busy, setBusy] = useState(false)
-    const [canUseChatGpt, setCanUseChatGpt] = useState(false)
+    const [membership, setMembership] = useState<AiMembershipState>({ scope: '', status: 'loading' })
+    const [membershipRevision, setMembershipRevision] = useState(0)
     const [selectedAgent, setSelectedAgent] = useState<'hanasand' | 'chatgpt'>('hanasand')
     const [conversations, setConversations] = useState<AiConversation[]>([])
     const [activeConversationId, setActiveConversationId] = useState('')
@@ -40,7 +41,7 @@ export function HomeScreen({
     const [portalError, setPortalError] = useState('')
     const [portalUncertain, setPortalUncertain] = useState(false)
     const [portalRefreshing, setPortalRefreshing] = useState(false)
-    const [portalReady, setPortalReady] = useState(false)
+    const [portalHistory, setPortalHistory] = useState<AiPortalHistoryState>({ scope: '', status: 'loading' })
     const [portalRevision, setPortalRevision] = useState(0)
     const [desktopStatus, setDesktopStatus] = useState<DesktopAgentStatus | null>(null)
     const [desktopIssue, setDesktopIssue] = useState('')
@@ -66,22 +67,37 @@ export function HomeScreen({
     const pendingMessageSync = useRef(new Map<string, { conversationId: string; message: WorkspaceMessage }>())
     const messageSyncQueue = useRef<Promise<void>>(Promise.resolve())
     const workspaceAccountRef = useRef('')
+    const accountScope = aiAccountScope(settings)
+    const currentAccountScope = useRef(accountScope)
+    currentAccountScope.current = accountScope
+    const workspaceScope = JSON.stringify([settings.siteBaseUrl, settings.apiBaseUrl, settings.userId, settings.impersonatingUserId, settings.selectedOrganizationId])
+    const workspaceCurrent = workspaceAccountRef.current === workspaceScope
+    const portalScope = aiPortalHistoryScope(accountScope, activeConversationId)
+    const membershipStatus = membership.scope === accountScope ? membership.status : 'loading'
+    const canUseChatGpt = membershipStatus === 'member'
+    const conversationPersisted = persistedConversationIds.current.has(activeConversationId)
+    const contextReady = aiConversationContextReady(accountScope, activeConversationId, conversationPersisted, membership, portalHistory)
+    const contextBlocked = !workspaceCurrent || !aiAgentCanSubmit(selectedAgent, contextReady, accountScope, membership, portalUncertain)
     const preferenceKey = `hanasand-mobile/ai-active/${settings.userId}/${settings.selectedOrganizationId || 'personal'}`
     const activeConversation = conversations.find(item => item.id === activeConversationId)
-    const latestMessages = workspaceMessages(activeConversation?.messages || [], portalConversationRef.current === activeConversationId ? portalItems : [])
+    const latestMessages = workspaceMessages(activeConversation?.messages || [], portalConversationRef.current === portalScope ? portalItems : [])
     const readOnly = activeConversation?.collaboration?.role === 'reviewer'
 
     useEffect(() => { saveAiMessagesRef.current = onSaveAiMessages }, [onSaveAiMessages])
     useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; runControllerRef.current?.abort() } }, [])
     useEffect(() => { void refreshDesktopStatus(false) }, [settings.desktopAgentBaseUrl])
     useEffect(() => {
-        let active = true
-        setCanUseChatGpt(false)
-        void isHanasandOrganizationMember(settings).then(value => { if (active) setCanUseChatGpt(value) }).catch(() => {})
-        return () => { active = false }
-    }, [settings.apiBaseUrl, settings.authToken, settings.userId])
+        const controller = new AbortController()
+        setMembership({ scope: accountScope, status: 'loading' })
+        void isHanasandOrganizationMember(settings, controller.signal).then(value => {
+            if (!controller.signal.aborted) setMembership({ scope: accountScope, status: value ? 'member' : 'nonmember' })
+        }).catch(cause => {
+            if (!controller.signal.aborted) setMembership({ scope: accountScope, status: 'error', error: cause instanceof Error ? cause.message : 'Could not check AI history access.' })
+        })
+        return () => controller.abort()
+    }, [accountScope, membershipRevision])
 
-    useEffect(() => { if (!canUseChatGpt) setSelectedAgent('hanasand') }, [canUseChatGpt])
+    useEffect(() => { if (membershipStatus === 'nonmember') setSelectedAgent('hanasand') }, [membershipStatus])
 
     function updateConversations(next: AiConversation[]) {
         conversationsRef.current = next
@@ -103,7 +119,7 @@ export function HomeScreen({
         const controller = new AbortController()
         setWorkspaceLoading(true)
         setWorkspaceError('')
-        const account = `${settings.userId}:${settings.impersonatingUserId || ''}`
+        const account = workspaceScope
         if (workspaceAccountRef.current !== account) {
             workspaceAccountRef.current = account
             pendingMessageSync.current.clear()
@@ -130,18 +146,18 @@ export function HomeScreen({
             if (!controller.signal.aborted) setWorkspaceError(cause instanceof Error ? cause.message : 'Could not load conversations.')
         }).finally(() => { if (!controller.signal.aborted) setWorkspaceLoading(false) })
         return () => controller.abort()
-    }, [settings.siteBaseUrl, settings.authToken, settings.userId, settings.impersonatingUserId, settings.selectedOrganizationId, workspaceRevision])
+    }, [accountScope, workspaceRevision])
 
     function updatePortal(items: PromptPortalItem[]) { portalItemsRef.current = items; setPortalItems(items) }
     useEffect(() => {
         const controller = new AbortController()
         let timer: ReturnType<typeof setTimeout> | undefined
-        if (portalConversationRef.current !== activeConversationId) {
-            portalConversationRef.current = activeConversationId
+        if (portalConversationRef.current !== portalScope) {
+            portalConversationRef.current = portalScope
             updatePortal([])
         }
         setPortalError('')
-        setPortalReady(false)
+        setPortalHistory({ scope: portalScope, status: 'loading' })
         setPortalRefreshing(false)
         if (!canUseChatGpt || !activeConversationId || !persistedConversationIds.current.has(activeConversationId)) return () => controller.abort()
         const refresh = async () => {
@@ -152,9 +168,12 @@ export function HomeScreen({
                 updatePortal(items)
                 setPortalError('')
                 setPortalUncertain(false)
-                setPortalReady(true)
+                setPortalHistory({ scope: portalScope, status: 'ready' })
             } catch (cause) {
-                if (!controller.signal.aborted) setPortalError(cause instanceof Error ? cause.message : 'Could not refresh ChatGPT activity.')
+                if (!controller.signal.aborted) {
+                    setPortalError(cause instanceof Error ? cause.message : 'Could not refresh ChatGPT activity.')
+                    setPortalHistory({ scope: portalScope, status: 'error' })
+                }
             } finally {
                 if (!controller.signal.aborted) {
                     setPortalRefreshing(false)
@@ -164,7 +183,7 @@ export function HomeScreen({
         }
         void refresh()
         return () => { controller.abort(); if (timer) clearTimeout(timer) }
-    }, [canUseChatGpt, activeConversationId, settings.siteBaseUrl, settings.authToken, settings.userId, portalRevision])
+    }, [canUseChatGpt, activeConversationId, conversationPersisted, portalScope, portalRevision])
 
     async function ensureConversation(title: string) {
         let conversation = conversationsRef.current.find(item => item.id === selectedConversationRef.current)
@@ -204,6 +223,8 @@ export function HomeScreen({
         return next
     }
     async function refreshWorkspace() {
+        setMembershipRevision(value => value + 1)
+        setPortalRevision(value => value + 1)
         try {
             await syncPendingMessages()
             setWorkspaceRevision(value => value + 1)
@@ -365,7 +386,9 @@ export function HomeScreen({
 
     async function submitPrompt() {
         const trimmed = prompt.trim()
-        if (submittingRef.current || busy || workspaceLoading || readOnly || (selectedAgent === 'chatgpt' && (portalUncertain || (persistedConversationIds.current.has(activeConversationId) && !portalReady)))) return
+        const id = selectedConversationRef.current
+        const currentContextReady = aiConversationContextReady(accountScope, id, persistedConversationIds.current.has(id), membership, portalHistory)
+        if (submittingRef.current || busy || workspaceLoading || !workspaceCurrent || readOnly || !aiAgentCanSubmit(selectedAgent, currentContextReady, accountScope, membership, portalUncertain)) return
         if (selectedAgent === 'hanasand' && activeConversation?.messages.some(message => message.pending)) { setWorkspaceError('A response is pending in this conversation. Refresh before sending another prompt.'); return }
         if (!trimmed) { Alert.alert('Empty prompt', 'Type a prompt first.'); return }
         submittingRef.current = true
@@ -377,8 +400,8 @@ export function HomeScreen({
         let conversation: AiConversation | undefined
         try {
             conversation = await ensureConversation(trimmed)
-            if (controller.signal.aborted) return
-            const context = conversationContext(conversation.messages, portalItemsRef.current)
+            if (controller.signal.aborted || currentAccountScope.current !== accountScope) return
+            const context = conversationContext(conversation.messages, portalConversationRef.current === aiPortalHistoryScope(accountScope, conversation.id) ? portalItemsRef.current : [])
             const desktopCodexPrompt = desktopControlPromptFromText(trimmed)
             if (desktopCodexPrompt) {
                 await saveMessages([...aiMessagesRef.current, { id: randomUUID(), role: 'user', content: trimmed, createdAt: nextAiMessageTimestamp(aiMessagesRef.current) }])
@@ -431,6 +454,8 @@ export function HomeScreen({
                 </View>
                 {!!activeConversation && <Text numberOfLines={1} style={styles.conversationTitle}>{activeConversation.title}</Text>}
                 <InlineNotice message={workspaceError} />
+                {membershipStatus === 'error' && <InlineNotice message={`${membership.error || 'AI history access could not be checked.'} Use Refresh to retry.`} />}
+                {!contextReady && membershipStatus !== 'error' && <Text style={styles.emptyChat}>{membershipStatus === 'loading' ? 'Checking AI history access…' : portalHistory.status === 'error' ? 'Conversation history is unavailable. Use Refresh to retry before sending.' : 'Loading complete conversation history…'}</Text>}
                 {workspaceLoading && <Text style={styles.emptyChat}>Loading conversations…</Text>}
                 {historyVisible && <ScrollView style={{ maxHeight: 180 }} contentContainerStyle={{ gap: 6 }}>
                     {conversations.filter(item => !item.archivedAt).map(item => <PillButton key={item.id} label={item.title} tone={item.id === activeConversationId ? 'accent' : 'default'} onPress={() => selectConversation(item.id)} />)}
@@ -549,7 +574,7 @@ export function HomeScreen({
                                 message.error && styles.errorBubble,
                             ]}
                         >
-                            <Text style={styles.chatRole}>{message.role === 'user' ? 'You' : message.modelName || (selectedAgent === 'chatgpt' ? 'ChatGPT' : 'Hanasand GPT')}</Text>
+                            <Text style={styles.chatRole}>{aiMessageLabel(message)}</Text>
                             <Text selectable style={styles.chatText}>{message.content || (message.pending ? 'Thinking...' : '')}</Text>
                             {message.role === 'assistant' && !!message.durationMs && (
                                 <Text style={styles.detailText}>Worked for {formatDuration(message.durationMs)}</Text>
@@ -588,10 +613,10 @@ export function HomeScreen({
                     )}
                 </ScrollView>
 
-                {canUseChatGpt && (
+                {(canUseChatGpt || selectedAgent === 'chatgpt') && (
                     <View style={{ flexDirection: 'row', alignSelf: 'flex-start', gap: 8, marginBottom: 2 }}>
                         {([['hanasand', 'Hanasand GPT'], ['chatgpt', 'ChatGPT']] as const).map(([agent, label]) => (
-                            <Pressable key={agent} accessibilityRole='button' accessibilityState={{ selected: selectedAgent === agent }} disabled={busy} onPress={() => { setSelectedAgent(agent) }} style={{ borderRadius: 999, borderWidth: 1, borderColor: selectedAgent === agent ? theme.accent : theme.surfaceBorderSoft, backgroundColor: selectedAgent === agent ? theme.accentSoft : theme.ambientNeutral, paddingHorizontal: 12, paddingVertical: 7 }}>
+                            <Pressable key={agent} accessibilityRole='button' accessibilityState={{ selected: selectedAgent === agent }} disabled={busy || agent === 'chatgpt' && !canUseChatGpt} onPress={() => { setSelectedAgent(agent) }} style={{ borderRadius: 999, borderWidth: 1, borderColor: selectedAgent === agent ? theme.accent : theme.surfaceBorderSoft, backgroundColor: selectedAgent === agent ? theme.accentSoft : theme.ambientNeutral, paddingHorizontal: 12, paddingVertical: 7 }}>
                                 <Text style={{ color: theme.text, fontSize: 12, fontWeight: '700' }}>{label}</Text>
                             </Pressable>
                         ))}
@@ -610,10 +635,10 @@ export function HomeScreen({
                     />
                     {prompt.trim() ? (
                         <Pressable
-                            disabled={busy || workspaceLoading || readOnly || (selectedAgent === 'chatgpt' && (portalUncertain || (persistedConversationIds.current.has(activeConversationId) && !portalReady)))}
+                            disabled={busy || workspaceLoading || readOnly || contextBlocked}
                             accessibilityRole='button'
                             accessibilityLabel='Send prompt'
-                            accessibilityState={{ disabled: busy || workspaceLoading || readOnly || (selectedAgent === 'chatgpt' && (portalUncertain || (persistedConversationIds.current.has(activeConversationId) && !portalReady))) }}
+                            accessibilityState={{ disabled: busy || workspaceLoading || readOnly || contextBlocked }}
                             onPress={() => void submitPrompt()}
                             style={({ pressed }) => [styles.promptArrowButton, busy && styles.disabled, pressed && !busy && styles.pressed]}
                         >
