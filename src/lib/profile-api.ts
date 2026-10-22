@@ -37,11 +37,18 @@ export async function accountRequest<T>(settings: AppSettings, path: string, ini
     requestHeaders.set('Authorization', `Bearer ${settings.authToken}`)
     requestHeaders.set('id', settings.userId)
     if (settings.impersonationToken) requestHeaders.set('x-impersonation-token', settings.impersonationToken)
-    const response = await apiFetch(settings, url, {
-        ...init,
-        headers: requestHeaders,
-        signal: init.signal || AbortSignal.timeout(15000),
-    })
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 15000)
+    let response: Response
+    try {
+        response = await apiFetch(settings, url, {
+            ...init,
+            headers: requestHeaders,
+            signal: init.signal || controller.signal,
+        })
+    } finally {
+        clearTimeout(timer)
+    }
     const payload = await response.json().catch(() => null)
     if (!response.ok) {
         const error = payload?.error

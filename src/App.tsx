@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react'
-import { NavigationContainer, DarkTheme } from '@react-navigation/native'
+import { NavigationContainer, DarkTheme, useNavigationContainerRef } from '@react-navigation/native'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
-import { AppState, Platform, Pressable, Text, View } from 'react-native'
+import { Alert, AppState, Platform, Pressable, Text, View } from 'react-native'
+import * as WebBrowser from 'expo-web-browser'
 import { StatusBar } from 'expo-status-bar'
 import * as SystemUI from 'expo-system-ui'
 import { AlarmClockCheck, Bot, Compass, Images, Mail, ScanLine, StickyNote, UserRound } from 'lucide-react-native'
 import type { AiChatMessage, AppSettings, RootTabParamList } from './types'
 import { SettingsDrawer } from './components/SettingsDrawer'
+import { WorkspacePicker } from './components/WorkspacePicker'
 import { SettingsDrawerProvider } from './components/ui'
 import { HomeScreen } from './screens/HomeScreen'
 import { LoginScreen } from './screens/LoginScreen'
@@ -19,6 +21,10 @@ import { NotesScreen } from './screens/NotesScreen'
 import { ProfileScreen } from './screens/ProfileScreen'
 import { PendingDeletionScreen } from './screens/PendingDeletionScreen'
 import { AutomationsScreen } from './screens/AutomationsScreen'
+import { OrganizationsScreen } from './screens/OrganizationsScreen'
+import { WorkspacePageScreen } from './screens/WorkspacePageScreen'
+import { fetchOrganizations, type Organization } from './lib/profile-api'
+import type { SiteNavigationItem } from './data/site-navigation'
 import { loadAiChat, loadSettings, saveAiChat, saveSettings } from './lib/storage'
 import { getThemePalette, palette } from './theme/tokens'
 import { AppThemeProvider } from './theme/context'
@@ -49,11 +55,16 @@ async function safeLoad<T>(loader: () => Promise<T>, fallback: T) {
 }
 
 export default function App() {
+    const navigation = useNavigationContainerRef<RootTabParamList>()
     const [settings, setSettings] = useState<AppSettings | null>(null)
     const [bootstrapError, setBootstrapError] = useState('')
     const [bootstrapAttempt, setBootstrapAttempt] = useState(0)
     const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([])
     const [settingsOpen, setSettingsOpen] = useState(false)
+    const [workspaceOpen, setWorkspaceOpen] = useState(false)
+    const [organizations, setOrganizations] = useState<Organization[]>([])
+    const [organizationError, setOrganizationError] = useState('')
+    const [organizationRevision, setOrganizationRevision] = useState(0)
     const [pendingDeletion, setPendingDeletion] = useState<{ id: string, restoreToken: string, deletionScheduledAt: string } | null>(null)
 
     useEffect(() => {
@@ -107,6 +118,53 @@ export default function App() {
         if (!settings) return
         void SystemUI.setBackgroundColorAsync(getThemePalette(settings.themeMode).background)
     }, [settings])
+
+    useEffect(() => {
+        if (!settings?.authToken || !settings.userId) { setOrganizations([]); return }
+        let active = true
+        setOrganizationError('')
+        void fetchOrganizations(settings).then(async items => {
+            if (!active) return
+            const available = items.filter(item => !item.lifecycleStatus || item.lifecycleStatus === 'active')
+            setOrganizations(available)
+            if (!settings.selectedOrganizationId || (settings.selectedOrganizationId !== 'personal' && !available.some(item => item.id === settings.selectedOrganizationId))) {
+                const preferred = available.find(item => item.slug?.toLowerCase() === 'hanasand') || (available.length === 1 ? available[0] : null)
+                const next = { ...settings, selectedOrganizationId: preferred?.id || 'personal' }
+                await saveSettings(next)
+                if (active) setSettings(next)
+            }
+        }).catch(error => { if (active) setOrganizationError(error instanceof Error ? error.message : 'Unable to load organizations.') })
+        return () => { active = false }
+    }, [settings?.apiBaseUrl, settings?.userId, settings?.authToken, organizationRevision])
+
+    async function selectWorkspace(id: string) {
+        if (!settings) return
+        try {
+            await handleSaveSettings({ ...settings, selectedOrganizationId: id || 'personal' })
+            setWorkspaceOpen(false)
+        } catch (error) {
+            setOrganizationError(error instanceof Error ? error.message : 'Unable to save the workspace selection.')
+        }
+    }
+
+    function openPage(item: SiteNavigationItem) {
+        if (!navigation.isReady()) return
+        if (item.disabledReason && item.path) {
+            void WebBrowser.openBrowserAsync(`${settings!.siteBaseUrl.replace(/\/+$/, '')}${item.path}`).catch(error => Alert.alert('Unable to open page', String(error)))
+            return
+        }
+        switch (item.tab) {
+            case 'Home': navigation.navigate('Home'); break
+            case 'Profile': navigation.navigate('Profile'); break
+            case 'Mail': navigation.navigate('Mail'); break
+            case 'Notes': navigation.navigate('Notes'); break
+            case 'Images': navigation.navigate('Images'); break
+            case 'Organizations': navigation.navigate('Organizations'); break
+            case 'Automations': navigation.navigate('Automations'); break
+            case 'Scan': navigation.navigate('Scan'); break
+            default: if (item.path) navigation.navigate('WorkspacePage', { path: item.path, title: item.label })
+        }
+    }
 
     useEffect(() => {
         if (!settings || AppState.currentState !== 'active') {
@@ -237,12 +295,25 @@ export default function App() {
         )
     }
 
+    const activeOrganization = organizations.find(item => item.id === settings.selectedOrganizationId)
+    const hanasandMembership = organizations.find(item => item.slug?.toLowerCase() === 'hanasand')
+    const internalAccess = !!hanasandMembership
+    const navigationAccess = {
+        canViewInternalPages: internalAccess,
+        canManageOrganizations: !!hanasandMembership && ['owner', 'admin', 'editor'].includes(hanasandMembership.role || ''),
+        hasContentOrganization: !!activeOrganization,
+        hasHanasandOrganization: internalAccess,
+        hasVMs: true,
+        canReviewIntel: internalAccess,
+    }
+
     return (
         <GestureHandlerRootView style={{ flex: 1, backgroundColor: activePalette.background }}>
             <StatusBar style='light' />
             <AppThemeProvider mode={settings.themeMode}>
-                <SettingsDrawerProvider openSettings={() => setSettingsOpen(true)}>
+                <SettingsDrawerProvider openSettings={() => setSettingsOpen(true)} openMenu={() => navigation.navigate('Explore')} openWorkspace={() => setWorkspaceOpen(true)} workspaceName={activeOrganization?.name || 'Personal'}>
                     <NavigationContainer
+                        ref={navigation}
                         linking={{
                             prefixes: ['hanasand://'],
                             config: {
@@ -254,6 +325,8 @@ export default function App() {
                                     Notes: 'notes',
                                     Images: 'images',
                                     Explore: 'explore',
+                                    Organizations: 'organizations',
+                                    Automations: 'automations',
                                 },
                             },
                         }}
@@ -273,7 +346,9 @@ export default function App() {
                             initialRouteName='Home'
                             screenOptions={({ route }) => ({
                                 headerShown: false,
-                                tabBarShowLabel: false,
+                                tabBarShowLabel: true,
+                                tabBarLabel: route.name === 'Explore' ? 'Menu' : route.name === 'Home' ? 'AI' : route.name,
+                                tabBarLabelStyle: { fontSize: 10, fontWeight: '600' },
                                 tabBarStyle: {
                                     position: 'absolute',
                                     bottom: 0,
@@ -294,9 +369,10 @@ export default function App() {
                                 tabBarItemStyle: {
                                     borderRadius: 18,
                                     marginHorizontal: 2,
+                                    ...(!['Home', 'Mail', 'Notes', 'Images', 'Explore'].includes(route.name) ? { display: 'none' as const } : {}),
                                 },
                                 tabBarIcon: ({ color, focused }) => {
-                                    const Icon = tabIcons[route.name as keyof typeof tabIcons]
+                                    const Icon = tabIcons[route.name as keyof typeof tabIcons] || Compass
                                     return <Icon color={color} size={focused ? 22 : 20} strokeWidth={2.1} />
                                 },
                                 sceneStyle: { backgroundColor: activePalette.background },
@@ -320,7 +396,13 @@ export default function App() {
                                 {() => <AutomationsScreen settings={settings} />}
                             </Tab.Screen>
                             <Tab.Screen name='Explore'>
-                                {() => <ExploreScreen settings={settings} />}
+                                {() => <ExploreScreen settings={settings} access={navigationAccess} onOpen={openPage} />}
+                            </Tab.Screen>
+                            <Tab.Screen name='Organizations'>
+                                {() => <OrganizationsScreen settings={settings} selectedOrganizationId={activeOrganization?.id} onSelectOrganization={id => void selectWorkspace(id)} />}
+                            </Tab.Screen>
+                            <Tab.Screen name='WorkspacePage'>
+                                {({ route }) => <WorkspacePageScreen key={`${route.params.path}:${settings.selectedOrganizationId}`} settings={settings} path={route.params.path} title={route.params.title} />}
                             </Tab.Screen>
                         </Tab.Navigator>
                         {!!settings.impersonatingUserId && (
@@ -332,6 +414,7 @@ export default function App() {
                             </View>
                         )}
                     </NavigationContainer>
+                    <WorkspacePicker open={workspaceOpen} organizations={organizations} selectedId={settings.selectedOrganizationId || 'personal'} error={organizationError} onClose={() => setWorkspaceOpen(false)} onSelect={id => void selectWorkspace(id)} onRetry={() => setOrganizationRevision(value => value + 1)} onManage={() => { setWorkspaceOpen(false); navigation.navigate('Organizations') }} />
                     <SettingsDrawer
                         open={settingsOpen}
                         settings={settings}

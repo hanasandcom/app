@@ -1,22 +1,28 @@
 import { LinearGradient } from 'expo-linear-gradient'
 import { createContext, type ReactNode, useContext, useMemo } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View, type KeyboardTypeOptions } from 'react-native'
-import { AlertCircle, CheckCircle2, Info, Settings2 } from 'lucide-react-native'
+import { AlertCircle, CheckCircle2, ChevronDown, Info, Menu, Settings2 } from 'lucide-react-native'
 import Svg, { Circle, Line, Path } from 'react-native-svg'
 import { radius, spacing, type ThemePalette } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
 
-const SettingsDrawerContext = createContext<{ openSettings: () => void } | null>(null)
+const SettingsDrawerContext = createContext<{ openSettings: () => void; openMenu?: () => void; openWorkspace?: () => void; workspaceName?: string } | null>(null)
 
 export function SettingsDrawerProvider({
     openSettings,
+    openMenu,
+    openWorkspace,
+    workspaceName,
     children,
 }: {
     openSettings: () => void
+    openMenu?: () => void
+    openWorkspace?: () => void
+    workspaceName?: string
     children: ReactNode
 }) {
     return (
-        <SettingsDrawerContext.Provider value={{ openSettings }}>
+        <SettingsDrawerContext.Provider value={{ openSettings, openMenu, openWorkspace, workspaceName }}>
             {children}
         </SettingsDrawerContext.Provider>
     )
@@ -78,15 +84,17 @@ export function Screen({
             </View>
             <View style={styles.rootEdges}>
                 <View style={styles.header}>
+                    {settingsDrawer?.openMenu && <Pressable accessibilityRole='button' accessibilityLabel='Open navigation menu' onPress={settingsDrawer.openMenu} style={styles.settingsButton}><Menu color={theme.textMuted} size={20} /></Pressable>}
                     {left ? <View style={styles.headerLeft}>{left}</View> : null}
                     <View style={{ flex: 1 }}>
                         <Text style={styles.title}>{title}</Text>
                         {!!subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
+                        {settingsDrawer?.openWorkspace && <Pressable accessibilityRole='button' accessibilityLabel={`Switch workspace, ${settingsDrawer.workspaceName || 'Personal'}`} onPress={settingsDrawer.openWorkspace} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingTop: 5 }}><Text numberOfLines={1} style={{ color: theme.textMuted, fontSize: 12 }}>{settingsDrawer.workspaceName || 'Personal'}</Text><ChevronDown size={12} color={theme.textMuted} /></Pressable>}
                     </View>
                     <View style={styles.headerActions}>
                         {right}
                         {settingsDrawer ? (
-                            <Pressable onPress={settingsDrawer.openSettings} style={({ pressed }) => [styles.settingsButton, pressed && styles.pressedButton]}>
+                            <Pressable accessibilityRole='button' accessibilityLabel='Open app settings' onPress={settingsDrawer.openSettings} style={({ pressed }) => [styles.settingsButton, pressed && styles.pressedButton]}>
                                 <Settings2 color={theme.textMuted} size={18} strokeWidth={2.1} />
                             </Pressable>
                         ) : null}

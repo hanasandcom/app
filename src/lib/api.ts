@@ -49,6 +49,8 @@ export async function apiFetch(settings: AppSettings | undefined, input: Request
     const url = new URL(requestUrl)
     const managed = url.protocol === 'https:' && (url.hostname === 'hanasand.com' || url.hostname.endsWith('.hanasand.com'))
     const requestHeaders = new Headers(init.headers)
+    const multipart = typeof FormData !== 'undefined' && init.body instanceof FormData
+    if (multipart) requestHeaders.delete('Content-Type')
     const organizationId = settings?.selectedOrganizationId
     if (organizationId && organizationId !== 'personal' && url.origin === new URL(settings!.apiBaseUrl).origin) {
         requestHeaders.set('x-organization-id', organizationId)
@@ -56,6 +58,7 @@ export async function apiFetch(settings: AppSettings | undefined, input: Request
     if (!managed) return fetch(input, { ...init, headers: requestHeaders })
     if (settings) {
         for (const [name, value] of Object.entries(headers(settings))) {
+            if (multipart && name.toLowerCase() === 'content-type') continue
             if (value) requestHeaders.set(name, value)
         }
     }
@@ -1016,46 +1019,6 @@ export async function isHanasandOrganizationMember(settings: AppSettings) {
         const active = stringValue(organization.lifecycleStatus || organization.lifecycle_status).toLowerCase()
         return stringValue(organization.slug).toLowerCase() === 'hanasand' && (!active || active === 'active')
     })
-}
-
-export async function askChatGptPortal(settings: AppSettings, prompt: string, context: string, conversationId: string): Promise<string> {
-    requireAppAuth(settings, 'use ChatGPT')
-    const threadId = `chatgpt-${conversationId}`
-    const form = new FormData()
-    form.append('prompt', prompt)
-    form.append('conversationId', conversationId)
-    form.append('threadId', threadId)
-    form.append('priority', 'next')
-    form.append('context', JSON.stringify(context ? [{ role: 'user', content: context }] : []))
-    const requestHeaders = new Headers(headers(settings))
-    requestHeaders.delete('Content-Type')
-    const response = await apiFetch(settings, identityUrl(settings, 'prompt'), {
-        method: 'POST',
-        headers: requestHeaders,
-        body: form,
-    })
-    const payload = asRecord(await response.json().catch(() => ({})))
-    if (!response.ok) {
-        const error = asRecord(payload.error)
-        throw new Error(String(error.message || payload.error || 'Unable to send to ChatGPT.'))
-    }
-
-    const deadline = Date.now() + 180_000
-    while (Date.now() < deadline) {
-        await new Promise(resolve => setTimeout(resolve, 2500))
-        const query = new URLSearchParams({ conversationId, threadId })
-        const resultResponse = await apiFetch(settings, `${identityUrl(settings, 'prompt')}?${query}`, { headers: headers(settings) })
-        const state = asRecord(await resultResponse.json().catch(() => ({})))
-        if (!resultResponse.ok) {
-            const error = asRecord(state.error)
-            throw new Error(String(error.message || state.error || 'Unable to load ChatGPT response.'))
-        }
-        const items = Array.isArray(state.items) ? state.items : []
-        const latest = asRecord(items[items.length - 1])
-        if (latest.status === 'done') return stringValue(latest.result) || 'ChatGPT completed without a text response.'
-        if (latest.status === 'error') throw new Error(stringValue(latest.error) || 'ChatGPT could not complete the request.')
-    }
-    throw new Error('ChatGPT is still working. Open Hanasand in a browser to check the request queue.')
 }
 
 export async function fetchAiModels(settings: AppSettings) {

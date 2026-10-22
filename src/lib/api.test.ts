@@ -10,6 +10,10 @@ const passkeyCredential = { id: 'credential-id', rawId: 'cmF3LWlk', type: 'publi
 mock.module('./pinned-desktop-transport', () => ({
     requestPinnedDesktopAgent: (endpoint: PinnedEndpoint, path: string, init?: RequestInit) => pinnedRequest(endpoint, path, init),
 }))
+mock.module('./device-proof', () => ({
+    getDevicePublicJwk: async () => ({ kty: 'EC', crv: 'P-256', x: 'test-x', y: 'test-y' }),
+    createDeviceProof: async (_token: string, _method: string, url: string) => ({ proof: 'test-dpop', url }),
+}))
 mock.module('react-native-passkeys', () => ({
     get: async (options: Record<string, unknown>) => {
         passkeyRequestOptions = options
@@ -51,7 +55,7 @@ mock.module('expo-crypto', () => ({
     },
 }))
 
-const { AuthenticationError, exchangeHanasandMobileSsoCode, fetchDesktopAgentStatus, isHanasandGoogleSignInConfigured, loginToHanasand, loginWithHanasandPasskey, refreshHanasandSession, runDesktopAgentCommand } = await import('./api')
+const { apiFetch, AuthenticationError, exchangeHanasandMobileSsoCode, fetchDesktopAgentStatus, isHanasandGoogleSignInConfigured, loginToHanasand, loginWithHanasandPasskey, refreshHanasandSession, runDesktopAgentCommand } = await import('./api')
 
 const settings: AppSettings = {
     themeMode: 'obsidian',
@@ -296,5 +300,29 @@ describe('desktop command proof', () => {
         expect(proof).not.toBe(createHmac('sha256', certificate).update(
             `POST\n/command\n${timestamp}\n${nonce}\n${createHash('sha256').update(`${wireBody}altered`).digest('hex')}`,
         ).digest('hex'))
+    })
+})
+
+
+describe('workspace transport', () => {
+    it('sends the selected organization only to the configured API origin', async () => {
+        const requests: Headers[] = []
+        mockFetch(async (_input, init) => { requests.push(new Headers(init?.headers)); return new Response('{}') })
+        const selected = { ...settings, selectedOrganizationId: 'org-123' }
+        await apiFetch(selected, `${settings.apiBaseUrl}/notes`)
+        await apiFetch(selected, 'https://other.example.test/notes')
+        await apiFetch({ ...selected, selectedOrganizationId: 'personal' }, `${settings.apiBaseUrl}/notes`)
+        expect(requests.map(value => value.get('x-organization-id'))).toEqual(['org-123', null, null])
+    })
+
+    it('lets the native transport supply the multipart boundary', async () => {
+        let sentHeaders = new Headers()
+        let sentBody: BodyInit | null | undefined
+        mockFetch(async (_input, init) => { sentHeaders = new Headers(init?.headers); sentBody = init?.body; return new Response('{}') })
+        const form = new FormData()
+        form.append('prompt', 'connection check')
+        await apiFetch(settings, 'https://hanasand.com/api/prompt', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: form })
+        expect(sentHeaders.has('Content-Type')).toBe(false)
+        expect(sentBody).toBe(form)
     })
 })
