@@ -8,7 +8,7 @@ import { addAlbumPhotos, canRemoveAlbumPhoto, changeAlbumMember, createGalleryAl
 
 type Props = { settings: AppSettings, onClose: () => void, onOpenAlbum: (id: string) => void }
 export function GalleryAlbumsScreen(props: Props) {
-    return <Albums key={`${workspaceAccountKey(props.settings)}/${props.settings.cdnBaseUrl}/${props.settings.authToken}`} {...props} />
+    return <Albums key={useGalleryAccountKey(props.settings)} {...props} />
 }
 function Albums({ settings, onClose, onOpenAlbum }: Props) {
     const theme = useAppTheme()
@@ -173,7 +173,7 @@ function Albums({ settings, onClose, onOpenAlbum }: Props) {
                 <View style={row}>{(['viewer', 'contributor'] as const).map(value => <PillButton key={value} label={`${role === value ? '✓ ' : ''}${value === 'viewer' ? 'View only' : 'Can add photos'}`} disabled={busy || loading} onPress={() => setRole(value)} />)}</View>
                 <PillButton label='Grant account access' disabled={busy || loading || !memberId.trim()} onPress={() => confirm('Grant album access?', `Account ${memberId.trim()} will ${role === 'viewer' ? 'view this album' : 'view and add photos to this album'}. This also updates access for an existing member.`, async () => { await changeAlbumMember(settings, album, memberId, role); await refresh(album) })} />
                 {(album.members || []).map(member => <View key={member.user_id} style={{ gap: 6 }}><Text style={text}>{member.user_id} · {member.role}</Text><PillButton label={`Remove access for ${member.user_id}`} small disabled={busy || loading} onPress={() => confirm('Remove account access?', `${member.user_id} will lose invited access. A public link, if enabled, still permits viewing.`, async () => { await removeAlbumMember(settings, album, member.user_id); await refresh(album) }, true)} /></View>)}
-                <PillButton label='Delete album' tone='danger' disabled={busy || loading} onPress={() => confirm('Delete album?', `Delete “${album.name}” and its sharing access? Uploaded files stay in their owners’ libraries.`, async () => { await deleteGalleryAlbum(settings, album); if (alive.current) { reset(); await reloadList(); setNotice('Album deleted. Original files remain in the library.') } }, true)} />
+                <PillButton label='Delete album' tone='danger' disabled={busy || loading} onPress={() => confirm('Delete album?', `Delete “${album.name}” and its sharing access? Uploaded files stay in their owners’ libraries.`, async () => { await deleteGalleryAlbum(settings, album); if (alive.current) { reset(); await reloadList(); if (alive.current) setNotice('Album deleted. Original files remain in the library.') } }, true)} />
             </GlassCard>}
             {!canEdit && <PillButton label='Leave shared album' tone='danger' disabled={busy || loading} onPress={() => confirm('Leave album?', 'You will lose invited access. The owner can invite you again.', async () => { await removeAlbumMember(settings, album, settings.userId); if (alive.current) { reset(); await reloadList() } }, true)} />}
         </>}
@@ -183,7 +183,7 @@ function message(cause: unknown) { return cause instanceof Error ? cause.message
 
 type GalleryImageProps = { settings: AppSettings, fileId: string, thumbnail?: boolean, style?: StyleProp<ImageStyle>, resizeMode?: ImageResizeMode, onError?: (message: string) => void }
 export function GalleryAlbumImage(props: GalleryImageProps) {
-    return <PrivateImage key={`${workspaceAccountKey(props.settings)}/${props.settings.cdnBaseUrl}/${props.settings.authToken}/${props.fileId}/${props.thumbnail !== false}`} {...props} />
+    return <PrivateImage key={`${useGalleryAccountKey(props.settings)}/${props.fileId}/${props.thumbnail !== false}`} {...props} />
 }
 function PrivateImage({ settings, fileId, thumbnail = true, style, resizeMode = 'cover', onError }: GalleryImageProps) {
     const theme = useAppTheme()
@@ -204,4 +204,15 @@ function PrivateImage({ settings, fileId, thumbnail = true, style, resizeMode = 
     }, [settings, fileId, thumbnail, attempt])
     return uri ? <Image source={{ uri }} style={style} resizeMode={resizeMode} accessibilityLabel='Album photo' onError={() => { setUri(''); setFailed(true); reportError.current?.('This photo could not be displayed on this device.') }} />
         : <Pressable disabled={!failed} accessibilityRole='button' accessibilityLabel={failed ? 'Photo unavailable. Retry loading photo' : 'Loading photo'} onPress={() => setAttempt(value => value + 1)} style={[style, { backgroundColor: theme.surfaceStrong, alignItems: 'center', justifyContent: 'center' }]}><Text style={{ color: theme.textMuted, fontSize: 11 }}>{failed ? 'Photo unavailable · Retry' : 'Loading…'}</Text></Pressable>
+}
+
+function useGalleryAccountKey(settings: AppSettings) {
+    const account = `${workspaceAccountKey(settings)}/${settings.cdnBaseUrl}`
+    const current = useRef({ account, token: settings.authToken, revision: 0 })
+    if (current.current.account !== account || current.current.token !== settings.authToken) {
+        current.current = { account, token: settings.authToken, revision: current.current.revision + 1 }
+    }
+    // Session changes remount and discard old pixels without exposing a token in
+    // React element keys, URLs, logs, or a persistent cache.
+    return `${account}/${current.current.revision}`
 }
