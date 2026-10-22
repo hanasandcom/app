@@ -1,3 +1,4 @@
+import { nativeToolForPath } from './native-tool-navigation'
 import { describe, expect, it } from 'bun:test'
 import { siteNavigation, workspacePageDefinition, type SiteNavigationItem } from '../data/site-navigation'
 
@@ -6,6 +7,21 @@ function leaves(items: SiteNavigationItem[]): SiteNavigationItem[] {
 }
 
 describe('native website navigation', () => {
+    it('resolves each native Tools menu leaf to a distinct registered workflow', () => {
+        const visit = (items: ReturnType<typeof siteNavigation>) => {
+            for (const item of items) {
+                if (item.tab === 'Tools') expect(nativeToolForPath(item.path)).toBeTruthy()
+                if (item.items) visit(item.items)
+            }
+        }
+        visit(siteNavigation('synthetic-user'))
+        expect(nativeToolForPath('/ti')).toBe('threat-search')
+        expect(nativeToolForPath('/pwned')).toBe('password-check')
+        expect(nativeToolForPath('/subscription')).toBe('subscription')
+        expect(nativeToolForPath('/system/hosts')).toBe('hosts')
+        expect(nativeToolForPath('/system/updates')).toBe('host-updates')
+        expect(nativeToolForPath('/unknown')).toBeUndefined()
+    })
     it('uses the maintained full status API without the public seven-check projection', () => {
         const status = workspacePageDefinition('/status')
         expect(status?.sections.length).toBe(4)

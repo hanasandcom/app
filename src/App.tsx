@@ -23,6 +23,8 @@ import { PendingDeletionScreen } from './screens/PendingDeletionScreen'
 import { AutomationsScreen } from './screens/AutomationsScreen'
 import { OrganizationsScreen } from './screens/OrganizationsScreen'
 import { WorkspacePageScreen } from './screens/WorkspacePageScreen'
+import { NativeToolsScreen } from './screens/NativeToolsScreen'
+import { nativeToolForPath } from './lib/native-tool-navigation'
 import { fetchOrganizations, type Organization } from './lib/profile-api'
 import type { SiteNavigationItem } from './data/site-navigation'
 import { loadAiChat, loadSettings, saveAiChat, saveSettings } from './lib/storage'
@@ -164,7 +166,12 @@ export default function App() {
             case 'Notes': navigation.navigate('Notes'); break
             case 'Images': navigation.navigate('Images'); break
             case 'Organizations': navigation.navigate('Organizations'); break
-            case 'Automations': navigation.navigate('Automations'); break
+            case 'Automations': navigation.navigate('Automations', { section: item.path === '/automation/health' ? 'health' : 'cron' }); break
+            case 'Tools': {
+                const tool = nativeToolForPath(item.path)
+                if (tool) navigation.navigate('Tools', { tool })
+                break
+            }
             case 'Scan': navigation.navigate('Scan'); break
             default: if (item.path) navigation.navigate('WorkspacePage', { path: item.path, title: item.label })
         }
@@ -407,6 +414,9 @@ export default function App() {
                             </Tab.Screen>
                             <Tab.Screen name='WorkspacePage'>
                                 {({ route }) => <WorkspacePageScreen key={`${route.params.path}:${settings.selectedOrganizationId}`} settings={settings} path={route.params.path} title={route.params.title} />}
+                            </Tab.Screen>
+                            <Tab.Screen name='Tools'>
+                                {({ route }) => <NativeToolsScreen settings={settings} tool={route.params.tool} onManageSshKeys={() => navigation.navigate('Profile', { section: 'SSH keys' })} />}
                             </Tab.Screen>
                         </Tab.Navigator>
                         {!!settings.impersonatingUserId && (

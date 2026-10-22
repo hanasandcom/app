@@ -12,11 +12,11 @@ export type RootTabParamList = {
     Scan: undefined
     Notes: undefined
     Images: undefined
-    Automations: undefined
+    Automations: { section?: 'health' | 'cron' } | undefined
     Explore: undefined
     Organizations: undefined
     WorkspacePage: { path: string; title: string }
-    Tools: { tool: 'threat-search' | 'password-check' }
+    Tools: { tool: 'threat-search' | 'password-check' | 'subscription' | 'host-updates' | 'hosts' }
 }
 
 export type AppSettings = {
