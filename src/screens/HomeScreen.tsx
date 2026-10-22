@@ -1,25 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
-import { ArrowUp, Sparkles, Square } from 'lucide-react-native'
-import type { AiChatMessage, AppSettings, DesktopAgentStatus, GptClient } from '../types'
-import { askChatGptPortal, askCodex, fetchDesktopAgentStatus, fetchDesktopScreenshot, isHanasandOrganizationMember, runDesktopAgentCommand } from '../lib/api'
-import { Screen } from '../components/ui'
+import { ActivityIndicator, Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { randomUUID } from 'expo-crypto'
+import AsyncStorage from '@react-native-async-storage/async-storage'
+import { ArrowUp, Sparkles } from 'lucide-react-native'
+import type { AiChatMessage, AppSettings, DesktopAgentStatus } from '../types'
+import { fetchDesktopAgentStatus, fetchDesktopScreenshot, isHanasandOrganizationMember, runDesktopAgentCommand } from '../lib/api'
+import { InlineNotice, PillButton, Screen } from '../components/ui'
+import { createAiConversation, fetchAiWorkspace, fetchChatGptActivity, submitChatGptPrompt, portalMessages, conversationContext, newConversation, persistAiMessage, runHanasandPrompt, type AiConversation, type WorkspaceMessage, type PromptPortalItem } from '../lib/ai-workspace'
 import { spacing, type ThemePalette } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
-
-type GptSocketMessage =
-  | { type: 'snapshot'; clients?: GptClient[] }
-  | { type: 'update'; client?: GptClient }
-  | { type: 'prompt_started'; conversationId?: string; clientName?: string | null }
-  | { type: 'prompt_delta'; conversationId?: string; delta?: string }
-  | { type: 'prompt_complete'; conversationId?: string }
-  | { type: 'prompt_error'; conversationId?: string; error?: string }
-
-function toWsUrl(apiBaseUrl: string) {
-    const normalized = apiBaseUrl.trim().replace(/\/+$/, '')
-    if (normalized.startsWith('https://')) return `wss://${normalized.slice('https://'.length)}`
-    throw new Error('Blocked insecure AI websocket. Use HTTPS for Hanasand services.')
-}
 
 function formatDuration(durationMs?: number) {
     if (!durationMs) return ''
@@ -29,7 +18,6 @@ function formatDuration(durationMs?: number) {
 
 export function HomeScreen({
     settings,
-    aiMessages,
     onSaveAiMessages,
 }: {
     settings: AppSettings
@@ -42,7 +30,18 @@ export function HomeScreen({
     const [busy, setBusy] = useState(false)
     const [canUseChatGpt, setCanUseChatGpt] = useState(false)
     const [selectedAgent, setSelectedAgent] = useState<'hanasand' | 'chatgpt'>('hanasand')
-    const [clients, setClients] = useState<GptClient[]>([])
+    const [conversations, setConversations] = useState<AiConversation[]>([])
+    const [activeConversationId, setActiveConversationId] = useState('')
+    const [workspaceLoading, setWorkspaceLoading] = useState(true)
+    const [workspaceError, setWorkspaceError] = useState('')
+    const [historyVisible, setHistoryVisible] = useState(false)
+    const [workspaceRevision, setWorkspaceRevision] = useState(0)
+    const [portalItems, setPortalItems] = useState<PromptPortalItem[]>([])
+    const [portalError, setPortalError] = useState('')
+    const [portalUncertain, setPortalUncertain] = useState(false)
+    const [portalRefreshing, setPortalRefreshing] = useState(false)
+    const [portalReady, setPortalReady] = useState(false)
+    const [portalRevision, setPortalRevision] = useState(0)
     const [desktopStatus, setDesktopStatus] = useState<DesktopAgentStatus | null>(null)
     const [desktopIssue, setDesktopIssue] = useState('')
     const [desktopScreenshotUri, setDesktopScreenshotUri] = useState('')
@@ -51,196 +50,172 @@ export function HomeScreen({
     const [remoteKeyboardVisible, setRemoteKeyboardVisible] = useState(false)
     const [remoteBusy, setRemoteBusy] = useState('')
     const remoteKeyboardInputRef = useRef<TextInput | null>(null)
-    const activeConversationRef = useRef<string | null>(null)
-    const socketRef = useRef<WebSocket | null>(null)
-    const aiMessagesRef = useRef(aiMessages)
+    const aiMessagesRef = useRef<WorkspaceMessage[]>([])
     const saveAiMessagesRef = useRef(onSaveAiMessages)
-    const runTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const conversationsRef = useRef<AiConversation[]>([])
+    const selectedConversationRef = useRef('')
+    const persistedConversationIds = useRef(new Set<string>())
+    const runControllerRef = useRef<AbortController | null>(null)
+    const mountedRef = useRef(true)
+    const portalItemsRef = useRef<PromptPortalItem[]>([])
+    const portalConversationRef = useRef('')
+    const submittingRef = useRef(false)
+    const pendingMessageSync = useRef(new Map<string, { conversationId: string; message: WorkspaceMessage }>())
+    const workspaceAccountRef = useRef('')
+    const preferenceKey = `hanasand-mobile/ai-active/${settings.userId}/${settings.selectedOrganizationId || 'personal'}`
+    const activeConversation = conversations.find(item => item.id === activeConversationId)
+    const latestMessages = selectedAgent === 'chatgpt' ? portalMessages(portalItems) : activeConversation?.messages || []
+    const readOnly = activeConversation?.collaboration?.role === 'reviewer'
 
-    useEffect(() => {
-        aiMessagesRef.current = aiMessages
-    }, [aiMessages])
-
-    useEffect(() => {
-        saveAiMessagesRef.current = onSaveAiMessages
-    }, [onSaveAiMessages])
-
-    async function saveMessages(next: AiChatMessage[]) {
-        aiMessagesRef.current = next
-        await saveAiMessagesRef.current(next)
-    }
-
-    function clearRunTimeout() {
-        if (runTimeoutRef.current) {
-            clearTimeout(runTimeoutRef.current)
-            runTimeoutRef.current = null
-        }
-    }
-
-    function finishRun() {
-        clearRunTimeout()
-        activeConversationRef.current = null
-        setBusy(false)
-    }
-
-    function startRunTimeout(conversationId: string) {
-        clearRunTimeout()
-        runTimeoutRef.current = setTimeout(() => {
-            if (activeConversationRef.current !== conversationId) return
-            finishRun()
-            void saveMessages(aiMessagesRef.current.map(entry => entry.id === `${conversationId}-assistant`
-                ? { ...entry, content: entry.content || 'The model did not finish this run in time.', pending: false, error: true }
-                : entry))
-        }, 90_000)
-    }
-
-    function failActiveSocketRun(message: string) {
-        const conversationId = activeConversationRef.current
-        if (!conversationId) return
-        finishRun()
-        void saveMessages(aiMessagesRef.current.map(entry => entry.id === `${conversationId}-assistant`
-            ? { ...entry, content: entry.content || message, pending: false, error: true }
-            : entry))
-    }
-
-    useEffect(() => clearRunTimeout, [])
-
-    useEffect(() => {
-        void refreshDesktopStatus(false)
-    }, [settings.desktopAgentBaseUrl])
-
+    useEffect(() => { saveAiMessagesRef.current = onSaveAiMessages }, [onSaveAiMessages])
+    useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; runControllerRef.current?.abort() } }, [])
+    useEffect(() => { void refreshDesktopStatus(false) }, [settings.desktopAgentBaseUrl])
     useEffect(() => {
         let active = true
-        void isHanasandOrganizationMember(settings).then(value => {
-            if (active) setCanUseChatGpt(value)
-        }).catch(() => {
-            if (active) setCanUseChatGpt(false)
-        })
+        setCanUseChatGpt(false)
+        void isHanasandOrganizationMember(settings).then(value => { if (active) setCanUseChatGpt(value) }).catch(() => {})
         return () => { active = false }
     }, [settings.apiBaseUrl, settings.authToken, settings.userId])
 
+    useEffect(() => { if (!canUseChatGpt) setSelectedAgent('hanasand') }, [canUseChatGpt])
+
+    function updateConversations(next: AiConversation[]) {
+        conversationsRef.current = next
+        if (mountedRef.current) setConversations(next)
+    }
+    function selectConversation(id: string, values = conversationsRef.current) {
+        const conversation = values.find(item => item.id === id)
+        if (!conversation) return
+        selectedConversationRef.current = id
+        aiMessagesRef.current = conversation.messages
+        setActiveConversationId(id)
+        setHistoryVisible(false)
+        setPrompt('')
+        setPortalUncertain(false)
+        void AsyncStorage.setItem(preferenceKey, id).catch(() => {})
+        void saveAiMessagesRef.current(conversation.messages.filter((message): message is WorkspaceMessage & AiChatMessage => message.role !== 'tool')).catch(() => {})
+    }
     useEffect(() => {
-        if (!settings.apiBaseUrl.trim()) {
-            socketRef.current?.close()
-            socketRef.current = null
-            setClients([])
-            return
+        const controller = new AbortController()
+        setWorkspaceLoading(true)
+        setWorkspaceError('')
+        const account = `${settings.userId}:${settings.impersonatingUserId || ''}`
+        if (workspaceAccountRef.current !== account) {
+            workspaceAccountRef.current = account
+            pendingMessageSync.current.clear()
+            selectedConversationRef.current = ''
+            aiMessagesRef.current = []
+            updateConversations([])
+            setActiveConversationId('')
         }
+        runControllerRef.current?.abort()
+        void fetchAiWorkspace(settings, controller.signal).then(async values => {
+            const savedId = await AsyncStorage.getItem(preferenceKey).catch(() => '')
+            if (controller.signal.aborted) return
+            persistedConversationIds.current = new Set(values.map(item => item.id))
+            for (const pending of pendingMessageSync.current.values()) {
+                const conversation = values.find(item => item.id === pending.conversationId)
+                if (conversation) conversation.messages = [...conversation.messages.filter(item => item.id !== pending.message.id), pending.message].sort((a, b) => a.createdAt - b.createdAt)
+            }
+            const available = values.filter(item => !item.archivedAt)
+            const next = available.length ? values : [newConversation(), ...values]
+            updateConversations(next)
+            const preferred = [selectedConversationRef.current, savedId].find(id => next.some(item => item.id === id && !item.archivedAt))
+            selectConversation(preferred || next.find(item => !item.archivedAt)!.id, next)
+        }).catch(cause => {
+            if (!controller.signal.aborted) setWorkspaceError(cause instanceof Error ? cause.message : 'Could not load conversations.')
+        }).finally(() => { if (!controller.signal.aborted) setWorkspaceLoading(false) })
+        return () => controller.abort()
+    }, [settings.siteBaseUrl, settings.authToken, settings.userId, settings.impersonatingUserId, settings.selectedOrganizationId, workspaceRevision])
 
-        let socketUrl
-        try {
-            socketUrl = `${toWsUrl(settings.apiBaseUrl)}/client/ws/gpt`
-        } catch {
-            setClients([])
-            return
+    function updatePortal(items: PromptPortalItem[]) { portalItemsRef.current = items; setPortalItems(items) }
+    useEffect(() => {
+        const controller = new AbortController()
+        let timer: ReturnType<typeof setTimeout> | undefined
+        if (portalConversationRef.current !== activeConversationId) {
+            portalConversationRef.current = activeConversationId
+            updatePortal([])
         }
-
-        const ws = new WebSocket(socketUrl)
-        socketRef.current = ws
-
-        ws.onclose = () => {
-            socketRef.current = null
-            failActiveSocketRun('The live model connection closed before the answer finished.')
-        }
-        ws.onerror = () => {
-            failActiveSocketRun('The live model connection failed before the answer finished.')
-        }
-        ws.onmessage = (event) => {
+        setPortalError('')
+        setPortalReady(false)
+        setPortalRefreshing(false)
+        if (selectedAgent !== 'chatgpt' || !canUseChatGpt || !activeConversationId || !persistedConversationIds.current.has(activeConversationId)) return () => controller.abort()
+        const refresh = async () => {
+            setPortalRefreshing(true)
             try {
-                const message = JSON.parse(event.data) as GptSocketMessage
-                if (message.type === 'snapshot') {
-                    setClients(Array.isArray(message.clients) ? message.clients : [])
-                    return
+                const items = await fetchChatGptActivity(settings, activeConversationId, controller.signal)
+                if (controller.signal.aborted) return
+                updatePortal(items)
+                setPortalError('')
+                setPortalUncertain(false)
+                setPortalReady(true)
+            } catch (cause) {
+                if (!controller.signal.aborted) setPortalError(cause instanceof Error ? cause.message : 'Could not refresh ChatGPT activity.')
+            } finally {
+                if (!controller.signal.aborted) {
+                    setPortalRefreshing(false)
+                    timer = setTimeout(() => void refresh(), portalItemsRef.current.some(item => item.status === 'queued' || item.status === 'running') ? 4000 : 15000)
                 }
-
-                if (message.type === 'update' && message.client) {
-                    setClients(current => {
-                        const existing = current.find(client => client.name === message.client?.name)
-                        return existing
-                            ? current.map(client => client.name === message.client?.name ? (message.client as GptClient) : client)
-                            : [...current, message.client as GptClient]
-                    })
-                    return
-                }
-
-                if (!('conversationId' in message) || !message.conversationId || message.conversationId !== activeConversationRef.current) {
-                    return
-                }
-
-                if (message.type === 'prompt_started') {
-                    const assistantId = `${message.conversationId}-assistant`
-                    if (!aiMessagesRef.current.some(entry => entry.id === assistantId)) {
-                        void saveMessages([
-                            ...aiMessagesRef.current,
-                            { id: assistantId, role: 'assistant', content: '', createdAt: Date.now(), pending: true },
-                        ])
-                    }
-                    return
-                }
-
-                if (message.type === 'prompt_delta') {
-                    const assistantId = `${message.conversationId}-assistant`
-                    const current = aiMessagesRef.current
-                    const next = current.some(entry => entry.id === assistantId)
-                        ? current.map(entry => entry.id === assistantId
-                            ? { ...entry, content: `${entry.content}${message.delta || ''}`, pending: true }
-                            : entry)
-                        : [
-                            ...current,
-                            { id: assistantId, role: 'assistant' as const, content: message.delta || '', createdAt: Date.now(), pending: true },
-                        ]
-                    void saveMessages(next)
-                    return
-                }
-
-                if (message.type === 'prompt_complete') {
-                    finishRun()
-                    void saveMessages(aiMessagesRef.current.map(entry => entry.id === `${message.conversationId}-assistant` ? { ...entry, pending: false } : entry))
-                    return
-                }
-
-                if (message.type === 'prompt_error') {
-                    finishRun()
-                    void saveMessages(aiMessagesRef.current.map(entry => entry.id === `${message.conversationId}-assistant`
-                        ? { ...entry, content: message.error || 'The model failed to answer this prompt.', pending: false, error: true }
-                        : entry))
-                }
-            } catch {
-                failActiveSocketRun('The live model returned an unreadable response.')
             }
         }
+        void refresh()
+        return () => { controller.abort(); if (timer) clearTimeout(timer) }
+    }, [selectedAgent, canUseChatGpt, activeConversationId, settings.siteBaseUrl, settings.authToken, settings.userId, portalRevision])
 
-        return () => ws.close()
-    }, [settings.apiBaseUrl])
+    async function ensureConversation(title: string) {
+        let conversation = conversationsRef.current.find(item => item.id === selectedConversationRef.current)
+        if (!conversation) {
+            conversation = newConversation()
+            updateConversations([conversation, ...conversationsRef.current])
+            selectConversation(conversation.id)
+        }
+        if (!persistedConversationIds.current.has(conversation.id)) {
+            conversation = await createAiConversation(settings, { ...conversation, title: title.slice(0, 72) || 'New chat' })
+            persistedConversationIds.current.add(conversation.id)
+            updateConversations(conversationsRef.current.map(item => item.id === conversation!.id ? conversation! : item))
+        }
+        return conversation
+    }
+    async function saveMessages(next: WorkspaceMessage[], persist = true) {
+        const id = selectedConversationRef.current
+        const previous = aiMessagesRef.current
+        aiMessagesRef.current = next
+        updateConversations(conversationsRef.current.map(item => item.id === id ? { ...item, messages: next, updatedAt: new Date().toISOString() } : item))
+        if (!persist) return
+        await saveAiMessagesRef.current(next.filter((message): message is WorkspaceMessage & AiChatMessage => message.role !== 'tool')).catch(() => {})
+        if (!persistedConversationIds.current.has(id)) return
+        const changed = next.filter(message => JSON.stringify(previous.find(item => item.id === message.id)) !== JSON.stringify(message))
+        for (const message of changed) pendingMessageSync.current.set(`${id}:${message.id}`, { conversationId: id, message })
+        try { await syncPendingMessages() }
+        catch (cause) { if (mountedRef.current) setWorkspaceError(cause instanceof Error ? cause.message : 'Chat history could not be synced.') }
+    }
+    async function syncPendingMessages() {
+        await Promise.all([...pendingMessageSync.current.entries()].map(async ([key, entry]) => {
+            await persistAiMessage(settings, entry.conversationId, entry.message)
+            if (pendingMessageSync.current.get(key) === entry) pendingMessageSync.current.delete(key)
+        }))
+    }
+    async function refreshWorkspace() {
+        try {
+            await syncPendingMessages()
+            setWorkspaceRevision(value => value + 1)
+        } catch (cause) { setWorkspaceError(cause instanceof Error ? cause.message : 'Chat history could not be synced.') }
+    }
+    function startNewConversation() {
+        const existing = conversationsRef.current.find(item => !persistedConversationIds.current.has(item.id) && !item.messages.length)
+        const conversation = existing || newConversation()
+        if (!existing) updateConversations([conversation, ...conversationsRef.current])
+        selectConversation(conversation.id)
+    }
 
-    const bestClient = useMemo(() => [...clients].sort((a, b) => (b.model?.tps || 0) - (a.model?.tps || 0))[0] || null, [clients])
-    const latestMessages = useMemo(() => aiMessages.slice(-10), [aiMessages])
-    async function refreshDesktopStatus(addChatMessage = true) {
+    async function refreshDesktopStatus(explicit = false) {
         setDesktopIssue('')
         setRemoteBusy('pc')
         try {
-            const status = await fetchDesktopAgentStatus(settings)
-            setDesktopStatus(status)
-            if (addChatMessage) {
-                await saveMessages([
-                    ...aiMessagesRef.current,
-                    {
-                        id: `${Date.now()}-assistant`,
-                        role: 'assistant',
-                        content: `This Mac is reachable: ${status.hostname || 'local host'} on ${status.platform || 'desktop'}${status.cwd ? `, cwd ${status.cwd}` : ''}.`,
-                        createdAt: Date.now(),
-                    },
-                ])
-            }
+            setDesktopStatus(await fetchDesktopAgentStatus(settings))
         } catch (cause) {
-            const message = cause instanceof Error ? cause.message : 'Desktop agent unavailable.'
-            setDesktopIssue(message)
-            if (addChatMessage) {
-                await saveMessages([
-                    ...aiMessagesRef.current,
-                    { id: `${Date.now()}-assistant`, role: 'assistant', content: `Desktop agent is not connected yet: ${message}`, createdAt: Date.now(), error: true },
-                ])
-            }
+            setDesktopStatus(null)
+            if (explicit) setDesktopIssue(cause instanceof Error ? cause.message : 'Desktop connection failed.')
         } finally {
             setRemoteBusy('')
         }
@@ -382,86 +357,83 @@ export function HomeScreen({
 
     async function submitPrompt() {
         const trimmed = prompt.trim()
-        if (busy) return
-        if (!trimmed) {
-            Alert.alert('Empty prompt', 'Type a prompt first.')
-            return
-        }
-
-        const userMessage: AiChatMessage = { id: `${Date.now()}-user`, role: 'user', content: trimmed, createdAt: Date.now() }
-        const baseMessages = [...aiMessagesRef.current, userMessage]
-        await saveMessages(baseMessages)
-        setPrompt('')
+        if (submittingRef.current || busy || workspaceLoading || readOnly || (selectedAgent === 'chatgpt' && (portalUncertain || (persistedConversationIds.current.has(activeConversationId) && !portalReady)))) return
+        if (!trimmed) { Alert.alert('Empty prompt', 'Type a prompt first.'); return }
+        submittingRef.current = true
         setBusy(true)
-
-        const desktopCodexPrompt = desktopControlPromptFromText(trimmed)
-        if (desktopCodexPrompt) {
-            await runDesktopCodexPrompt(desktopCodexPrompt)
-            setBusy(false)
-            return
-        }
-
-        if (selectedAgent === 'chatgpt' && canUseChatGpt) {
-            try {
-                const context = aiMessagesRef.current.slice(-10).map(message => `${message.role}: ${message.content}`).join('\n')
-                const conversationId = `mobile-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`
-                const message = await askChatGptPortal(settings, trimmed, context, conversationId)
-                await saveMessages([...baseMessages, { id: `${Date.now()}-assistant`, role: 'assistant', content: message, createdAt: Date.now() }])
-            } catch (cause) {
-                await saveMessages([...baseMessages, { id: `${Date.now()}-assistant`, role: 'assistant', content: cause instanceof Error ? cause.message : 'ChatGPT request failed.', createdAt: Date.now(), error: true }])
-            } finally {
-                setBusy(false)
-            }
-            return
-        }
-
-        const socket = socketRef.current
-        if (socket && socket.readyState === WebSocket.OPEN && bestClient) {
-            const conversationId = `${Date.now()}-${Math.random().toString(16).slice(2)}`
-            activeConversationRef.current = conversationId
-            const withPending = [...baseMessages, { id: `${conversationId}-assistant`, role: 'assistant' as const, content: '', createdAt: Date.now(), pending: true }]
-            await saveMessages(withPending)
-            socket.send(JSON.stringify({
-                type: 'prompt_request',
-                conversationId,
-                clientName: bestClient.name,
-                messages: baseMessages.map(message => ({ role: message.role, content: message.content })),
-                maxTokens: 512,
-                temperature: 0.7,
-            }))
-            startRunTimeout(conversationId)
-            return
-        }
-
+        setWorkspaceError('')
+        const controller = new AbortController()
+        runControllerRef.current = controller
+        let assistant: WorkspaceMessage | undefined
+        let conversation: AiConversation | undefined
         try {
-            const context = aiMessagesRef.current.slice(-10).map(message => `${message.role}: ${message.content}`).join('\n')
-            const reply = await askCodex(settings, trimmed, context)
-            await saveMessages([
-                ...baseMessages,
-                {
-                    id: `${Date.now()}-assistant`,
-                    role: 'assistant',
-                    content: reply.message,
-                    createdAt: Date.now(),
-                    durationMs: reply.durationMs,
-                    thoughtSummary: reply.thoughtSummary,
-                    toolUses: reply.toolUses,
-                    fileSummaries: reply.fileSummaries,
-                },
-            ])
+            conversation = await ensureConversation(trimmed)
+            if (controller.signal.aborted) return
+            const context = conversationContext(conversation.messages, portalItemsRef.current)
+            const desktopCodexPrompt = desktopControlPromptFromText(trimmed)
+            if (desktopCodexPrompt) {
+                await saveMessages([...aiMessagesRef.current, { id: randomUUID(), role: 'user', content: trimmed, createdAt: Date.now() }])
+                setPrompt('')
+                await runDesktopCodexPrompt(desktopCodexPrompt)
+                return
+            }
+            if (selectedAgent === 'chatgpt' && canUseChatGpt) {
+                try {
+                    const items = await submitChatGptPrompt(settings, conversation.id, trimmed, context, controller.signal)
+                    if (!controller.signal.aborted) { updatePortal(items); setPrompt(''); setPortalError(''); setPortalRevision(value => value + 1) }
+                } catch (cause) {
+                    if (!controller.signal.aborted) {
+                        setPortalUncertain(true)
+                        setPortalError(`${cause instanceof Error ? cause.message : 'Could not confirm submission.'} Refresh activity to check this request before sending again.`)
+                    }
+                }
+                return
+            }
+            const userMessage: WorkspaceMessage = { id: randomUUID(), role: 'user', content: trimmed, createdAt: Date.now() }
+            assistant = { id: randomUUID(), role: 'assistant', content: 'Connecting to Hanasand GPT…', createdAt: Date.now(), pending: true, modelName: 'Hanasand GPT' }
+            await saveMessages([...aiMessagesRef.current, userMessage, assistant])
+            setPrompt('')
+            const assistantId = assistant.id
+            const reply = await runHanasandPrompt(settings, conversation.id, trimmed, context, content => {
+                if (!controller.signal.aborted) void saveMessages(aiMessagesRef.current.map(item => item.id === assistantId ? { ...item, content, pending: true } : item), false)
+            }, controller.signal)
+            if (!controller.signal.aborted) await saveMessages(aiMessagesRef.current.map(item => item.id === assistantId ? { ...item, content: reply.message, pending: false, durationMs: reply.durationMs, thoughtSummary: reply.thoughtSummary, toolUses: reply.toolUses, fileSummaries: reply.fileSummaries } : item))
         } catch (cause) {
-            await saveMessages([
-                ...baseMessages,
-                { id: `${Date.now()}-assistant`, role: 'assistant', content: cause instanceof Error ? cause.message : 'Codex request failed.', createdAt: Date.now(), error: true },
-            ])
+            const content = controller.signal.aborted ? 'The live response connection ended on this device. Refresh the conversation before sending again.' : cause instanceof Error ? cause.message : 'The AI request failed.'
+            if (assistant && conversation) {
+                const failed = { ...assistant, content, pending: false, error: true }
+                if (mountedRef.current && selectedConversationRef.current === conversation.id) await saveMessages(aiMessagesRef.current.map(item => item.id === assistant!.id ? failed : item))
+                else await persistAiMessage(settings, conversation.id, failed).catch(() => {})
+            } else if (!controller.signal.aborted) setWorkspaceError(content)
         } finally {
-            setBusy(false)
+            submittingRef.current = false
+            if (mountedRef.current) setBusy(false)
+            if (runControllerRef.current === controller) runControllerRef.current = null
         }
     }
 
     return (
         <Screen title='Hanasand AI' subtitle='' scroll={false} contentStyle={styles.aiScreen}>
             <View style={styles.aiRoot}>
+                <View style={styles.remoteButtonRow}>
+                    <PillButton small label={activeConversation?.title || 'Conversations'} disabled={busy || workspaceLoading} onPress={() => setHistoryVisible(value => !value)} />
+                    <PillButton small label='New chat' disabled={busy || workspaceLoading} onPress={startNewConversation} />
+                    <PillButton small label={pendingMessageSync.current.size ? 'Retry sync' : 'Refresh'} disabled={busy || workspaceLoading} onPress={() => void refreshWorkspace()} />
+                </View>
+                <InlineNotice message={workspaceError} />
+                {workspaceLoading && <Text style={styles.emptyChat}>Loading conversations…</Text>}
+                {historyVisible && <ScrollView style={{ maxHeight: 180 }} contentContainerStyle={{ gap: 6 }}>
+                    {conversations.filter(item => !item.archivedAt).map(item => <PillButton key={item.id} label={item.title} tone={item.id === activeConversationId ? 'accent' : 'default'} onPress={() => selectConversation(item.id)} />)}
+                </ScrollView>}
+                {readOnly && <Text style={styles.emptyChat}>This shared conversation has reviewer access.</Text>}
+                {selectedAgent === 'chatgpt' && <>
+                    <InlineNotice message={portalError} />
+                    <View style={styles.remoteButtonRow}>
+                        <Text style={[styles.macStatusText, { alignSelf: 'center' }]}>{portalItems.filter(item => item.status === 'queued').length} queued · {portalItems.filter(item => item.status === 'running').length} running</Text>
+                        <PillButton small label={portalRefreshing ? 'Refreshing…' : 'Refresh activity'} disabled={portalRefreshing || busy} onPress={() => setPortalRevision(value => value + 1)} />
+                    </View>
+                </>}
+
                 <Pressable
                     accessibilityRole='button'
                     accessibilityLabel='Tap Mac screen preview to click the Mac'
@@ -478,13 +450,14 @@ export function HomeScreen({
                             <Text style={styles.macStatusText} numberOfLines={2}>
                                 {desktopStatus?.ok
                                     ? `${desktopStatus.hostname || 'Mac'} · ${desktopStatus.platform || 'desktop'}`
-                                    : desktopIssue || 'Mac agent checking'}
+                                    : desktopIssue || (remoteBusy === 'pc' ? 'Connecting to desktop…' : 'Desktop not connected')}
                             </Text>
                         </View>
                     )}
                 </Pressable>
 
                 <View style={styles.remoteButtonRow}>
+                    <PillButton small label={desktopStatus?.ok ? 'Refresh desktop' : 'Connect desktop'} disabled={!!remoteBusy} onPress={() => void refreshDesktopStatus(true)} />
                     <Pressable
                         accessibilityRole='button'
                         accessibilityLabel='Refresh Mac screen for mouse control'
@@ -570,8 +543,8 @@ export function HomeScreen({
                                 message.error && styles.errorBubble,
                             ]}
                         >
-                            <Text style={styles.chatRole}>{message.role === 'user' ? 'You' : 'Hanasand AI'}</Text>
-                            <Text style={styles.chatText}>{message.content || (message.pending ? 'Thinking...' : '')}</Text>
+                            <Text style={styles.chatRole}>{message.role === 'user' ? 'You' : message.modelName || (selectedAgent === 'chatgpt' ? 'ChatGPT' : 'Hanasand GPT')}</Text>
+                            <Text selectable style={styles.chatText}>{message.content || (message.pending ? 'Thinking...' : '')}</Text>
                             {message.role === 'assistant' && !!message.durationMs && (
                                 <Text style={styles.detailText}>Worked for {formatDuration(message.durationMs)}</Text>
                             )}
@@ -605,14 +578,14 @@ export function HomeScreen({
                             )}
                         </View>
                     )) : (
-                        <Text style={styles.emptyChat}>Ask something above. Replies, errors, and pending runs will stay here.</Text>
+                        <Text style={styles.emptyChat}>Start a conversation with Hanasand GPT or choose a previous chat.</Text>
                     )}
                 </ScrollView>
 
                 {canUseChatGpt && (
                     <View style={{ flexDirection: 'row', alignSelf: 'flex-start', gap: 8, marginBottom: 2 }}>
                         {([['hanasand', 'Hanasand GPT'], ['chatgpt', 'ChatGPT']] as const).map(([agent, label]) => (
-                            <Pressable key={agent} accessibilityRole='button' accessibilityState={{ selected: selectedAgent === agent }} onPress={() => setSelectedAgent(agent)} style={{ borderRadius: 999, borderWidth: 1, borderColor: selectedAgent === agent ? theme.accent : theme.surfaceBorderSoft, backgroundColor: selectedAgent === agent ? theme.accentSoft : theme.ambientNeutral, paddingHorizontal: 12, paddingVertical: 7 }}>
+                            <Pressable key={agent} accessibilityRole='button' accessibilityState={{ selected: selectedAgent === agent }} disabled={busy} onPress={() => { setSelectedAgent(agent) }} style={{ borderRadius: 999, borderWidth: 1, borderColor: selectedAgent === agent ? theme.accent : theme.surfaceBorderSoft, backgroundColor: selectedAgent === agent ? theme.accentSoft : theme.ambientNeutral, paddingHorizontal: 12, paddingVertical: 7 }}>
                                 <Text style={{ color: theme.text, fontSize: 12, fontWeight: '700' }}>{label}</Text>
                             </Pressable>
                         ))}
@@ -623,23 +596,22 @@ export function HomeScreen({
                     <TextInput
                         value={prompt}
                         onChangeText={setPrompt}
-                        placeholder='Ask Hanasand AI...'
+                        placeholder={selectedAgent === 'chatgpt' ? 'Ask ChatGPT…' : 'Ask Hanasand GPT…'}
                         placeholderTextColor={theme.textSoft}
                         style={styles.promptInput}
                         returnKeyType='send'
                         onSubmitEditing={() => void submitPrompt()}
-                        autoFocus
                     />
                     {prompt.trim() ? (
                         <Pressable
-                            disabled={busy}
+                            disabled={busy || workspaceLoading || readOnly || (selectedAgent === 'chatgpt' && (portalUncertain || (persistedConversationIds.current.has(activeConversationId) && !portalReady)))}
                             accessibilityRole='button'
                             accessibilityLabel='Send prompt'
-                            accessibilityState={{ disabled: busy }}
+                            accessibilityState={{ disabled: busy || workspaceLoading || readOnly || (selectedAgent === 'chatgpt' && (portalUncertain || (persistedConversationIds.current.has(activeConversationId) && !portalReady))) }}
                             onPress={() => void submitPrompt()}
                             style={({ pressed }) => [styles.promptArrowButton, busy && styles.disabled, pressed && !busy && styles.pressed]}
                         >
-                            {busy ? <Square color={theme.background} size={12} fill={theme.background} /> : <ArrowUp color={theme.background} size={14} strokeWidth={2.7} />}
+                            {busy ? <ActivityIndicator color={theme.background} size='small' /> : <ArrowUp color={theme.background} size={14} strokeWidth={2.7} />}
                         </Pressable>
                     ) : null}
                 </View>
