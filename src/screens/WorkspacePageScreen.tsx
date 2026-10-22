@@ -8,7 +8,7 @@ import { useAppTheme } from '../theme/context'
 import { spacing } from '../theme/tokens'
 
 type RecordValue = Record<string, unknown>
-type SectionState = { definition: WorkspaceSection; rows: RecordValue[]; error?: string; notice?: string }
+type SectionState = { definition: WorkspaceSection; rows: RecordValue[]; error?: string; notice?: string; nextCursor?: string; pageError?: string }
 type SelectedItem = { section: WorkspaceSection; row: RecordValue; title: string }
 const object = (value: unknown): RecordValue => value && typeof value === 'object' && !Array.isArray(value) ? value as RecordValue : {}
 
@@ -23,6 +23,10 @@ export function workspaceValue(value: unknown, path: string): unknown {
 export function workspaceFieldValue(row: RecordValue, [, path, format]: WorkspaceField): string | null {
     const value = workspaceValue(row, path)
     if (value === null || value === undefined || value === '') return null
+    if (format === 'updates') return Array.isArray(value) ? value.map(item => {
+        const update = object(item)
+        return [typeof update.at === 'string' ? update.at : '', typeof update.status === 'string' ? update.status : '', typeof update.message === 'string' ? update.message : ''].filter(Boolean).join(' · ')
+    }).filter(Boolean).join('\n\n') || null : null
     if (format === 'masked') return typeof value === 'string' ? `${value.slice(0, 6)}••••••••` : '••••••••'
     if (Array.isArray(value)) return value.every(item => ['string', 'number'].includes(typeof item)) ? value.join(', ') : null
     if (typeof value === 'boolean') return value ? 'Yes' : 'No'
@@ -40,7 +44,7 @@ export function workspaceFieldValue(row: RecordValue, [, path, format]: Workspac
     if (format === 'percent') return `${String(value).replace(/%$/, '')}%`
     return typeof value === 'number' ? value.toLocaleString() : value as string
 }
-export function workspaceRequestUrl(settings: AppSettings, definition: WorkspaceSection, detailId?: string, search?: string) {
+export function workspaceRequestUrl(settings: AppSettings, definition: WorkspaceSection, detailId?: string, search?: string, cursor?: string) {
     const organizationId = settings.selectedOrganizationId && settings.selectedOrganizationId !== 'personal' ? settings.selectedOrganizationId : ''
     const endpoint = (detailId === undefined ? definition.endpoint : definition.detailEndpoint || definition.endpoint)
         .replace(':userId', encodeURIComponent(settings.impersonatingUserId || settings.userId))
@@ -51,10 +55,11 @@ export function workspaceRequestUrl(settings: AppSettings, definition: Workspace
     if (url.protocol !== 'https:') throw new Error('Workspace services require a secure HTTPS connection.')
     if (organizationId) url.searchParams.set('organizationId', organizationId)
     if (search && definition.searchParam) url.searchParams.set(definition.searchParam, search)
+    if (cursor && definition.cursorParam) { url.searchParams.delete('page'); url.searchParams.set(definition.cursorParam, cursor) }
     return url.toString()
 }
-export async function fetchWorkspaceSection(settings: AppSettings, definition: WorkspaceSection, signal: AbortSignal, detailId?: string, search?: string) {
-    const url = workspaceRequestUrl(settings, definition, detailId, search)
+export async function fetchWorkspaceSection(settings: AppSettings, definition: WorkspaceSection, signal: AbortSignal, detailId?: string, search?: string, cursor?: string) {
+    const url = workspaceRequestUrl(settings, definition, detailId, search, cursor)
     const response = await apiFetch(settings, url, {
         signal,
         headers: {
@@ -89,6 +94,30 @@ export function workspaceFiles(value: unknown): RecordValue[] {
     })
 }
 
+export function workspaceSectionNotice(payload: unknown, definition: WorkspaceSection, now = Date.now()): string | undefined {
+    const notices: string[] = []
+    const value = object(payload)
+    if (typeof value.unavailable_reason === 'string') notices.push(value.unavailable_reason)
+    if (Array.isArray(value.warnings)) notices.push(...value.warnings.filter((warning): warning is string => typeof warning === 'string'))
+    if (definition.statusFeed) {
+        const checks = Array.isArray(value.checks) ? value.checks.map(object) : []
+        const fresh = checks.length > 0 && checks.every(check => {
+            const age = now - Date.parse(String(check.checked_at || ''))
+            return Number.isFinite(age) && age >= -60_000 && age <= 5 * 60_000 && ['up', 'degraded', 'down'].includes(String(check.status))
+        })
+        if (value.monitoring === 'unavailable' || !fresh) notices.push('Live monitoring is unavailable. Displayed results are the last received evidence; check their timestamps.')
+        if (definition.listPath === 'incidents' || definition.listPath === 'history') {
+            if (value.history_available === false) notices.push('Incident history is temporarily unavailable.')
+        }
+    }
+    return notices.length ? notices.join('\n') : undefined
+}
+
+function nextCursor(payload: unknown, definition: WorkspaceSection) {
+    const value = definition.cursorPath ? workspaceValue(payload, definition.cursorPath) : undefined
+    return typeof value === 'string' && value ? value : undefined
+}
+
 function itemTitle(row: RecordValue, definition: WorkspaceSection, fallback: string) {
     const title = workspaceValue(row, definition.titlePath || 'name|title|id')
     return typeof title === 'string' || typeof title === 'number' ? String(title) : fallback
@@ -108,6 +137,13 @@ export function WorkspacePageScreen({ settings, path, title }: { settings: AppSe
     const [loading, setLoading] = useState(false)
     const [detailLoading, setDetailLoading] = useState(false)
     const [revision, setRevision] = useState(0)
+    const [visibleLimit, setVisibleLimit] = useState(100)
+    const [paging, setPaging] = useState(false)
+    const accountScope = JSON.stringify([path, settings.apiBaseUrl, settings.siteBaseUrl, settings.userId, settings.authToken, settings.impersonationToken, settings.selectedOrganizationId])
+    const currentScope = useRef(accountScope)
+    currentScope.current = accountScope
+    const pagingRequest = useRef(0)
+    const loadedScope = useRef('')
     const sequence = useRef(0)
     const selectedOrganization = settings.selectedOrganizationId && settings.selectedOrganizationId !== 'personal'
     const needsOrganization = definition?.requiresOrganization && !selectedOrganization
@@ -123,14 +159,18 @@ export function WorkspacePageScreen({ settings, path, title }: { settings: AppSe
     }), [theme])
 
     useEffect(() => {
-        setActiveSection(0); setSelected(null); setDetail(null); setQuery(''); setServerSearch('')
-    }, [path, settings.userId, settings.impersonationToken, settings.selectedOrganizationId])
+        setActiveSection(0); setSelected(null); setDetail(null); setQuery(''); setServerSearch(''); setVisibleLimit(100); setPaging(false); pagingRequest.current += 1
+    }, [path, settings.apiBaseUrl, settings.siteBaseUrl, settings.userId, settings.impersonationToken, settings.selectedOrganizationId])
 
     useEffect(() => {
         const controller = new AbortController()
         const timeout = setTimeout(() => controller.abort(), 20_000)
         let active = true
-        setSections([]); setError('')
+        const loadKey = JSON.stringify([accountScope, serverSearch])
+        const retainStatus = path === '/status' && loadedScope.current === loadKey
+        loadedScope.current = loadKey
+        if (!retainStatus) setSections([])
+        setError('')
         if (!definition || needsOrganization || !authenticated) { setLoading(false); clearTimeout(timeout); return }
         setLoading(true)
         const requests = new Map<string, Promise<unknown>>()
@@ -139,12 +179,13 @@ export function WorkspacePageScreen({ settings, path, title }: { settings: AppSe
             let pending = requests.get(url)
             if (!pending) { pending = fetchWorkspaceSection(settings, section, controller.signal, undefined, serverSearch); requests.set(url, pending) }
             const payload = await pending
-            return { definition: section, rows: workspaceRows(payload, section), notice: typeof object(payload).unavailable_reason === 'string' ? String(object(payload).unavailable_reason) : undefined }
+            return { definition: section, rows: workspaceRows(payload, section), notice: workspaceSectionNotice(payload, section), nextCursor: nextCursor(payload, section) }
         })
         void Promise.allSettled(work).then(results => {
             if (!active) return
-            setSections(results.map((result, index) => result.status === 'fulfilled' ? result.value : {
-                definition: definition.sections[index], rows: [], error: controller.signal.aborted ? 'The service took too long to respond. Try refreshing.' : message(result.reason),
+            setSections(previous => results.map((result, index) => result.status === 'fulfilled' ? result.value : {
+                definition: definition.sections[index], rows: retainStatus ? previous[index]?.rows || [] : [], error: controller.signal.aborted ? 'The service took too long to respond. Try refreshing.' : message(result.reason),
+                notice: retainStatus && previous[index]?.rows.length ? 'Refresh failed. Showing cached results from the previous request; check their timestamps.' : undefined,
             }))
             setLoading(false)
             clearTimeout(timeout)
@@ -171,7 +212,7 @@ export function WorkspacePageScreen({ settings, path, title }: { settings: AppSe
         }).catch(cause => { if (requestId === sequence.current && !controller.signal.aborted) setError(message(cause)); else if (requestId === sequence.current) setError('The item took too long to load. Try again.') })
             .finally(() => { if (requestId === sequence.current) setDetailLoading(false); clearTimeout(timeout) })
         return () => { sequence.current += 1; controller.abort(); clearTimeout(timeout) }
-    }, [selected, settings.authToken, settings.userId, settings.impersonationToken, settings.selectedOrganizationId])
+    }, [selected, settings.apiBaseUrl, settings.siteBaseUrl, settings.authToken, settings.userId, settings.impersonationToken, settings.selectedOrganizationId])
 
     useEffect(() => {
         const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -181,6 +222,32 @@ export function WorkspacePageScreen({ settings, path, title }: { settings: AppSe
         })
         return () => subscription.remove()
     }, [selected])
+
+    async function loadMore() {
+        const section = sections[activeSection]
+        if (paging || !section?.nextCursor) return
+        const requestScope = accountScope
+        const requestId = ++pagingRequest.current
+        const index = activeSection
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 20_000)
+        setPaging(true)
+        try {
+            const payload = await fetchWorkspaceSection(settings, section.definition, controller.signal, undefined, serverSearch, section.nextCursor)
+            if (currentScope.current !== requestScope || pagingRequest.current !== requestId) return
+            const rows = workspaceRows(payload, section.definition)
+            const incomingCursor = nextCursor(payload, section.definition)
+            setSections(current => current.map((item, position) => position === index && item === section ? { ...item, rows: [...item.rows, ...rows], nextCursor: incomingCursor !== section.nextCursor ? incomingCursor : undefined, pageError: undefined } : item))
+            setVisibleLimit(limit => limit + 100)
+        } catch (cause) {
+            if (currentScope.current === requestScope && pagingRequest.current === requestId) setSections(current => current.map((item, position) => position === index && item === section ? { ...item, pageError: message(cause) } : item))
+        } finally {
+            if (currentScope.current === requestScope && pagingRequest.current === requestId) setPaging(false)
+            clearTimeout(timeout)
+        }
+    }
+
+    useEffect(() => () => { pagingRequest.current += 1 }, [])
 
     function fields(row: RecordValue, definitions: WorkspaceField[], limit?: number) {
         return definitions.flatMap(field => {
@@ -192,34 +259,35 @@ export function WorkspacePageScreen({ settings, path, title }: { settings: AppSe
     const filteredRows = section?.rows.filter(row => !query.trim() || [itemTitle(row, section.definition, ''), ...section.definition.fields.map(field => workspaceFieldValue(row, field) || '')].join(' ').toLowerCase().includes(query.trim().toLowerCase())) || []
     const selectedFields = selected?.section.detailFields || selected?.section.fields || []
     const unsupported = !definition
-    return <Screen key={`${path}:${selected ? 'detail' : 'list'}`} title={selected ? selected.title : title} subtitle={selectedOrganization ? 'Organization workspace' : 'Personal workspace'}
+    return <Screen key={`${path}:${selected ? 'detail' : 'list'}`} title={path === '/status' ? 'Status' : title} subtitle={path === '/status' ? 'Service monitoring' : selectedOrganization ? 'Organization workspace' : 'Personal workspace'}
         left={selected ? <PillButton label='Back' small onPress={() => setSelected(null)} /> : undefined}
-        right={!selected && definition ? <PillButton label={loading ? 'Loading…' : 'Refresh'} small disabled={loading || needsOrganization || !authenticated} onPress={() => setRevision(value => value + 1)} /> : undefined}>
+    >
+        {!selected && definition && <View style={styles.row}><PillButton label={loading ? 'Loading…' : 'Refresh'} small disabled={loading || paging || needsOrganization || !authenticated} onPress={() => { pagingRequest.current += 1; setVisibleLimit(100); setRevision(value => value + 1) }} /></View>}
         {!authenticated && <InlineNotice message='Sign in to view your workspace.' />}
         {needsOrganization && <InlineNotice message='Select an organization from Organizations to view this page.' />}
         {unsupported && <InlineNotice message='This service does not have a native workflow yet.' />}
         {!!error && <InlineNotice message={error} />}
         {loading && <GlassCard><Text style={styles.text}>Loading {title.toLowerCase()}…</Text></GlassCard>}
         {selected ? <GlassCard style={styles.card}>
-            <SectionTitle eyebrow='Details' title={selected.title} />
+            <Text style={styles.heading} accessibilityRole='header'>{selected.title}</Text>
             {detailLoading && <Text style={styles.text}>Loading details…</Text>}
             {fields(detail || selected.row, detail ? selectedFields : selected.section.fields)}
             {detailFiles.length > 0 && <Text style={styles.heading}>Files</Text>}
             {detailFiles.map(file => <PillButton key={String(file.id)} label={String(file.name || file.alias || file.id)} small onPress={() => setSelected({ row: file, title: String(file.name || file.id), section: { ...selected.section, detailEndpoint: 'share/:id', detailKey: 'id', detailObjectPath: undefined, detailTreePath: undefined } })} />)}
             {!!error && <PillButton label='Retry details' small onPress={() => setSelected({ ...selected })} />}
         </GlassCard> : <>
-            {sections.length > 1 && <View style={styles.row}>{sections.map((item, index) => <PillButton key={`${item.definition.label}:${index}`} label={`${item.definition.label}${item.definition.listPath === undefined ? '' : ` · ${item.rows.length}`}`} small tone={index === activeSection ? 'accent' : 'default'} onPress={() => { setActiveSection(index); setQuery('') }} />)}</View>}
+            {sections.length > 1 && <View style={styles.row}>{sections.map((item, index) => <PillButton key={`${item.definition.label}:${index}`} label={`${item.definition.label}${item.definition.listPath === undefined ? '' : ` · ${item.rows.length}`}`} small tone={index === activeSection ? 'accent' : 'default'} onPress={() => { setActiveSection(index); setQuery(''); setVisibleLimit(100) }} />)}</View>}
             {section && <GlassCard style={styles.card}>
-                <SectionTitle eyebrow={section.definition.listPath === undefined ? 'Overview' : 'Records'} title={section.definition.label} />
+                <SectionTitle eyebrow={section.definition.statusFeed ? 'Monitoring' : section.definition.listPath === undefined ? 'Overview' : 'Records'} title={section.definition.label} />
                 {!!section.error && <InlineNotice message={section.error} />}
                 {!!section.notice && <InlineNotice message={section.notice} />}
                 {section.definition.listPath !== undefined && <>
                     <TextInput accessibilityLabel='Search records' value={query} onChangeText={setQuery} onSubmitEditing={() => { if (section.definition.searchParam) setServerSearch(query.trim()) }} placeholder={section.definition.searchParam ? 'Search records' : 'Filter loaded records'} placeholderTextColor={theme.textSoft} autoCapitalize='none' autoCorrect={false} returnKeyType='search' style={styles.input} />
                     {section.definition.searchParam && <View style={styles.row}><PillButton label='Search service' small disabled={loading} onPress={() => setServerSearch(query.trim())} />{!!serverSearch && <PillButton label='Clear' small onPress={() => { setQuery(''); setServerSearch('') }} />}</View>}
-                    {!section.error && <Text style={styles.label}>{filteredRows.length} of {section.rows.length} loaded records</Text>}
+                    {!section.error && <Text style={styles.label}>{Math.min(visibleLimit, filteredRows.length)} shown · {filteredRows.length} matching · {section.rows.length} loaded</Text>}
                 </>}
                 {!section.error && !filteredRows.length && <Text style={styles.text}>{query ? 'No matching records.' : 'No records found.'}</Text>}
-                {section.definition.listPath === undefined ? section.rows.map((row, index) => <View key={index} style={styles.card}>{fields(row, section.definition.fields)}</View>) : filteredRows.map((row, index) => {
+                {section.definition.listPath === undefined ? section.rows.map((row, index) => <View key={index} style={styles.card}>{fields(row, section.definition.fields)}</View>) : filteredRows.slice(0, visibleLimit).map((row, index) => {
                     const rowTitle = itemTitle(row, section.definition, `${section.definition.label} ${index + 1}`)
                     return <Pressable key={`${String(row.id || row.name || row.alias || index)}`} accessibilityRole='button' accessibilityLabel={`View ${rowTitle}`} style={styles.item} onPress={() => setSelected({ section: section.definition, row, title: rowTitle })}>
                         <Text numberOfLines={2} style={styles.heading}>{rowTitle}</Text>
@@ -227,6 +295,9 @@ export function WorkspacePageScreen({ settings, path, title }: { settings: AppSe
                         <Text style={styles.label}>View details</Text>
                     </Pressable>
                 })}
+                {!!section.pageError && <InlineNotice message={section.pageError} />}
+                {filteredRows.length > visibleLimit && <PillButton label='Show 100 more' small onPress={() => setVisibleLimit(value => value + 100)} />}
+                {!!section.nextCursor && <PillButton label={paging ? 'Loading more…' : section.pageError ? 'Retry loading more' : 'Load more from service'} small disabled={paging || loading} onPress={() => void loadMore()} />}
             </GlassCard>}
         </>}
     </Screen>

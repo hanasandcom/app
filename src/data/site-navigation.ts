@@ -171,7 +171,7 @@ function getDashboardNavigation(access: NavigationAccess): NavigationItem[] {
 }
 
 
-export type WorkspaceField = [label: string, path: string, format?: 'bytes' | 'percent' | 'date' | 'masked']
+export type WorkspaceField = [label: string, path: string, format?: 'bytes' | 'percent' | 'date' | 'masked' | 'updates']
 export type WorkspaceSection = {
     label: string
     endpoint: string
@@ -185,6 +185,9 @@ export type WorkspaceSection = {
     detailTreePath?: string
     detailFields?: WorkspaceField[]
     searchParam?: string
+    cursorPath?: string
+    cursorParam?: string
+    statusFeed?: boolean
 }
 export type WorkspacePageDefinition = { path: string; requiresOrganization?: boolean; sections: WorkspaceSection[] }
 const vmFields: WorkspaceField[] = [['Status', 'status'], ['Reason', 'status_reason'], ['Host', 'primary_host'], ['System', 'config_image_description|config_image_os'], ['CPU cores', 'limits_cpu'], ['Memory', 'limits_memory'], ['IPv4', 'device_eth0_ipv4_address'], ['Created', 'created', 'date'], ['Last used', 'last_used', 'date']]
@@ -198,8 +201,16 @@ const definitions: WorkspacePageDefinition[] = [
     { path: '/system/containers', sections: [{ label: 'Containers', endpoint: 'docker', listPath: 'containers', titlePath: 'name', fields: [['Image', 'image'], ['State', 'state'], ['Status', 'status'], ['Health', 'health'], ['CPU', 'stats.cpu_percent|cpu', 'percent'], ['Memory', 'stats.memory_bytes|memory', 'bytes'], ['Restarts', 'restart_count'], ['Created', 'created_at', 'date']] }] },
     ...['/vms', '/system/virtual-machines'].map(path => ({ path, sections: [{ label: 'Virtual machines', endpoint: 'vms/:userId', listPath: '', titlePath: 'name', fields: vmFields }] })),
     { path: '/status', sections: [
-        { label: 'Status', endpoint: 'api/status', origin: 'site', fields: [['Overall', 'overall'], ['Monitoring', 'monitoring'], ['Generated', 'generated_at', 'date']] },
-        { label: 'Services', endpoint: 'api/status', origin: 'site', listPath: 'checks', titlePath: 'service', fields: [['Check', 'check_name'], ['Status', 'status'], ['Latency (ms)', 'latency_ms'], ['Message', 'message'], ['30 day uptime', 'uptime_30d'], ['Checked', 'checked_at', 'date']] },
+        // The website's /api/status wrapper deliberately projects seven public checks.
+        // This is the maintained full status API, with no native service-count limit.
+        { label: 'Overview', endpoint: 'status?dashboard=true', statusFeed: true, fields: [['Overall', 'overall'], ['Monitoring', 'monitoring'], ['Last verified', 'last_verified_at|generated_at', 'date'], ['History available', 'history_available']] },
+        { label: 'Service checks', endpoint: 'status?dashboard=true', statusFeed: true, listPath: 'checks', titlePath: 'check_name', fields: [['Service', 'service'], ['Status', 'status'], ['Latency (ms)', 'latency_ms'], ['Message', 'message'], ['30 day uptime', 'uptime_30d'], ['Checked', 'checked_at', 'date']] },
+        { label: 'Incidents', endpoint: 'status?dashboard=true', statusFeed: true, listPath: 'incidents', titlePath: 'title', fields: [['Service', 'service'], ['Status', 'status'], ['Impact', 'impact'], ['Started', 'started_at', 'date'], ['Resolved', 'resolved_at', 'date'], ['Summary', 'summary']], detailEndpoint: 'status?incident=:id', detailObjectPath: 'incidents', detailFields: [['Status', 'status'], ['Service', 'service'], ['Check', 'check_name'], ['Started', 'started_at', 'date'], ['Resolved', 'resolved_at', 'date'], ['Summary', 'summary'], ['Cause', 'cause'], ['Updates', 'updates', 'updates']] },
+        { label: 'Daily history', endpoint: 'status?dashboard=true', statusFeed: true, listPath: 'history', titlePath: 'check_name', fields: [['Service', 'service'], ['Day', 'date'], ['Status', 'status'], ['Samples', 'samples'], ['Healthy', 'healthy_samples'], ['Degraded', 'degraded_samples'], ['Failed', 'failed_samples'], ['Incidents', 'incident_ids']] },
+    ] },
+    { path: '/cases', sections: [
+        { label: 'Intelligence cases', endpoint: 'api/cases?collection=intelligence&page=1', origin: 'site', listPath: 'items|cases', titlePath: 'title', fields: [...eventFields, ['Owner', 'assignedOwner'], ['Review', 'reviewState']], cursorPath: 'nextCursor', cursorParam: 'cursor' },
+        { label: 'Monitoring cases', endpoint: 'api/cases?collection=monitoring&view=summary', origin: 'site', listPath: 'items|cases', titlePath: 'title', fields: [...eventFields, ['Priority', 'priority'], ['Owner', 'assignedOwner']] },
     ] },
     { path: '/repositories', sections: [
         { label: 'Repositories', endpoint: 'projects/user/:userId', listPath: '', titlePath: 'alias', fields: [['Owner', 'owner'], ['Files', 'file_count'], ['Size', 'total_size', 'bytes'], ['Updated', 'last_updated', 'date']], detailEndpoint: 'project/:id', detailKey: 'alias', detailObjectPath: 'share', detailTreePath: 'tree', detailFields: fileFields },
@@ -207,9 +218,8 @@ const definitions: WorkspacePageDefinition[] = [
     ] },
     { path: '/content/articles', sections: [{ label: 'Articles', endpoint: 'articles?workspace=true', listPath: '', titlePath: 'title', fields: [['Created', 'created', 'date'], ['Updated', 'modified', 'date'], ['Size', 'size', 'bytes']], detailEndpoint: 'article/:id', detailKey: 'id', detailFields: [['Title', 'title'], ['Updated', 'modified', 'date'], ['Article', 'content']] }] },
     { path: '/content/thoughts', sections: [{ label: 'Thoughts', endpoint: 'thoughts?workspace=true', listPath: '', titlePath: 'title', fields: [['Created', 'created_at|created', 'date'], ['Updated', 'updated_at|modified', 'date'], ['Thought', 'content|body']] }] },
-    ...['/logs', '/logs/realtime'].map(path => ({ path, sections: [{ label: 'Logs', endpoint: path === '/logs' ? 'logs?limit=100' : 'logs/realtime?limit=100', listPath: 'logs', titlePath: 'message|service', fields: logFields, searchParam: path === '/logs' ? 'search' : undefined }] })),
-    { path: '/logs/search', sections: [{ label: 'Log search', endpoint: 'logs/search?hql=Logs%20%7C%20take%20100&hours=24', listPath: 'rows', titlePath: 'normalized.message|id', fields: logFields, searchParam: 'search' }] },
-    { path: '/logs/errors', sections: [{ label: 'Errors', endpoint: 'logs/errors?limit=100', listPath: 'errors', titlePath: 'message|error_code', fields: [...logFields, ['Status code', 'status_code'], ['Path', 'path'], ['Error code', 'error_code']], searchParam: 'q' }] },
+    ...['/logs', '/logs/realtime', '/logs/search'].map(path => ({ path, sections: [{ label: path === '/logs/realtime' ? 'Recent high severity logs' : 'Logs', endpoint: `api/backend/logs/search?hours=24&hql=Logs%20%7C%20take%20200&paginate=1${path === '/logs/realtime' ? '&realtime=1&severity=high,critical' : path === '/logs' ? '&stats=1' : ''}`, origin: 'site' as const, listPath: 'rows', titlePath: 'normalized.message|id', fields: logFields, searchParam: 'search', cursorPath: 'next_cursor', cursorParam: 'cursor' }] })),
+    { path: '/logs/errors', sections: [{ label: 'Errors', endpoint: 'api/backend/logs/errors?limit=150', origin: 'site', listPath: 'errors', titlePath: 'message|error_code', fields: [...logFields, ['Status code', 'status_code'], ['Path', 'path'], ['Error code', 'error_code']] }] },
     ...['match', 'analysis', 'detection'].map(category => ({ path: `/rules/${category}`, requiresOrganization: true, sections: [{ label: `${category[0].toUpperCase()}${category.slice(1)} rules`, endpoint: `rules?view=list&category=${category}`, listPath: 'rules', titlePath: 'name|id', fields: [['Description', 'description'], ['Enabled', 'enabled'], ['Matches', 'hitCount'], ['Updated', 'updatedAt|updated_at', 'date']] as WorkspaceField[], detailEndpoint: 'rules/:id', detailKey: 'id', detailObjectPath: 'rule', detailFields: [['Name', 'name'], ['Description', 'description'], ['Enabled', 'enabled'], ['Stage', 'definition.stage'], ['Action', 'definition.action'], ['Query', 'definition.query']] as WorkspaceField[] }] })),
     { path: '/watchlists', requiresOrganization: true, sections: [{ label: 'Watchlists', endpoint: 'organizations/:organizationId/watchlists', listPath: 'watchlistItems', titlePath: 'value', fields: [['Kind', 'kind'], ['Status', 'status'], ['Notes', 'notes'], ['Tags', 'tags'], ['Created', 'createdAt', 'date'], ['Updated', 'updatedAt', 'date']] }] },
     { path: '/organizations/api-keys', requiresOrganization: true, sections: [{ label: 'API keys', endpoint: 'organizations/:organizationId/api-keys', listPath: 'apiKeys', titlePath: 'name', fields: [['Prefix', 'keyPrefix|key_prefix', 'masked'], ['Enabled', 'enabled'], ['Expires', 'expiresAt|expires_at', 'date'], ['Last used', 'lastUsedAt|last_used_at', 'date']] }] },

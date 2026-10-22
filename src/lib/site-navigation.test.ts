@@ -6,12 +6,13 @@ function leaves(items: SiteNavigationItem[]): SiteNavigationItem[] {
 }
 
 describe('native website navigation', () => {
-    it('uses the website public status contract for both status sections', () => {
+    it('uses the maintained full status API without the public seven-check projection', () => {
         const status = workspacePageDefinition('/status')
-        expect(status?.sections.length).toBe(2)
+        expect(status?.sections.length).toBe(4)
         for (const section of status!.sections) {
-            expect(section.endpoint).toBe('api/status')
-            expect(section.origin).toBe('site')
+            expect(section.endpoint).toBe('status?dashboard=true')
+            expect(section.origin).toBeUndefined()
+            expect(section.statusFeed).toBe(true)
         }
     })
 
