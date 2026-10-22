@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Animated, Dimensions, Image, PanResponder, Text, View } from 'react-native'
+import { Alert, Animated, Dimensions, Image, Modal, PanResponder, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
 import * as MediaLibrary from 'expo-media-library'
 import type { ImageReviewAsset, SwipeDecision } from '../types'
 import type { AppSettings } from '../types'
-import { fetchCdnUserFiles, type CdnUserFile } from '../lib/api'
+import { favoriteGalleryFile, galleryImageUrl, loadGalleryAlbums, loadGalleryPage, workspaceAccountKey, type GalleryAlbum, type GalleryFile, type GalleryFilter } from '../lib/workspace-data'
 import { GlassCard, InlineNotice, PillButton, Screen, SectionTitle } from '../components/ui'
 import { spacing } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
@@ -12,6 +12,101 @@ const CARD_WIDTH = Dimensions.get('window').width - 48
 const SWIPE_THRESHOLD = 110
 
 export function ImagesScreen({ settings }: { settings: AppSettings }) {
+    return <CloudLibrary key={`${workspaceAccountKey(settings)}/${settings.cdnBaseUrl}`} settings={settings} />
+}
+
+function CloudLibrary({ settings }: { settings: AppSettings }) {
+    const theme = useAppTheme()
+    const [device, setDevice] = useState(false)
+    const [files, setFiles] = useState<GalleryFile[]>([])
+    const [albums, setAlbums] = useState<GalleryAlbum[]>([])
+    const [filter, setFilter] = useState<GalleryFilter>({ search: '', favorites: false, albumId: '' })
+    const [loading, setLoading] = useState(false)
+    const [error, setError] = useState('')
+    const [albumError, setAlbumError] = useState('')
+    const [hasMore, setHasMore] = useState(false)
+    const [favoriteBusy, setFavoriteBusy] = useState('')
+    const [preview, setPreview] = useState<GalleryFile | null>(null)
+    const sequence = useRef(0)
+    const offset = useRef(0)
+    useEffect(() => () => { sequence.current += 1 }, [])
+    useEffect(() => {
+        const timer = setTimeout(() => { void load(false) }, 250)
+        return () => { clearTimeout(timer); sequence.current += 1 }
+    }, [filter, settings.authToken])
+    useEffect(() => { void loadAlbums() }, [settings.authToken])
+
+    async function loadAlbums() {
+        setAlbumError('')
+        try { setAlbums(await loadGalleryAlbums(settings)) }
+        catch (cause) { setAlbumError(cause instanceof Error ? cause.message : 'Unable to load albums.') }
+    }
+    async function load(more: boolean) {
+        const request = ++sequence.current
+        setLoading(true)
+        setError('')
+        try {
+            const page = await loadGalleryPage(settings, filter, more ? offset.current : 0)
+            if (request !== sequence.current) return
+            setFiles(current => more ? [...current, ...page.files.filter(file => !current.some(item => item.id === file.id))] : page.files)
+            offset.current = page.nextOffset
+            setHasMore(page.hasMore)
+        } catch (cause) {
+            if (request === sequence.current) setError(cause instanceof Error ? cause.message : 'Unable to load images.')
+        } finally { if (request === sequence.current) setLoading(false) }
+    }
+    async function toggleFavorite(file: GalleryFile) {
+        if (favoriteBusy) return
+        setFavoriteBusy(file.id)
+        try {
+            await favoriteGalleryFile(settings, file.id, !file.is_favorite)
+            setFiles(current => current.map(item => item.id === file.id ? { ...item, is_favorite: !file.is_favorite } : item).filter(item => !filter.favorites || item.is_favorite))
+        } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to update favorite.') }
+        finally { setFavoriteBusy('') }
+    }
+    function changeFilter(next: GalleryFilter) {
+        sequence.current += 1
+        setFiles([])
+        offset.current = 0
+        setHasMore(false)
+        setFilter(next)
+    }
+    if (device) return <DevicePhotoReview onBack={() => setDevice(false)} />
+    return <Screen title='Images' subtitle='Your Hanasand library'>
+        <GlassCard>
+            <View style={{ gap: spacing.sm }}>
+                <TextInput accessibilityLabel='Search images' placeholder='Search images or places' placeholderTextColor={theme.textSoft} value={filter.search} onChangeText={search => changeFilter({ ...filter, search })} style={{ color: theme.text, padding: 12, borderRadius: 12, backgroundColor: theme.ambientNeutral }} />
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+                    <PillButton label='Library' tone={!filter.favorites && !filter.albumId ? 'accent' : 'default'} small onPress={() => changeFilter({ ...filter, favorites: false, albumId: '' })} />
+                    <PillButton label='Favorites' tone={filter.favorites ? 'accent' : 'default'} small onPress={() => changeFilter({ ...filter, favorites: true, albumId: '' })} />
+                    <PillButton label={loading ? 'Loading…' : 'Refresh'} small disabled={loading} onPress={() => void load(false)} />
+                </View>
+                {!!albums.length && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }}>{albums.map(album => <PillButton key={album.id} label={`${album.name} (${album.photo_count})`} small tone={filter.albumId === album.id ? 'accent' : 'default'} onPress={() => changeFilter({ ...filter, albumId: album.id, favorites: false })} />)}</ScrollView>}
+                {!!albumError && <><InlineNotice message={`Albums: ${albumError}`} /><PillButton label='Retry albums' small onPress={() => void loadAlbums()} /></>}
+                <PillButton label='Review device photos' small onPress={() => setDevice(true)} />
+                <Text style={{ color: theme.textMuted, fontSize: 12 }}>{files.length} images{hasMore ? ' loaded' : ''}</Text>
+            </View>
+        </GlassCard>
+        {!!error && <GlassCard><InlineNotice message={error} /><PillButton label='Retry images' small onPress={() => void load(false)} /></GlassCard>}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+            {files.map(file => <View key={file.id} style={{ width: '48%', gap: 5 }}>
+                <Pressable accessibilityRole='button' accessibilityLabel={`View ${file.name}`} onPress={() => setPreview(file)}><Image source={{ uri: galleryImageUrl(settings, file.id, true) }} style={{ width: '100%', aspectRatio: 1, borderRadius: 16, backgroundColor: theme.ambientNeutral }} resizeMode='cover' /></Pressable>
+                <Text numberOfLines={1} style={{ color: theme.text, fontSize: 12 }}>{file.name}</Text>
+                <PillButton label={file.is_favorite ? '♥ Favorite' : '♡ Favorite'} small disabled={!!favoriteBusy} onPress={() => void toggleFavorite(file)} />
+            </View>)}
+        </View>
+        {!files.length && !loading && !error && <GlassCard><SectionTitle eyebrow='Library' title='No images found' body={filter.search || filter.favorites || filter.albumId ? 'Try another search or library.' : 'Images in your CDN account appear here.'} /></GlassCard>}
+        {hasMore && <PillButton label={loading ? 'Loading…' : 'Load more'} disabled={loading} onPress={() => void load(true)} />}
+        <Modal visible={!!preview} animationType='fade' onRequestClose={() => setPreview(null)}>
+            <View style={{ flex: 1, backgroundColor: theme.backgroundRaised, padding: 24, paddingTop: 64, gap: 16 }}>
+                <PillButton label='Close image' onPress={() => setPreview(null)} />
+                {preview && <><Text style={{ color: theme.text }}>{preview.name}</Text><Image source={{ uri: galleryImageUrl(settings, preview.id) }} resizeMode='contain' style={{ flex: 1 }} /></>}
+            </View>
+        </Modal>
+    </Screen>
+}
+
+function DevicePhotoReview({ onBack }: { onBack: () => void }) {
     const theme = useAppTheme()
     const [permissionResponse, requestPermission] = MediaLibrary.usePermissions()
     const [assets, setAssets] = useState<ImageReviewAsset[]>([])
@@ -20,30 +115,12 @@ export function ImagesScreen({ settings }: { settings: AppSettings }) {
     const [history, setHistory] = useState<string[]>([])
     const [busy, setBusy] = useState(false)
     const [loadError, setLoadError] = useState('')
-    const [cloudImages, setCloudImages] = useState<CdnUserFile[]>([])
-    const [cloudLoading, setCloudLoading] = useState(false)
-    const [cloudError, setCloudError] = useState('')
-    const [view, setView] = useState<'cloud' | 'device'>('cloud')
     const translate = useRef(new Animated.ValueXY()).current
     const loadSequenceRef = useRef(0)
 
     useEffect(() => {
         void loadAssets()
     }, [permissionResponse?.granted])
-
-    useEffect(() => {
-        let active = true
-        setCloudLoading(true)
-        setCloudError('')
-        void fetchCdnUserFiles(settings).then(files => {
-            if (active) setCloudImages(files)
-        }).catch(error => {
-            if (active) setCloudError(error instanceof Error ? error.message : 'Unable to load your Hanasand library.')
-        }).finally(() => {
-            if (active) setCloudLoading(false)
-        })
-        return () => { active = false }
-    }, [settings.cdnBaseUrl, settings.authToken, settings.userId])
 
     async function loadAssets() {
         const requestId = loadSequenceRef.current + 1
@@ -139,32 +216,6 @@ export function ImagesScreen({ settings }: { settings: AppSettings }) {
     const remaining = Math.max(assets.length - index, 0)
     const discardCount = useMemo(() => Object.values(decisions).filter(value => value === 'discard').length, [decisions])
 
-    if (view === 'cloud') {
-        return (
-            <Screen title='Images' subtitle='Your Hanasand CDN library'>
-                <GlassCard>
-                    <SectionTitle eyebrow='Hanasand library' title={cloudLoading ? 'Loading images…' : `${cloudImages.length} images`} body='Images stored in your Hanasand CDN account.' />
-                    <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
-                        <PillButton label='Hanasand library' onPress={() => setView('cloud')} tone='accent' small />
-                        <PillButton label='Review device photos' onPress={() => setView('device')} small />
-                        <PillButton label='Refresh' onPress={() => {
-                            setCloudLoading(true)
-                            void fetchCdnUserFiles(settings).then(setCloudImages).catch(error => setCloudError(error instanceof Error ? error.message : 'Unable to load your Hanasand library.')).finally(() => setCloudLoading(false))
-                        }} small disabled={cloudLoading} />
-                    </View>
-                    {!!cloudError && <View style={{ marginTop: spacing.md }}><InlineNotice message={cloudError} /></View>}
-                </GlassCard>
-                {cloudImages.length ? cloudImages.map(file => (
-                    <GlassCard key={file.id}>
-                        <Image source={{ uri: `${settings.cdnBaseUrl.replace(/\/+$/, '')}/files/${encodeURIComponent(file.id)}` }} style={{ width: '100%', height: 280, borderRadius: 20, backgroundColor: theme.ambientNeutral }} resizeMode='contain' />
-                        <Text style={{ marginTop: spacing.sm, color: theme.text, fontWeight: '700' }}>{file.name}</Text>
-                        {!!file.uploadedAt && <Text style={{ marginTop: 4, color: theme.textMuted, fontSize: 12 }}>{new Date(file.uploadedAt).toLocaleDateString()}</Text>}
-                    </GlassCard>
-                )) : !cloudLoading && !cloudError ? <GlassCard><SectionTitle eyebrow='Library' title='No images yet' body='Images uploaded to cdn.hanasand.com will appear here.' /></GlassCard> : null}
-            </Screen>
-        )
-    }
-
     const panResponder = useMemo(
         () => PanResponder.create({
             onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > 12,
@@ -190,7 +241,7 @@ export function ImagesScreen({ settings }: { settings: AppSettings }) {
                 <GlassCard>
                     <SectionTitle eyebrow='Permission required' title='Photo access needed' />
                     <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
-                        <PillButton label='Hanasand library' onPress={() => setView('cloud')} small />
+                        <PillButton label='Hanasand library' onPress={onBack} small />
                         <PillButton label='Allow photo library access' onPress={() => void requestPermission()} tone='accent' />
                     </View>
                 </GlassCard>
@@ -204,7 +255,7 @@ export function ImagesScreen({ settings }: { settings: AppSettings }) {
                 <SectionTitle eyebrow='Review' title={current ? `${remaining} left` : 'Complete'} />
                 <InlineNotice message={loadError} />
                 <View style={{ flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap', marginTop: spacing.md }}>
-                    <PillButton label='Hanasand library' onPress={() => setView('cloud')} small />
+                    <PillButton label='Hanasand library' onPress={onBack} small />
                     <PillButton label='Undo last' onPress={undoLast} small disabled={busy || !history.length} />
                     <PillButton label={busy ? 'Working...' : `Delete marked (${discardCount})`} onPress={() => void deleteDeferred()} tone='danger' small disabled={busy || !discardCount} />
                 </View>

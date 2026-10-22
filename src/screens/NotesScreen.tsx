@@ -1,18 +1,22 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { FileText, Menu, X } from 'lucide-react-native'
 import type { AppSettings, Note } from '../types'
-import { createNote, fetchNotes, updateNote } from '../lib/api'
-import { Screen } from '../components/ui'
+import { createNote, deleteNote, fetchNotes, updateNote } from '../lib/api'
+import { workspaceAccountKey } from '../lib/workspace-data'
+import { PillButton, Screen } from '../components/ui'
 import { radius, spacing, type ThemePalette } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
 
-const NOTES_CACHE_KEY = 'hanasand-mobile/local-notes'
+const NOTES_CACHE_KEY = 'hanasand-mobile/account-notes/'
 
 type LocalNote = Note & {
     syncState: 'synced' | 'pending'
     localUpdatedAt: number
+    baseUpdatedAt?: string
+    deletedOnWebsite?: boolean
+    remoteVersion?: Note
 }
 
 const emptyDraft = { title: '', content: '' }
@@ -51,6 +55,9 @@ function normalizeLocalNote(value: unknown): LocalNote | null {
         updated_at: typeof entry.updated_at === 'string' ? entry.updated_at : nowIso(),
         syncState: entry.syncState === 'synced' ? 'synced' : 'pending',
         localUpdatedAt: typeof entry.localUpdatedAt === 'number' ? entry.localUpdatedAt : Date.now(),
+        baseUpdatedAt: entry.baseUpdatedAt,
+        remoteVersion: entry.remoteVersion,
+        deletedOnWebsite: entry.deletedOnWebsite === true,
     }
 }
 
@@ -66,6 +73,7 @@ function fromRemote(note: Note): LocalNote {
     return {
         ...note,
         syncState: 'synced',
+        baseUpdatedAt: note.updated_at,
         localUpdatedAt: Date.parse(note.updated_at || note.created_at) || Date.now(),
     }
 }
@@ -79,137 +87,148 @@ function hasText(note: LocalNote) {
 }
 
 export function NotesScreen({ settings }: { settings: AppSettings }) {
+    return <AccountNotes key={workspaceAccountKey(settings)} settings={settings} />
+}
+
+function AccountNotes({ settings }: { settings: AppSettings }) {
     const theme = useAppTheme()
     const styles = useMemo(() => createStyles(theme), [theme])
     const [notes, setNotes] = useState<LocalNote[]>([])
     const [selectedId, setSelectedId] = useState('')
     const [draft, setDraft] = useState(emptyDraft)
     const [menuOpen, setMenuOpen] = useState(false)
+    const [search, setSearch] = useState('')
     const [loading, setLoading] = useState(true)
+    const [syncing, setSyncing] = useState(false)
     const [loadError, setLoadError] = useState('')
-    const hydratedRef = useRef(false)
+    const [hydrated, setHydrated] = useState(false)
+    const notesRef = useRef<LocalNote[]>([])
+    const selectedRef = useRef('')
+    const active = useRef(true)
     const syncingRef = useRef(false)
+    const cacheKey = NOTES_CACHE_KEY + encodeURIComponent(workspaceAccountKey(settings))
     const configured = Boolean(settings.apiBaseUrl.trim() && settings.authToken.trim() && settings.userId.trim())
-    const selected = useMemo(() => notes.find((note) => note.id === selectedId) || null, [notes, selectedId])
+    const selected = notes.find(note => note.id === selectedId) || null
+    const visibleNotes = notes.filter(note => hasText(note) && `${note.title} ${note.content}`.toLowerCase().includes(search.toLowerCase()))
 
+    function replaceNotes(next: LocalNote[]) {
+        if (!active.current) return
+        notesRef.current = sortNotes(next)
+        setNotes(notesRef.current)
+    }
+    function choose(id: string) {
+        selectedRef.current = id
+        setSelectedId(id)
+        const note = notesRef.current.find(item => item.id === id)
+        setDraft(note ? { title: note.title, content: note.content } : emptyDraft)
+    }
     useEffect(() => {
+        active.current = true
         void hydrate()
+        return () => { active.current = false }
     }, [])
-
     useEffect(() => {
-        if (!hydratedRef.current) return
-        void AsyncStorage.setItem(NOTES_CACHE_KEY, JSON.stringify(notes))
-    }, [notes])
-
+        if (hydrated && configured) void AsyncStorage.setItem(cacheKey, JSON.stringify(notes)).catch(() => setLoadError('Unable to save notes on this device.'))
+    }, [notes, hydrated, cacheKey, configured])
     useEffect(() => {
-        if (!configured || !notes.some(note => note.syncState === 'pending' && hasText(note))) return
-        const timeout = setTimeout(() => {
-            void syncPendingNotes()
-        }, 1200)
-
-        return () => clearTimeout(timeout)
-    }, [configured, notes, settings.apiBaseUrl, settings.authToken, settings.userId])
-
-    useEffect(() => {
-        if (!selected) {
-            setDraft(emptyDraft)
-            return
-        }
-
-        setDraft({ title: selected.title, content: selected.content })
-    }, [selectedId])
+        if (!hydrated || !configured || !notes.some(note => note.syncState === 'pending' && !note.remoteVersion && !note.deletedOnWebsite && (hasText(note) || !note.id.startsWith('local-')))) return
+        const timer = setTimeout(() => { void syncPendingNotes() }, 1200)
+        return () => clearTimeout(timer)
+    }, [notes, hydrated, configured, settings.authToken])
 
     async function hydrate() {
+        if (syncingRef.current) return
         setLoading(true)
         setLoadError('')
-        const local = await loadLocalNotes()
-        let next = local
-
-        if (configured) {
-            try {
-                const remote = (await fetchNotes(settings)).map(fromRemote)
-                const pendingLocal = local.filter(note => note.syncState === 'pending')
-                const remoteIds = new Set(remote.map(note => note.id))
-                next = sortNotes([...remote, ...pendingLocal.filter(note => !remoteIds.has(note.id))])
-            } catch (error) {
-                setLoadError(error instanceof Error ? error.message : 'Unable to load shared Hanasand notes.')
-                next = local
-            }
-        } else {
-            setLoadError('Sign in to load notes shared with the Hanasand website.')
-        }
-
-        hydratedRef.current = true
-        setNotes(next)
-        setSelectedId(next[0]?.id || '')
-        setLoading(false)
-    }
-
-    async function loadLocalNotes() {
         try {
-            const raw = await AsyncStorage.getItem(NOTES_CACHE_KEY)
-            const parsed = raw ? JSON.parse(raw) as unknown : []
-            return sortNotes(Array.isArray(parsed) ? parsed.map(normalizeLocalNote).filter(Boolean) as LocalNote[] : [])
-        } catch {
-            return []
-        }
+            if (!configured) { setLoadError('Sign in to load your notes.'); return }
+            if (!hydrated) {
+                const raw = await AsyncStorage.getItem(cacheKey)
+                const cached = raw ? JSON.parse(raw) : []
+                if (!active.current) return
+                replaceNotes(Array.isArray(cached) ? cached.map(normalizeLocalNote).filter((note: LocalNote | null): note is LocalNote => note !== null) : [])
+            }
+            try {
+                const remote = await fetchNotes(settings)
+                if (!active.current) return
+                const pending = notesRef.current.filter(note => note.syncState === 'pending')
+                const pendingIds = new Set(pending.map(note => note.id))
+                replaceNotes([...remote.filter(note => !pendingIds.has(note.id)).map(fromRemote), ...pending.map(note => {
+                    const website = remote.find(item => item.id === note.id)
+                    return website && website.updated_at !== note.baseUpdatedAt ? { ...note, remoteVersion: website } : !website && !note.id.startsWith('local-') ? { ...note, deletedOnWebsite: true } : note
+                })])
+            } catch (error) { if (active.current) setLoadError(error instanceof Error ? error.message : 'Unable to load website notes.') }
+            if (active.current) {
+                if (!selectedRef.current || !notesRef.current.some(note => note.id === selectedRef.current)) choose(notesRef.current[0]?.id || '')
+                else choose(selectedRef.current)
+            }
+        } catch { if (active.current) setLoadError('Unable to read saved notes on this device.') }
+        finally { if (active.current) { setHydrated(true); setLoading(false) } }
     }
 
     function updateDraft(nextDraft: typeof emptyDraft) {
         setDraft(nextDraft)
-        setNotes(current => {
-            const timestamp = nowIso()
-            const base = current.find(note => note.id === selectedId) || createLocalNote()
-            const nextNote: LocalNote = {
-                ...base,
-                ...nextDraft,
-                updated_at: timestamp,
-                syncState: 'pending',
-                localUpdatedAt: Date.now(),
-            }
-            const nextNotes = sortNotes([nextNote, ...current.filter(note => note.id !== nextNote.id)])
-            if (!selectedId || selectedId !== nextNote.id) {
-                setSelectedId(nextNote.id)
-            }
-            return nextNotes
-        })
+        const base = notesRef.current.find(note => note.id === selectedRef.current) || createLocalNote()
+        const next: LocalNote = { ...base, ...nextDraft, updated_at: nowIso(), syncState: 'pending', localUpdatedAt: Date.now() }
+        replaceNotes([next, ...notesRef.current.filter(note => note.id !== base.id)])
+        selectedRef.current = next.id
+        setSelectedId(next.id)
     }
-
-    function openNote(note: LocalNote) {
-        setSelectedId(note.id)
-        setMenuOpen(false)
-    }
-
-    function startFreshNote() {
-        setSelectedId('')
-        setDraft(emptyDraft)
-        setMenuOpen(false)
-    }
+    function openNote(note: LocalNote) { choose(note.id); setMenuOpen(false) }
+    function startFreshNote() { choose(''); setMenuOpen(false) }
 
     async function syncPendingNotes() {
-        if (syncingRef.current) return
+        if (syncingRef.current || !configured) return
         syncingRef.current = true
-
+        setSyncing(true)
         try {
-            const pending = notes.filter(note => note.syncState === 'pending' && hasText(note))
-            for (const note of pending) {
-                try {
-                    const payload = { title: note.title, content: note.content }
-                    const saved = note.id.startsWith('local-')
-                        ? await createNote(settings, payload)
-                        : await updateNote(settings, note.id, payload)
-                    const synced = fromRemote(saved)
-                    setNotes(current => sortNotes([synced, ...current.filter(item => item.id !== note.id && item.id !== saved.id)]))
-                    if (selectedId === note.id) {
-                        setSelectedId(saved.id)
-                    }
-                } catch {
-                    break
+            const remote = await fetchNotes(settings)
+            if (!active.current) return
+            for (const note of notesRef.current.filter(item => item.syncState === 'pending' && !item.remoteVersion && !item.deletedOnWebsite && (hasText(item) || !item.id.startsWith('local-')))) {
+                const website = remote.find(item => item.id === note.id)
+                if (!note.id.startsWith('local-') && (!website || website.updated_at !== note.baseUpdatedAt)) {
+                    if (website) replaceNotes(notesRef.current.map(item => item.id === note.id ? { ...item, remoteVersion: website } : item))
+                    else replaceNotes(notesRef.current.map(item => item.id === note.id ? { ...item, deletedOnWebsite: true } : item))
+                    continue
                 }
+                const payload = { title: note.title, content: note.content }
+                const saved = note.id.startsWith('local-') ? await createNote(settings, payload) : await updateNote(settings, note.id, payload)
+                if (!active.current) return
+                const latest = notesRef.current.find(item => item.id === note.id)
+                if (!latest) continue
+                const changed = latest.title !== note.title || latest.content !== note.content
+                const next = changed ? { ...latest, id: saved.id, baseUpdatedAt: saved.updated_at, remoteVersion: undefined } : fromRemote(saved)
+                replaceNotes([next, ...notesRef.current.filter(item => item.id !== note.id && item.id !== saved.id)])
+                if (selectedRef.current === note.id) { selectedRef.current = saved.id; setSelectedId(saved.id) }
             }
-        } finally {
-            syncingRef.current = false
-        }
+        } catch (error) { if (active.current) setLoadError(error instanceof Error ? error.message : 'Sync failed. Your edits are saved on this device.') }
+        finally { syncingRef.current = false; if (active.current) setSyncing(false) }
+    }
+
+    function resolveConflict(useWebsite: boolean) {
+        if (!selected?.remoteVersion) return
+        const website = selected.remoteVersion
+        // Keep both versions unless the user chooses the website copy.
+        const next = useWebsite ? fromRemote(website) : { ...selected, id: createLocalNote().id, baseUpdatedAt: undefined, remoteVersion: undefined }
+        replaceNotes([next, ...(useWebsite ? [] : [fromRemote(website)]), ...notesRef.current.filter(item => item.id !== selected.id)])
+        choose(next.id)
+    }
+    function removeSelected() {
+        if (!selected || syncing) return
+        Alert.alert('Delete note?', 'This removes the note from your account and this device.', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Delete', style: 'destructive', onPress: () => { void (async () => {
+                syncingRef.current = true
+                setSyncing(true)
+                try {
+                    if (!selected.id.startsWith('local-')) await deleteNote(settings, selected.id)
+                    if (!active.current) return
+                    replaceNotes(notesRef.current.filter(note => note.id !== selected.id))
+                    choose(notesRef.current[0]?.id || '')
+                } catch (error) { if (active.current) setLoadError(error instanceof Error ? error.message : 'Unable to delete note.') }
+                finally { syncingRef.current = false; if (active.current) setSyncing(false) }
+            })() } },
+        ])
     }
 
     return (
@@ -231,8 +250,22 @@ export function NotesScreen({ settings }: { settings: AppSettings }) {
                 <Text style={{ flex: 1, color: theme.textMuted, fontSize: 12 }}>{loading ? 'Syncing notes with Hanasand…' : loadError}</Text>
                 {!loading && <Pressable accessibilityRole='button' onPress={() => void hydrate()} style={{ paddingVertical: 6, paddingHorizontal: 10, borderRadius: 999, backgroundColor: theme.ambientNeutral }}><Text style={{ color: theme.text, fontWeight: '700', fontSize: 12 }}>Retry</Text></Pressable>}
             </View>}
+            <View style={{ paddingHorizontal: spacing.lg, gap: spacing.sm, paddingBottom: spacing.sm }}>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+                    <PillButton label='New note' small onPress={startFreshNote} disabled={!hydrated || !configured} />
+                    <PillButton label={`${notes.filter(hasText).length} notes`} small onPress={() => setMenuOpen(true)} />
+                    <PillButton label='Sync' small onPress={() => { setLoadError(''); void hydrate() }} disabled={loading || syncing} />
+                    {selected && <PillButton label='Delete' tone='danger' small disabled={syncing} onPress={removeSelected} />}
+                </View>
+                <TextInput accessibilityLabel='Search notes' value={search} onChangeText={setSearch} placeholder='Search notes' placeholderTextColor={theme.textSoft} style={{ color: theme.text, padding: 10, borderRadius: 12, backgroundColor: theme.ambientNeutral }} />
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>{visibleNotes.map(note => <PillButton key={note.id} label={noteTitle(note)} tone={note.id === selectedId ? 'accent' : 'default'} small onPress={() => openNote(note)} />)}</ScrollView>
+                <Text style={{ color: theme.textMuted, fontSize: 12 }}>{syncing ? 'Syncing…' : selected?.remoteVersion || selected?.deletedOnWebsite ? 'Website changes need review' : notes.some(note => note.syncState === 'pending' && hasText(note)) ? 'Saved on this device · waiting to sync' : 'Synced with Hanasand'}</Text>
+                {!!selected?.deletedOnWebsite && <View style={{ gap: 8 }}><Text style={{ color: theme.textMuted }}>This note was deleted on the website. Your edits remain on this device.</Text><PillButton label='Keep as new note' small onPress={() => { const copy = { ...selected, id: createLocalNote().id, deletedOnWebsite: false, baseUpdatedAt: undefined }; replaceNotes([copy, ...notesRef.current.filter(note => note.id !== selected.id)]); choose(copy.id) }} /></View>}
+                {!!selected?.remoteVersion && <View style={{ gap: 8 }}><Text style={{ color: theme.textMuted }}>This note changed on the website. Keep your edits as a new note or use the website version.</Text><View style={{ flexDirection: 'row', gap: 8 }}><PillButton label='Keep both' small onPress={() => resolveConflict(false)} /><PillButton label='Use website' small onPress={() => resolveConflict(true)} /></View></View>}
+            </View>
             <View style={styles.editor}>
                 <TextInput
+                    editable={hydrated && configured && !loading}
                     value={draft.title}
                     onChangeText={(title) => updateDraft({ ...draft, title })}
                     placeholder='Title'
@@ -242,6 +275,7 @@ export function NotesScreen({ settings }: { settings: AppSettings }) {
                 />
                 <View style={styles.divider} />
                 <TextInput
+                    editable={hydrated && configured && !loading}
                     value={draft.content}
                     onChangeText={(content) => updateDraft({ ...draft, content })}
                     placeholder='Note'
