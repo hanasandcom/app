@@ -47,6 +47,57 @@ describe('shared mobile AI workspace', () => {
         expect(calls[0].url).toBe('https://example.test/api/backend/ai/workspace')
         expect(values[0].messages[0].createdAt).toBe(Date.parse('2026-10-22T12:00:00Z'))
     })
+    it('persists a new turn strictly after prior history even when the wall clock moves backward', async () => {
+        const future = Date.parse('2026-10-22T12:00:01Z')
+        const user = { id: 'z-user', role: 'user' as const, content: 'Question', createdAt: api.nextAiMessageTimestamp([{ createdAt: future }], future - 1000) }
+        const assistant = { id: 'a-assistant', role: 'assistant' as const, content: 'OK', createdAt: user.createdAt + 1 }
+        expect(user.createdAt).toBe(future + 1)
+        expect(assistant.createdAt).toBeGreaterThan(user.createdAt)
+        expect(api.nextAiMessageTimestamp([assistant], future - 1000)).toBe(assistant.createdAt + 1)
+        payload = {}
+        await api.persistAiMessage(settings, 'thread', user)
+        await api.persistAiMessage(settings, 'thread', assistant)
+        const canonical = calls.map(call => JSON.parse(String(call.init.body)))
+            .sort((left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.id.localeCompare(right.id))
+        expect(canonical.map(message => message.id)).toEqual(['z-user', 'a-assistant'])
+        payload = { conversations: [{ id: 'thread', title: 'Chat', messages: canonical }] }
+        expect((await api.fetchAiWorkspace(settings))[0].messages.map(message => message.id)).toEqual(['z-user', 'a-assistant'])
+    })
+    it('repairs an equal-timestamp legacy single turn after canonical UUID ordering', async () => {
+        const createdAt = '2026-10-22T12:00:00Z'
+        payload = { conversations: [{ id: 'thread', messages: [
+            { id: 'a-assistant', role: 'assistant', content: 'OK', createdAt },
+            { id: 'z-user', role: 'user', content: 'Question', createdAt },
+        ] }] }
+        const conversation = (await api.fetchAiWorkspace(settings))[0]
+        expect(conversation.messages.map(message => message.id)).toEqual(['z-user', 'a-assistant'])
+        expect(conversation.messages.every(message => message.createdAt === Date.parse(createdAt))).toBe(true)
+    })
+    it('preserves ambiguous equal-time tool and multi-turn histories', async () => {
+        const createdAt = '2026-10-22T12:00:00Z'
+        const toolHistory = [
+            { id: 'call', role: 'assistant', content: 'Calling tool', createdAt },
+            { id: 'tool', role: 'tool', content: 'Tool output', createdAt },
+            { id: 'user', role: 'user', content: 'Question', createdAt },
+        ]
+        const multiTurn = [
+            { id: 'answer-1', role: 'assistant', content: 'First answer', createdAt },
+            { id: 'question-1', role: 'user', content: 'First question', createdAt },
+            { id: 'answer-2', role: 'assistant', content: 'Second answer', createdAt },
+            { id: 'question-2', role: 'user', content: 'Second question', createdAt },
+        ]
+        payload = { conversations: [{ id: 'tools', messages: toolHistory }, { id: 'multiple', messages: multiTurn }] }
+        const conversations = await api.fetchAiWorkspace(settings)
+        expect(conversations[0].messages.map(message => message.id)).toEqual(toolHistory.map(message => message.id))
+        expect(conversations[1].messages.map(message => message.id)).toEqual(multiTurn.map(message => message.id))
+    })
+    it('preserves an assistant-first conversation when its timestamps differ', async () => {
+        payload = { conversations: [{ id: 'thread', messages: [
+            { id: 'welcome', role: 'assistant', content: 'Welcome', createdAt: 1 },
+            { id: 'user', role: 'user', content: 'Question', createdAt: 2 },
+        ] }] }
+        expect((await api.fetchAiWorkspace(settings))[0].messages.map(message => message.id)).toEqual(['welcome', 'user'])
+    })
     it('preserves existing conversation identity and scopes chronological portal history', async () => {
         payload = { items: [item('new', '2026-10-22T12:00:00Z', 'running'), item('foreign', '2026-10-22T13:00:00Z', 'done', 'other'), item('old', '2026-10-22T11:00:00Z', 'done')] }
         const values = await api.fetchChatGptActivity(settings, 'conversation-1')

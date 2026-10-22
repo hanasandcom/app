@@ -72,7 +72,15 @@ function normalizeMessage(value: Omit<WorkspaceMessage, 'createdAt'> & { created
 }
 function normalizeConversation(value: AiConversation): AiConversation {
     if (!value.id || !Array.isArray(value.messages)) throw new Error('The AI service returned an invalid conversation.')
-    return { ...value, messages: value.messages.map(normalizeMessage), title: value.title || 'New chat' }
+    const messages = value.messages.map(normalizeMessage)
+    // Older native single-turn chats could persist both rows in the same millisecond.
+    // Keep ambiguous multi-turn and tool histories in their original server order.
+    if (messages.length === 2 && messages[0].role === 'assistant' && messages[1].role === 'user'
+        && messages[0].createdAt === messages[1].createdAt) messages.reverse()
+    return { ...value, messages, title: value.title || 'New chat' }
+}
+export function nextAiMessageTimestamp(messages: Pick<WorkspaceMessage, 'createdAt'>[], now = Date.now()) {
+    return messages.reduce((next, message) => Number.isFinite(message.createdAt) ? Math.max(next, message.createdAt + 1) : next, now)
 }
 export function newConversation(): AiConversation {
     return { id: Crypto.randomUUID(), title: 'New chat', messages: [], updatedAt: new Date().toISOString() }

@@ -6,7 +6,7 @@ import { ArrowUp, Sparkles } from 'lucide-react-native'
 import type { AiChatMessage, AppSettings, DesktopAgentStatus } from '../types'
 import { fetchDesktopAgentStatus, fetchDesktopScreenshot, isHanasandOrganizationMember, runDesktopAgentCommand } from '../lib/api'
 import { InlineNotice, PillButton, Screen } from '../components/ui'
-import { createAiConversation, fetchAiWorkspace, fetchChatGptActivity, submitChatGptPrompt, portalMessages, conversationContext, newConversation, persistAiMessage, runHanasandPrompt, type AiConversation, type WorkspaceMessage, type PromptPortalItem } from '../lib/ai-workspace'
+import { createAiConversation, fetchAiWorkspace, fetchChatGptActivity, submitChatGptPrompt, portalMessages, conversationContext, newConversation, nextAiMessageTimestamp, persistAiMessage, runHanasandPrompt, type AiConversation, type WorkspaceMessage, type PromptPortalItem } from '../lib/ai-workspace'
 import { spacing, type ThemePalette } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
 
@@ -238,7 +238,7 @@ export function HomeScreen({
                     id: `${Date.now()}-assistant`,
                     role: 'assistant',
                     content: `${label} sent to this Mac. ${status.message || 'Open Hanasand Desktop to see the reflected state.'}`,
-                    createdAt: Date.now(),
+                    createdAt: nextAiMessageTimestamp(aiMessagesRef.current),
                 },
             ])
             if (desktopScreenshotUri) {
@@ -304,7 +304,7 @@ export function HomeScreen({
                     id: `${Date.now()}-assistant`,
                     role: 'assistant',
                     content: `Mac Codex: ${message}`,
-                    createdAt: Date.now(),
+                    createdAt: nextAiMessageTimestamp(aiMessagesRef.current),
                 },
             ])
         } catch (cause) {
@@ -312,7 +312,7 @@ export function HomeScreen({
             setDesktopIssue(message)
             await saveMessages([
                 ...aiMessagesRef.current,
-                { id: `${Date.now()}-assistant`, role: 'assistant', content: message, createdAt: Date.now(), error: true },
+                { id: `${Date.now()}-assistant`, role: 'assistant', content: message, createdAt: nextAiMessageTimestamp(aiMessagesRef.current), error: true },
             ])
         } finally {
             setRemoteBusy('')
@@ -378,7 +378,7 @@ export function HomeScreen({
             const context = conversationContext(conversation.messages, portalItemsRef.current)
             const desktopCodexPrompt = desktopControlPromptFromText(trimmed)
             if (desktopCodexPrompt) {
-                await saveMessages([...aiMessagesRef.current, { id: randomUUID(), role: 'user', content: trimmed, createdAt: Date.now() }])
+                await saveMessages([...aiMessagesRef.current, { id: randomUUID(), role: 'user', content: trimmed, createdAt: nextAiMessageTimestamp(aiMessagesRef.current) }])
                 setPrompt('')
                 await runDesktopCodexPrompt(desktopCodexPrompt)
                 return
@@ -395,8 +395,8 @@ export function HomeScreen({
                 }
                 return
             }
-            const userMessage: WorkspaceMessage = { id: randomUUID(), role: 'user', content: trimmed, createdAt: Date.now() }
-            assistant = { id: randomUUID(), role: 'assistant', content: 'Connecting to Hanasand GPT…', createdAt: Date.now(), pending: true, modelName: 'Hanasand GPT' }
+            const userMessage: WorkspaceMessage = { id: randomUUID(), role: 'user', content: trimmed, createdAt: nextAiMessageTimestamp(aiMessagesRef.current) }
+            assistant = { id: randomUUID(), role: 'assistant', content: 'Connecting to Hanasand GPT…', createdAt: userMessage.createdAt + 1, pending: true, modelName: 'Hanasand GPT' }
             await saveMessages([...aiMessagesRef.current, userMessage, assistant])
             setPrompt('')
             const assistantId = assistant.id
