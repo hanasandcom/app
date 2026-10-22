@@ -458,7 +458,7 @@ export function HomeScreen({
                 {!contextReady && membershipStatus !== 'error' && <Text style={styles.emptyChat}>{membershipStatus === 'loading' ? 'Checking AI history access…' : portalHistory.status === 'error' ? 'Conversation history is unavailable. Use Refresh to retry before sending.' : 'Loading complete conversation history…'}</Text>}
                 {workspaceLoading && <Text style={styles.emptyChat}>Loading conversations…</Text>}
                 {historyVisible && <ScrollView style={{ maxHeight: 180 }} contentContainerStyle={{ gap: 6 }}>
-                    {conversations.filter(item => !item.archivedAt).map(item => <PillButton key={item.id} label={item.title} tone={item.id === activeConversationId ? 'accent' : 'default'} onPress={() => selectConversation(item.id)} />)}
+                    {conversations.filter(item => !item.archivedAt).map(item => <PillButton key={item.id} label={item.title} tone={item.id === activeConversationId ? 'accent' : 'default'} disabled={busy || workspaceLoading} onPress={() => selectConversation(item.id)} />)}
                 </ScrollView>}
                 {readOnly && <Text style={styles.emptyChat}>This shared conversation has reviewer access.</Text>}
                 {canUseChatGpt && (selectedAgent === 'chatgpt' || portalItems.length > 0 || !!portalError) && <>
