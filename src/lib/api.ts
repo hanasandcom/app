@@ -1228,12 +1228,13 @@ export async function fetchNotes(settings: AppSettings) {
     const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'notes'), {
         headers: headers(settings),
     })
-    const body = await response.json().catch(() => ([]))
+    const body = await response.json().catch(() => null)
     if (!response.ok) {
-        throw new Error(String((body as { error?: string }).error || 'Unable to load notes.'))
+        throw new Error(String((body as { error?: string } | null)?.error || 'Unable to load notes.'))
     }
 
-    return Array.isArray(body) ? body.map(normalizeNote).filter(Boolean) as Note[] : []
+    if (!Array.isArray(body)) throw new Error('Notes returned an invalid response. Please retry.')
+    return body.map(normalizeNote).filter(Boolean) as Note[]
 }
 
 export type MobileProfileStats = {

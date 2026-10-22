@@ -55,7 +55,7 @@ mock.module('expo-crypto', () => ({
     },
 }))
 
-const { apiFetch, AuthenticationError, exchangeHanasandMobileSsoCode, fetchDesktopAgentStatus, isHanasandGoogleSignInConfigured, loginToHanasand, loginWithHanasandPasskey, refreshHanasandSession, runDesktopAgentCommand } = await import('./api')
+const { apiFetch, fetchNotes, AuthenticationError, exchangeHanasandMobileSsoCode, fetchDesktopAgentStatus, isHanasandGoogleSignInConfigured, loginToHanasand, loginWithHanasandPasskey, refreshHanasandSession, runDesktopAgentCommand } = await import('./api')
 
 const settings: AppSettings = {
     themeMode: 'obsidian',
@@ -326,5 +326,17 @@ describe('workspace transport', () => {
         expect(sentHeaders.has('Content-Type')).toBe(false)
         expect(sentBody).toBe(form)
         expect(credentials).toBe('omit')
+    })
+})
+
+
+describe('notes response integrity', () => {
+    it('rejects a malformed response instead of treating it as an empty library', async () => {
+        for (const body of ['{', '{}', 'null']) {
+            mockFetch(async () => new Response(body, { status: 200 }))
+            await expect(fetchNotes(settings)).rejects.toThrow('invalid response')
+        }
+        mockFetch(async () => new Response('[]', { status: 200 }))
+        await expect(fetchNotes(settings)).resolves.toEqual([])
     })
 })
