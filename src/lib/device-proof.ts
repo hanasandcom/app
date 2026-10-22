@@ -8,6 +8,7 @@ const encoder = new TextEncoder()
 export type DevicePublicJwk = { kty: 'EC'; crv: 'P-256'; x: string; y: string }
 type DeviceKey = { privateKey: Uint8Array; publicJwk: DevicePublicJwk }
 let cachedKey: DeviceKey | undefined
+let pendingKey: Promise<DeviceKey> | undefined
 
 function base64Url(bytes: Uint8Array) {
     const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
@@ -44,6 +45,15 @@ function fromBase64Url(value: string) {
 
 async function loadOrCreateDeviceKey(): Promise<DeviceKey> {
     if (cachedKey) return cachedKey
+    // Startup requests can arrive together before SecureStore has returned.
+    // Share key creation so the login binding and subsequent proofs stay equal.
+    if (!pendingKey) {
+        pendingKey = readOrCreateDeviceKey().finally(() => { pendingKey = undefined })
+    }
+    return pendingKey
+}
+
+async function readOrCreateDeviceKey(): Promise<DeviceKey> {
     const stored = await SecureStore.getItemAsync(DEVICE_KEY_STORAGE)
     let privateKey: Uint8Array
     if (stored) {
