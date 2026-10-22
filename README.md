@@ -11,7 +11,7 @@ bun install
 bun run start
 ```
 
-Then use the Expo CLI to open a development build or simulator. The repository also provides `bun run ios`, `bun run android`, and `bun run prebuild` for native development. `bun run lint` and `bun run typecheck` check the JavaScript and TypeScript source; `bun run test:mobile` runs focused local-storage and session-refresh regression tests.
+Then use the Expo CLI to open a development build or simulator. The repository also provides `bun run ios`, `bun run android`, and `bun run prebuild` for native development. `bun run lint` and `bun run typecheck` check the JavaScript and TypeScript source; `bun run test:mobile` checks session storage and refresh, authenticated transport, AI history, CDN sessions, and native navigation.
 
 The workspace API defaults to `https://api.hanasand.com/api`. Mobile authentication and browser-backed AI routes use `https://hanasand.com/api`; mail uses `https://mail.hanasand.com/api`, and image libraries use `https://cdn.hanasand.com/api`. To point a development build at another API, set `EXPO_PUBLIC_API_BASE_URL` before starting Expo. Password, passkey, Google, and configured SSO sign-in are available on the login screen; see [mobile authentication](docs/mobile-authentication.md) for the service routes and provider setup. Native app metadata, identifiers, permissions, and the current app version are in [`app.json`](app.json).
 
@@ -32,6 +32,8 @@ Mobile builds use [EAS Build](https://docs.expo.dev/build/introduction/) and the
 1. Install dependencies with `bun install`, authenticate to the intended Expo account with `bunx eas-cli login`, and link this app to an EAS project by running `bunx eas-cli init`. Commit the resulting `expo.extra.eas.projectId` entry in `app.json`. The project ID is public configuration, not a credential.
 2. Add an Expo access token as the GitHub Actions repository secret `EXPO_TOKEN`. Keep this token in GitHub Secrets; do not put it in source, workflow variables, or app configuration. EAS also needs signing credentials for the selected platforms. Configure these for the EAS project before requesting builds; iOS device distribution requires Apple provisioning, and production store builds require the corresponding store signing setup.
 3. Run the workflow manually. Use `preview` to create installable internal builds (Android APK; iOS ad hoc distribution) or select `production` for App Store / Google Play artifacts. Store submission and release remain a separate, deliberate step.
+
+For an iOS Simulator artifact, use `bunx eas-cli build --platform ios --profile simulator`. The `preview` iOS profile targets registered physical devices.
 
 The same builds can be requested locally after linking the project and signing in:
 
