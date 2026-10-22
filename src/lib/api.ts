@@ -48,9 +48,12 @@ export async function apiFetch(settings: AppSettings | undefined, input: Request
     const requestUrl = String(input)
     const url = new URL(requestUrl)
     const managed = url.protocol === 'https:' && (url.hostname === 'hanasand.com' || url.hostname.endsWith('.hanasand.com'))
-    if (!managed) return fetch(input, init)
-
     const requestHeaders = new Headers(init.headers)
+    const organizationId = settings?.selectedOrganizationId
+    if (organizationId && organizationId !== 'personal' && url.origin === new URL(settings!.apiBaseUrl).origin) {
+        requestHeaders.set('x-organization-id', organizationId)
+    }
+    if (!managed) return fetch(input, { ...init, headers: requestHeaders })
     if (settings) {
         for (const [name, value] of Object.entries(headers(settings))) {
             if (value) requestHeaders.set(name, value)

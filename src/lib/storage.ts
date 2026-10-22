@@ -15,6 +15,7 @@ export const defaultSettings: AppSettings = {
     workspaceMode: 'coding',
     siteBaseUrl: 'https://hanasand.com',
     apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL || 'https://api.hanasand.com/api',
+    selectedOrganizationId: '',
     cdnBaseUrl: 'https://cdn.hanasand.com/api',
     authToken: '',
     userId: '',

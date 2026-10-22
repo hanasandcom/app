@@ -14,6 +14,8 @@ export type RootTabParamList = {
     Images: undefined
     Automations: undefined
     Explore: undefined
+    Organizations: undefined
+    WorkspacePage: { path: string; title: string }
 }
 
 export type AppSettings = {
@@ -21,6 +23,7 @@ export type AppSettings = {
     workspaceMode: 'coding' | 'daily'
     siteBaseUrl: string
     apiBaseUrl: string
+    selectedOrganizationId?: string
     cdnBaseUrl: string
     authToken: string
     userId: string
