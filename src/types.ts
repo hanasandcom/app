@@ -16,6 +16,7 @@ export type RootTabParamList = {
     Explore: undefined
     Organizations: undefined
     WorkspacePage: { path: string; title: string }
+    Tools: { tool: 'threat-search' | 'password-check' }
 }
 
 export type AppSettings = {
