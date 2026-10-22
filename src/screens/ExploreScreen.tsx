@@ -37,7 +37,7 @@ export function ExploreScreen({ settings, access, onOpen }: { settings: AppSetti
     }
 
     return <Screen title='Menu'>
-        <TextInput value={search} onChangeText={setSearch} placeholder='Find a page' placeholderTextColor={theme.textSoft} accessibilityLabel='Search navigation' style={{ color: theme.text, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 16, borderWidth: 1, borderColor: theme.surfaceBorderSoft, backgroundColor: theme.backgroundRaised }} />
+        <TextInput value={search} onChangeText={setSearch} autoCorrect={false} autoCapitalize='none' placeholder='Find a page' placeholderTextColor={theme.textSoft} accessibilityLabel='Search navigation' style={{ color: theme.text, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 16, borderWidth: 1, borderColor: theme.surfaceBorderSoft, backgroundColor: theme.backgroundRaised }} />
         <View style={{ borderRadius: 18, borderWidth: 1, borderColor: theme.surfaceBorderSoft, backgroundColor: theme.backgroundAlt, paddingBottom: 10 }}>{rows(groups)}</View>
     </Screen>
 }

@@ -49,6 +49,10 @@ function requireScope(settings: AppSettings, organizationId?: string, mutation =
         throw new Error('Return to your own account before changing organization tools.')
 }
 function errorText(body: Record<string, unknown>, status: number) {
+    if (status === 401) return 'Your session could not be verified. Refresh and try again.'
+    if (status === 403) return 'You do not have access to this organization task.'
+    if (status === 429) return 'Too many organization requests. Wait a moment and retry.'
+    if (status >= 500) return 'Organization services are temporarily unavailable. Please retry.'
     return (
         text(body.error) ||
         text(record(body.error).message) ||

@@ -74,7 +74,7 @@ function AccountApiKeys({ settings }: { settings: AppSettings }) {
                     onPress={() => setRevision((value) => value + 1)}
                 />
                 <InlineNotice message={error} />
-                {!loading && !organization && (
+                {!loading && !error && !organization && (
                     <Text style={{ color: theme.textMuted }}>Select an organization to manage its keys.</Text>
                 )}
             </GlassCard>

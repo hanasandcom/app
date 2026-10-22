@@ -46,6 +46,12 @@ afterAll(() => {
 })
 
 describe('organization API keys', () => {
+    it('shows actionable service errors without raw authentication codes', async () => {
+        for (const [status, message] of [[401, 'session could not be verified'], [403, 'do not have access'], [429, 'Wait a moment'], [502, 'temporarily unavailable']] as const) {
+            response = () => Response.json({ error: 'invalid_session' }, { status })
+            await expect(api.loadToolOrganizations(settings, signal())).rejects.toThrow(message)
+        }
+    })
     it('uses actual organization-scoped list contract and projects metadata without key material', async () => {
         const keys = await api.loadOrganizationApiKeys(settings, org, signal())
         expect(calls[0].url).toBe('https://api.hanasand.com/api/organizations/synthetic%2Forg/api-keys')
