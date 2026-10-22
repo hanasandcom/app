@@ -10,8 +10,8 @@ describe('native website navigation', () => {
         const status = workspacePageDefinition('/status')
         expect(status?.sections.length).toBe(4)
         for (const section of status!.sections) {
-            expect(section.endpoint).toBe('status?dashboard=true')
-            expect(section.origin).toBeUndefined()
+            expect(section.endpoint).toBe('api/status?dashboard=true')
+            expect(section.origin).toBe('status')
             expect(section.statusFeed).toBe(true)
         }
     })

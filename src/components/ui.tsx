@@ -483,7 +483,7 @@ function createStyles(theme: ThemePalette) {
         content: { paddingHorizontal: spacing.lg, paddingBottom: 168, gap: spacing.md },
         staticContent: { flex: 1 },
         eyebrow: { color: theme.textSoft, fontSize: 12, textTransform: 'uppercase', letterSpacing: 2 },
-        title: { color: theme.text, fontSize: 30, fontWeight: '700' },
+        title: { color: theme.text, fontSize: 24, lineHeight: 29, fontWeight: '700' },
         subtitle: { color: theme.textMuted, fontSize: 14, lineHeight: 20, marginTop: 2 },
         sectionTitle: { color: theme.text, fontSize: 21, fontWeight: '700' },
         body: { color: theme.textMuted, fontSize: 14, lineHeight: 20 },

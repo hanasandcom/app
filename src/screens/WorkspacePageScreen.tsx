@@ -50,23 +50,25 @@ export function workspaceRequestUrl(settings: AppSettings, definition: Workspace
         .replace(':userId', encodeURIComponent(settings.impersonatingUserId || settings.userId))
         .replace(':organizationId', encodeURIComponent(organizationId))
         .replace(':id', encodeURIComponent(detailId || ''))
-    const base = definition.origin === 'site' ? settings.siteBaseUrl : settings.apiBaseUrl
+    const base = definition.origin === 'status' ? 'https://status.hanasand.com' : definition.origin === 'site' ? settings.siteBaseUrl : settings.apiBaseUrl
     const url = new URL(`${base.replace(/\/+$/, '')}/${endpoint.replace(/^\/+/, '')}`)
     if (url.protocol !== 'https:') throw new Error('Workspace services require a secure HTTPS connection.')
-    if (organizationId) url.searchParams.set('organizationId', organizationId)
+    if (organizationId && definition.origin !== 'status') url.searchParams.set('organizationId', organizationId)
     if (search && definition.searchParam) url.searchParams.set(definition.searchParam, search)
     if (cursor && definition.cursorParam) { url.searchParams.delete('page'); url.searchParams.set(definition.cursorParam, cursor) }
     return url.toString()
 }
 export async function fetchWorkspaceSection(settings: AppSettings, definition: WorkspaceSection, signal: AbortSignal, detailId?: string, search?: string, cursor?: string) {
     const url = workspaceRequestUrl(settings, definition, detailId, search, cursor)
-    const response = await apiFetch(settings, url, {
-        signal,
-        headers: {
-            Authorization: `Bearer ${settings.authToken}`, id: settings.userId,
-            ...(settings.impersonationToken ? { 'x-impersonation-token': settings.impersonationToken } : {}),
-        },
-    })
+    const response = definition.origin === 'status'
+        ? await fetch(url, { signal, credentials: 'omit', headers: { Accept: 'application/json' } })
+        : await apiFetch(settings, url, {
+            signal,
+            headers: {
+                Authorization: `Bearer ${settings.authToken}`, id: settings.userId,
+                ...(settings.impersonationToken ? { 'x-impersonation-token': settings.impersonationToken } : {}),
+            },
+        })
     const payload: unknown = await response.json().catch(() => null)
     if (!response.ok) {
         const error = workspaceValue(payload, 'error.message|error')
@@ -92,6 +94,18 @@ export function workspaceFiles(value: unknown): RecordValue[] {
         if (typeof file.id !== 'string') return []
         return file.type === 'folder' ? workspaceFiles(file.children) : [file]
     })
+}
+
+export function workspaceDetailRow(payload: unknown, definition: WorkspaceSection, id: string): RecordValue {
+    const data = definition.detailObjectPath ? workspaceValue(payload, definition.detailObjectPath) : payload
+    if (Array.isArray(data) && definition.statusFeed) {
+        // The standalone monitor may return the full incident collection.
+        return object(data.find(item => {
+            const row = object(item)
+            return row.id === id || (Array.isArray(row.aliases) && row.aliases.includes(id))
+        }))
+    }
+    return Array.isArray(data) ? object(data[0]) : object(data)
 }
 
 export function workspaceSectionNotice(payload: unknown, definition: WorkspaceSection, now = Date.now()): string | undefined {
@@ -204,8 +218,7 @@ export function WorkspacePageScreen({ settings, path, title }: { settings: AppSe
         setDetailLoading(true)
         void fetchWorkspaceSection(settings, selected.section, controller.signal, String(key)).then(payload => {
             if (requestId !== sequence.current) return
-            const data = selected.section.detailObjectPath ? workspaceValue(payload, selected.section.detailObjectPath) : payload
-            const row = Array.isArray(data) ? object(data[0]) : object(data)
+            const row = workspaceDetailRow(payload, selected.section, String(key))
             if (!Object.keys(row).length) throw new Error('The service returned an invalid item.')
             setDetail(row)
             if (selected.section.detailTreePath) setDetailFiles(workspaceFiles(workspaceValue(payload, selected.section.detailTreePath)))

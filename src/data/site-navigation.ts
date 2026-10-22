@@ -175,7 +175,7 @@ export type WorkspaceField = [label: string, path: string, format?: 'bytes' | 'p
 export type WorkspaceSection = {
     label: string
     endpoint: string
-    origin?: 'site'
+    origin?: 'site' | 'status'
     listPath?: string
     titlePath?: string
     fields: WorkspaceField[]
@@ -201,12 +201,11 @@ const definitions: WorkspacePageDefinition[] = [
     { path: '/system/containers', sections: [{ label: 'Containers', endpoint: 'docker', listPath: 'containers', titlePath: 'name', fields: [['Image', 'image'], ['State', 'state'], ['Status', 'status'], ['Health', 'health'], ['CPU', 'stats.cpu_percent|cpu', 'percent'], ['Memory', 'stats.memory_bytes|memory', 'bytes'], ['Restarts', 'restart_count'], ['Created', 'created_at', 'date']] }] },
     ...['/vms', '/system/virtual-machines'].map(path => ({ path, sections: [{ label: 'Virtual machines', endpoint: 'vms/:userId', listPath: '', titlePath: 'name', fields: vmFields }] })),
     { path: '/status', sections: [
-        // The website's /api/status wrapper deliberately projects seven public checks.
-        // This is the maintained full status API, with no native service-count limit.
-        { label: 'Overview', endpoint: 'status?dashboard=true', statusFeed: true, fields: [['Overall', 'overall'], ['Monitoring', 'monitoring'], ['Last verified', 'last_verified_at|generated_at', 'date'], ['History available', 'history_available']] },
-        { label: 'Service checks', endpoint: 'status?dashboard=true', statusFeed: true, listPath: 'checks', titlePath: 'check_name', fields: [['Service', 'service'], ['Status', 'status'], ['Latency (ms)', 'latency_ms'], ['Message', 'message'], ['30 day uptime', 'uptime_30d'], ['Checked', 'checked_at', 'date']] },
-        { label: 'Incidents', endpoint: 'status?dashboard=true', statusFeed: true, listPath: 'incidents', titlePath: 'title', fields: [['Service', 'service'], ['Status', 'status'], ['Impact', 'impact'], ['Started', 'started_at', 'date'], ['Resolved', 'resolved_at', 'date'], ['Summary', 'summary']], detailEndpoint: 'status?incident=:id', detailObjectPath: 'incidents', detailFields: [['Status', 'status'], ['Service', 'service'], ['Check', 'check_name'], ['Started', 'started_at', 'date'], ['Resolved', 'resolved_at', 'date'], ['Summary', 'summary'], ['Cause', 'cause'], ['Updates', 'updates', 'updates']] },
-        { label: 'Daily history', endpoint: 'status?dashboard=true', statusFeed: true, listPath: 'history', titlePath: 'check_name', fields: [['Service', 'service'], ['Day', 'date'], ['Status', 'status'], ['Samples', 'samples'], ['Healthy', 'healthy_samples'], ['Degraded', 'degraded_samples'], ['Failed', 'failed_samples'], ['Incidents', 'incident_ids']] },
+        // Use the same standalone monitoring feed as the website; the old API snapshot is retired.
+        { label: 'Overview', endpoint: 'api/status?dashboard=true', origin: 'status', statusFeed: true, fields: [['Overall', 'overall'], ['Monitoring', 'monitoring'], ['Last verified', 'last_verified_at|generated_at', 'date'], ['History available', 'history_available']] },
+        { label: 'Service checks', endpoint: 'api/status?dashboard=true', origin: 'status', statusFeed: true, listPath: 'checks', titlePath: 'check_name', fields: [['Service', 'service'], ['Status', 'status'], ['Latency (ms)', 'latency_ms'], ['Message', 'message'], ['90 day uptime', 'uptime_90d'], ['Checked', 'checked_at', 'date']] },
+        { label: 'Incidents', endpoint: 'api/status?dashboard=true', origin: 'status', statusFeed: true, listPath: 'incidents', titlePath: 'title', fields: [['Service', 'service'], ['Status', 'status'], ['Impact', 'impact'], ['Started', 'started_at', 'date'], ['Resolved', 'resolved_at', 'date'], ['Summary', 'summary']], detailEndpoint: 'api/status?incident=:id', detailObjectPath: 'incidents', detailFields: [['Status', 'status'], ['Service', 'service'], ['Check', 'check_name'], ['Started', 'started_at', 'date'], ['Resolved', 'resolved_at', 'date'], ['Summary', 'summary'], ['Cause', 'cause'], ['Updates', 'updates', 'updates']] },
+        { label: 'Daily history', endpoint: 'api/status?dashboard=true', origin: 'status', statusFeed: true, listPath: 'history', titlePath: 'check_name', fields: [['Service', 'service'], ['Day', 'date'], ['Status', 'status'], ['Samples', 'samples'], ['Healthy', 'healthy_samples'], ['Degraded', 'degraded_samples'], ['Failed', 'failed_samples'], ['Incidents', 'incident_ids']] },
     ] },
     { path: '/cases', sections: [
         { label: 'Intelligence cases', endpoint: 'api/cases?collection=intelligence&page=1', origin: 'site', listPath: 'items|cases', titlePath: 'title', fields: [...eventFields, ['Owner', 'assignedOwner'], ['Review', 'reviewState']], cursorPath: 'nextCursor', cursorParam: 'cursor' },

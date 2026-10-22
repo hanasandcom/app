@@ -2,27 +2,41 @@ import { beforeEach, describe, expect, it, mock } from 'bun:test'
 import type { AppSettings } from '../types'
 import { workspacePageDefinition, type WorkspaceSection } from '../data/site-navigation'
 
+const originalFetch = globalThis.fetch
+const publicRequests: Array<{ url: string; init?: RequestInit }> = []
 const requests: Array<{ settings: AppSettings; url: string; init: RequestInit }> = []
 let response = () => Response.json({ checks: [] })
 mock.module('./api', () => ({ apiFetch: async (settings: AppSettings, url: string, init: RequestInit) => { requests.push({ settings, url, init }); return response() } }))
 mock.module('react-native', () => ({ BackHandler: {}, Pressable: () => null, Text: () => null, TextInput: () => null, View: () => null }))
 mock.module('../components/ui', () => ({ GlassCard: () => null, InlineNotice: () => null, PillButton: () => null, Screen: () => null, SectionTitle: () => null }))
 mock.module('../theme/context', () => ({ useAppTheme: () => ({}) }))
-const { workspaceRequestUrl, fetchWorkspaceSection, workspaceRows, workspaceSectionNotice, workspaceFieldValue } = await import('../screens/WorkspacePageScreen')
+const { workspaceRequestUrl, fetchWorkspaceSection, workspaceRows, workspaceSectionNotice, workspaceFieldValue, workspaceDetailRow } = await import('../screens/WorkspacePageScreen')
 const settings = { apiBaseUrl: 'https://api.example.test/api', siteBaseUrl: 'https://site.example.test', userId: 'synthetic-user', authToken: 'synthetic-token', selectedOrganizationId: 'synthetic-org', impersonationToken: '' } as AppSettings
-beforeEach(() => { requests.length = 0; response = () => Response.json({ checks: [] }) })
+beforeEach(() => { globalThis.fetch = originalFetch; publicRequests.length = 0; requests.length = 0; response = () => Response.json({ checks: [] }) })
 
 describe('maintained workspace API contracts', () => {
+    it('selects the requested incident and aliases from the full standalone response', () => {
+        const section = workspacePageDefinition('/status')!.sections.find(item => item.listPath === 'incidents')!
+        const first = { id: 'first', title: 'First' }
+        const second = { id: 'second', title: 'Second', aliases: ['previous-id'] }
+        expect(workspaceDetailRow({ incidents: [first, second] }, section, 'second')).toEqual(second)
+        expect(workspaceDetailRow({ incidents: [first, second] }, section, 'previous-id')).toEqual(second)
+        expect(workspaceDetailRow({ incidents: [first, second] }, section, 'absent')).toEqual({})
+    })
     it('requests the full status API, deduplicatable across all sections, and preserves more than seven checks', async () => {
         const sections = workspacePageDefinition('/status')!.sections
         const checks = Array.from({ length: 23 }, (_, index) => ({ service: `service-${index}`, check_name: `Check ${index}`, status: 'up', checked_at: new Date().toISOString() }))
-        response = () => Response.json({ checks })
+        globalThis.fetch = (async (url: RequestInfo | URL, init?: RequestInit) => { publicRequests.push({ url: String(url), init }); return Response.json({ checks }) }) as typeof fetch
         expect(new Set(sections.map(section => workspaceRequestUrl(settings, section))).size).toBe(1)
         const services = sections.find(section => section.listPath === 'checks')!
         const payload = await fetchWorkspaceSection(settings, services, new AbortController().signal)
-        expect(new URL(requests[0].url).pathname).toBe('/api/status')
-        expect(new URL(requests[0].url).searchParams.get('dashboard')).toBe('true')
-        expect(requests[0].init.signal).toBeInstanceOf(AbortSignal)
+        expect(new URL(publicRequests[0].url).pathname).toBe('/api/status')
+        expect(new URL(publicRequests[0].url).searchParams.get('dashboard')).toBe('true')
+        expect(publicRequests[0].init?.signal).toBeInstanceOf(AbortSignal)
+        expect(new URL(publicRequests[0].url).origin).toBe('https://status.hanasand.com')
+        expect(new URL(publicRequests[0].url).searchParams.has('organizationId')).toBe(false)
+        expect(publicRequests[0].init?.credentials).toBe('omit')
+        expect(new Headers(publicRequests[0].init?.headers).get('Authorization')).toBeNull()
         expect(workspaceRows(payload, services)).toHaveLength(23)
         expect(services.titlePath).toBe('check_name')
     })
