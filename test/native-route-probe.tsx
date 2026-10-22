@@ -24,58 +24,78 @@ void (async () => {
         report.session = settings.authToken && settings.userId ? 'present' : 'missing'
         save()
         if (report.session === 'present') {
-            const signal = () => { const controller = new AbortController(); setTimeout(() => controller.abort(), 15000); return controller.signal }
-            const jobs: Array<[string, () => Promise<unknown>]> = [
-                ['organizations', () => fetchOrganizations(settings).then(rows => ({ count: rows.length }))],
-                ['ai-workspace', () => fetchAiWorkspace(settings).then(rows => ({ count: rows.length }))],
-                ['profile', () => fetchAccountIdentity(settings).then(() => ({}))],
-                ['sessions', () => fetchAccountSessions(settings).then(rows => ({ count: rows.length }))],
-                ['passkeys', () => fetchAccountPasskeys(settings).then(rows => ({ count: rows.length }))],
-                ['ssh-keys', () => fetchAccountSshKeys(settings).then(rows => ({ count: rows.length }))],
-                ['support-tickets', () => fetchAccountSupportTickets(settings).then(rows => ({ count: rows.length }))],
-                ['mail', () => loadMail(settings, {}).then(row => ({ accounts: row.accessibleAccounts.length, mailboxes: row.mailboxes.length }))],
-                ['notes', () => fetchNotes(settings).then(rows => ({ count: rows.length }))],
-                ['images', () => loadGalleryPage(settings, { search: '', favorites: false, albumId: '' }, 0).then(row => ({ count: row.files.length }))],
-                ['albums', () => loadGalleryAlbums(settings).then(rows => ({ count: rows.length }))],
-                ['cron', () => loadWorkspaceCronJobs(settings).then(row => ({ count: row.jobs.length, ready: row.ready }))],
-                ['health-checks', () => fetchAutomationOverview(settings).then(row => ({ count: row.automations.length }))],
-                ['profile-stats', () => fetchProfileStats(settings).then(() => ({}))],
-                ['subscription', () => loadAccountSubscription(settings, signal()).then(() => ({}))],
-                ['hosts', () => loadHostAccess(settings, signal()).then(row => ({ count: row.hosts.length }))],
-                ['updates-inspur', () => loadHostUpdates(settings, 'inspur', signal()).then(() => ({}))],
-                ['updates-ovh', () => loadHostUpdates(settings, 'ovhcloud', signal()).then(() => ({}))],
-                ['actor-profiles', () => loadActorProfiles(settings, { query: '', page: 1 }, signal()).then(row => ({ count: row.items.length, total: row.total }))],
-                ['delivery-health', () => loadDeliveryHealth(settings, { scope: 'global', tenantId: '', status: '', query: '' }, null, signal()).then(row => ({ count: row.items.length, total: row.total }))],
-                ['status', async () => { const response = await fetch('https://status.hanasand.com/api/status?dashboard=true', { signal: signal(), credentials: 'omit' }); const row = await response.json(); if (!response.ok) throw new Error(`HTTP ${response.status}`); return { count: row.checks?.length, monitoring: row.monitoring } }],
-            ]
-            if (process.env.EXPO_PUBLIC_PROBE_MENU === '1') {
-                const leaves = (items: SiteNavigationItem[]): SiteNavigationItem[] => items.flatMap(item => item.items ? leaves(item.items) : [item])
-                const visited = new Set<string>()
-                for (const item of leaves(siteNavigation(settings.userId))) {
-                    if (item.tab || !item.path) continue
-                    const page = workspacePageDefinition(item.path)
-                    if (!page) continue
-                    if (page.requiresOrganization && (!settings.selectedOrganizationId || settings.selectedOrganizationId === 'personal')) {
-                        report.checks.push({ name: `menu:${item.path}`, ok: false, error: 'Organization workspace required; not run' })
-                        continue
-                    }
-                    for (const section of page.sections) {
-                        const url = workspaceRequestUrl(settings, section)
-                        if (visited.has(url)) continue
-                        visited.add(url)
-                        jobs.push([`menu:${item.path}:${section.label}`, async () => {
-                            const payload = await fetchWorkspaceSection(settings, section, signal())
-                            return { count: workspaceRows(payload, section).length }
-                        }])
+            const nativeFetch = globalThis.fetch
+            let requests: Array<{ method: string; endpoint: string; status: number | null }> = []
+            globalThis.fetch = Object.assign(async (...args: Parameters<typeof nativeFetch>) => {
+                const [input, init] = args
+                const bucket = requests
+                const target = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+                const url = new URL(target)
+                let path = url.pathname
+                for (const id of [settings.userId, settings.impersonatingUserId, settings.selectedOrganizationId]) {
+                    if (id && id !== 'personal') path = path.replaceAll(encodeURIComponent(id), ':account').replaceAll(id, ':account')
+                }
+                const entry = { method: (init?.method || (typeof input === 'object' && 'method' in input ? input.method : 'GET')).toUpperCase(), endpoint: `${url.origin}${path}`, status: null as number | null }
+                bucket.push(entry)
+                const response = await nativeFetch(...args)
+                entry.status = response.status
+                return response
+            }, nativeFetch)
+            try {
+                const signal = () => { const controller = new AbortController(); setTimeout(() => controller.abort(), 15000); return controller.signal }
+                const jobs: Array<[string, () => Promise<unknown>]> = [
+                    ['organizations', () => fetchOrganizations(settings).then(rows => ({ count: rows.length }))],
+                    ['ai-workspace', () => fetchAiWorkspace(settings).then(rows => ({ count: rows.length }))],
+                    ['profile', () => fetchAccountIdentity(settings).then(() => ({}))],
+                    ['sessions', () => fetchAccountSessions(settings).then(rows => ({ count: rows.length }))],
+                    ['passkeys', () => fetchAccountPasskeys(settings).then(rows => ({ count: rows.length }))],
+                    ['ssh-keys', () => fetchAccountSshKeys(settings).then(rows => ({ count: rows.length }))],
+                    ['support-tickets', () => fetchAccountSupportTickets(settings).then(rows => ({ count: rows.length }))],
+                    ['mail', () => loadMail(settings, {}).then(row => ({ accounts: row.accessibleAccounts.length, mailboxes: row.mailboxes.length }))],
+                    ['notes', () => fetchNotes(settings).then(rows => ({ count: rows.length }))],
+                    ['images', () => loadGalleryPage(settings, { search: '', favorites: false, albumId: '' }, 0).then(row => ({ count: row.files.length }))],
+                    ['albums', () => loadGalleryAlbums(settings).then(rows => ({ count: rows.length }))],
+                    ['cron', () => loadWorkspaceCronJobs(settings).then(row => ({ count: row.jobs.length, ready: row.ready }))],
+                    ['health-checks', () => fetchAutomationOverview(settings).then(row => ({ count: row.automations.length }))],
+                    ['profile-stats', () => fetchProfileStats(settings).then(() => ({}))],
+                    ['subscription', () => loadAccountSubscription(settings, signal()).then(() => ({}))],
+                    ['hosts', () => loadHostAccess(settings, signal()).then(row => ({ count: row.hosts.length }))],
+                    ['updates-inspur', () => loadHostUpdates(settings, 'inspur', signal()).then(() => ({}))],
+                    ['updates-ovh', () => loadHostUpdates(settings, 'ovhcloud', signal()).then(() => ({}))],
+                    ['actor-profiles', () => loadActorProfiles(settings, { query: '', page: 1 }, signal()).then(row => ({ count: row.items.length, total: row.total }))],
+                    ['delivery-health', () => loadDeliveryHealth(settings, { scope: 'global', tenantId: '', status: '', query: '' }, null, signal()).then(row => ({ count: row.items.length, total: row.total }))],
+                    ['status', async () => { const response = await fetch('https://status.hanasand.com/api/status?dashboard=true', { signal: signal(), credentials: 'omit' }); const row = await response.json(); if (!response.ok) throw new Error(`HTTP ${response.status}`); return { count: row.checks?.length, monitoring: row.monitoring } }],
+                ]
+                if (process.env.EXPO_PUBLIC_PROBE_MENU === '1') {
+                    const leaves = (items: SiteNavigationItem[]): SiteNavigationItem[] => items.flatMap(item => item.items ? leaves(item.items) : [item])
+                    const visited = new Set<string>()
+                    for (const item of leaves(siteNavigation(settings.userId))) {
+                        if (item.tab || !item.path) continue
+                        const page = workspacePageDefinition(item.path)
+                        if (!page) continue
+                        if (page.requiresOrganization && (!settings.selectedOrganizationId || settings.selectedOrganizationId === 'personal')) {
+                            report.checks.push({ name: `menu:${item.path}`, ok: false, error: 'Organization workspace required; not run' })
+                            continue
+                        }
+                        for (const section of page.sections) {
+                            const url = workspaceRequestUrl(settings, section)
+                            if (visited.has(url)) continue
+                            visited.add(url)
+                            jobs.push([`menu:${item.path}:${section.label}`, async () => {
+                                const payload = await fetchWorkspaceSection(settings, section, signal())
+                                return { count: workspaceRows(payload, section).length }
+                            }])
+                        }
                     }
                 }
-            }
-            for (const [name, run] of jobs) {
-                const start = Date.now()
-                try { report.checks.push({ name, ok: true, result: await run(), ms: Date.now() - start }) }
-                catch (error) { report.checks.push({ name, ok: false, error: error instanceof Error ? (/unauthorized/i.test(error.message) ? 'Unauthorized' : /(?:HTTP|Request failed)\s*\(?[45]\d\d/i.exec(error.message)?.[0] || (/timed? ?out|abort/i.test(error.message) ? 'Timeout' : 'Service or response validation failed')) : 'Request failed', ms: Date.now() - start }) }
-                save()
-            }
+                for (const [name, run] of jobs) {
+                    const start = Date.now()
+                    requests = []
+                    try { report.checks.push({ name, ok: true, result: await run(), requests, ms: Date.now() - start }) }
+                    catch (error) { report.checks.push({ name, ok: false, error: error instanceof Error ? (/unauthorized/i.test(error.message) ? 'Unauthorized' : /(?:HTTP|Request failed)\s*\(?[45]\d\d/i.exec(error.message)?.[0] || (/timed? ?out|abort/i.test(error.message) ? 'Timeout' : 'Service or response validation failed')) : 'Request failed', requests, ms: Date.now() - start }) }
+                    save()
+                }
+            } finally { globalThis.fetch = nativeFetch }
         }
     } catch { report.session = 'secure-storage-unavailable' }
     report.complete = true
