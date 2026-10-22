@@ -10,6 +10,8 @@ import { loadMail } from '../src/lib/mail-api'
 import { loadGalleryPage, loadGalleryAlbums, loadWorkspaceCronJobs } from '../src/lib/workspace-data'
 import { loadAccountSubscription, loadHostAccess, loadHostUpdates } from '../src/lib/account-system-tools'
 import { loadActorProfiles, loadDeliveryHealth } from '../src/lib/intelligence'
+import { siteNavigation, workspacePageDefinition, type SiteNavigationItem } from '../src/data/site-navigation'
+import { fetchWorkspaceSection, workspaceRequestUrl, workspaceRows } from '../src/screens/WorkspacePageScreen'
 
 registerRootComponent(() => <Text>Checking mobile services…</Text>)
 void (async () => {
@@ -46,6 +48,28 @@ void (async () => {
                 ['delivery-health', () => loadDeliveryHealth(settings, { scope: 'global', tenantId: '', status: '', query: '' }, null, signal()).then(row => ({ count: row.items.length, total: row.total }))],
                 ['status', async () => { const response = await fetch('https://status.hanasand.com/api/status?dashboard=true', { signal: signal(), credentials: 'omit' }); const row = await response.json(); if (!response.ok) throw new Error(`HTTP ${response.status}`); return { count: row.checks?.length, monitoring: row.monitoring } }],
             ]
+            if (process.env.EXPO_PUBLIC_PROBE_MENU === '1') {
+                const leaves = (items: SiteNavigationItem[]): SiteNavigationItem[] => items.flatMap(item => item.items ? leaves(item.items) : [item])
+                const visited = new Set<string>()
+                for (const item of leaves(siteNavigation(settings.userId))) {
+                    if (item.tab || !item.path) continue
+                    const page = workspacePageDefinition(item.path)
+                    if (!page) continue
+                    if (page.requiresOrganization && (!settings.selectedOrganizationId || settings.selectedOrganizationId === 'personal')) {
+                        report.checks.push({ name: `menu:${item.path}`, ok: false, error: 'Organization workspace required; not run' })
+                        continue
+                    }
+                    for (const section of page.sections) {
+                        const url = workspaceRequestUrl(settings, section)
+                        if (visited.has(url)) continue
+                        visited.add(url)
+                        jobs.push([`menu:${item.path}:${section.label}`, async () => {
+                            const payload = await fetchWorkspaceSection(settings, section, signal())
+                            return { count: workspaceRows(payload, section).length }
+                        }])
+                    }
+                }
+            }
             for (const [name, run] of jobs) {
                 const start = Date.now()
                 try { report.checks.push({ name, ok: true, result: await run(), ms: Date.now() - start }) }
