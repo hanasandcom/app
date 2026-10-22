@@ -478,7 +478,7 @@ function normalizeAuthSession(value: unknown): HanasandAuthSession {
         throw new Error(stringValue(entry.error) || 'Unable to sign in.')
     }
     const roles = Array.isArray(entry.roles)
-        ? entry.roles.map(role => typeof role === 'string' ? role : stringValue(asRecord(role).id) || stringValue(asRecord(role).name)).filter(Boolean)
+        ? entry.roles.map(role => typeof role === 'string' ? role : stringValue(asRecord(role).role_id) || stringValue(asRecord(role).id) || stringValue(asRecord(role).name)).filter(Boolean)
         : undefined
     return {
         id,

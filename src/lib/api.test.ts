@@ -101,6 +101,12 @@ afterEach(() => {
 })
 
 describe('refreshHanasandSession error classification', () => {
+    it('keeps assigned Identity role IDs and accepts historical role shapes', async () => {
+        mockFetch(async () => Response.json({ id: settings.userId, token: 'synthetic-refreshed-token', roles: [
+            { role_id: 'analyst', id: 'unrelated-assignment-id' }, 'source_operator', { id: 'system_admin' }, { name: 'legacy-role' }, {},
+        ] }))
+        expect((await refreshHanasandSession(settings)).roles).toEqual(['analyst', 'source_operator', 'system_admin', 'legacy-role'])
+    })
     it('marks explicit HTTP 401 and 403 responses as authentication rejection', async () => {
         for (const status of [401, 403]) {
             mockFetch(async () => new Response(JSON.stringify({ error: 'Rejected' }), {

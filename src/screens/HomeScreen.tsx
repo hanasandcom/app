@@ -425,10 +425,11 @@ export function HomeScreen({
         <Screen title='Hanasand AI' subtitle='' scroll={false} contentStyle={styles.aiScreen}>
             <View style={styles.aiRoot}>
                 <View style={styles.remoteButtonRow}>
-                    <PillButton small label={activeConversation?.title || 'Conversations'} disabled={busy || workspaceLoading} onPress={() => setHistoryVisible(value => !value)} />
+                    <PillButton small label='Conversations' disabled={busy || workspaceLoading} onPress={() => setHistoryVisible(value => !value)} />
                     <PillButton small label='New chat' disabled={busy || workspaceLoading} onPress={startNewConversation} />
                     <PillButton small label={pendingMessageSync.current.size ? 'Retry sync' : 'Refresh'} disabled={busy || workspaceLoading} onPress={() => void refreshWorkspace()} />
                 </View>
+                {!!activeConversation && <Text numberOfLines={1} style={styles.macStatusText}>{activeConversation.title}</Text>}
                 <InlineNotice message={workspaceError} />
                 {workspaceLoading && <Text style={styles.emptyChat}>Loading conversations…</Text>}
                 {historyVisible && <ScrollView style={{ maxHeight: 180 }} contentContainerStyle={{ gap: 6 }}>
