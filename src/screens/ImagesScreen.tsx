@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Animated, Dimensions, Image, Linking, Modal, PanResponder, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import { Alert, Animated, Dimensions, FlatList, Image, Linking, Modal, PanResponder, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
 import { File as LocalFile } from 'expo-file-system'
 import * as MediaLibrary from 'expo-media-library'
 import type { ImageReviewAsset, SwipeDecision } from '../types'
 import type { AppSettings } from '../types'
-import { favoriteGalleryFile, galleryImageUrl, loadGalleryAlbums, loadGalleryPage, uploadGalleryPhoto, workspaceAccountKey, type GalleryAlbum, type GalleryFile, type GalleryFilter } from '../lib/workspace-data'
+import { favoriteGalleryFile, loadGalleryAlbums, loadGalleryPage, uploadGalleryPhoto, workspaceAccountKey, type GalleryAlbum, type GalleryFile, type GalleryFilter } from '../lib/workspace-data'
+import { GalleryAlbumImage, GalleryAlbumsScreen } from './GalleryAlbumsScreen'
 import { GlassCard, InlineNotice, PillButton, Screen, SectionTitle } from '../components/ui'
 import { spacing } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
@@ -20,6 +21,7 @@ function CloudLibrary({ settings }: { settings: AppSettings }) {
     const theme = useAppTheme()
     const [device, setDevice] = useState(false)
     const [uploadOpen, setUploadOpen] = useState(false)
+    const [albumsOpen, setAlbumsOpen] = useState(false)
     const [files, setFiles] = useState<GalleryFile[]>([])
     const [albums, setAlbums] = useState<GalleryAlbum[]>([])
     const [filter, setFilter] = useState<GalleryFilter>({ search: '', favorites: false, albumId: '' })
@@ -74,32 +76,47 @@ function CloudLibrary({ settings }: { settings: AppSettings }) {
         setFilter(next)
     }
     if (device) return <DevicePhotoReview onBack={() => setDevice(false)} />
-    return <Screen title='Images' subtitle='Your Hanasand library'>
-        <GlassCard>
-            <View style={{ gap: spacing.sm }}>
-                <TextInput accessibilityLabel='Search images' placeholder='Search images or places' placeholderTextColor={theme.textSoft} value={filter.search} onChangeText={search => changeFilter({ ...filter, search })} style={{ color: theme.text, padding: 12, borderRadius: 12, backgroundColor: theme.ambientNeutral }} />
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
-                    <PillButton label='Upload photos' tone='accent' small onPress={() => setUploadOpen(true)} />
-                    <PillButton label='Library' tone={!filter.favorites && !filter.albumId ? 'accent' : 'default'} small onPress={() => changeFilter({ ...filter, favorites: false, albumId: '' })} />
-                    <PillButton label='Favorites' tone={filter.favorites ? 'accent' : 'default'} small onPress={() => changeFilter({ ...filter, favorites: true, albumId: '' })} />
-                    <PillButton label={loading ? 'Loading…' : 'Refresh'} small disabled={loading} onPress={() => void load(false)} />
-                </View>
-                {!!albums.length && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }}>{albums.map(album => <PillButton key={album.id} label={`${album.name} (${album.photo_count})`} small tone={filter.albumId === album.id ? 'accent' : 'default'} onPress={() => changeFilter({ ...filter, albumId: album.id, favorites: false })} />)}</ScrollView>}
-                {!!albumError && <><InlineNotice message={`Albums: ${albumError}`} /><PillButton label='Retry albums' small onPress={() => void loadAlbums()} /></>}
-                <PillButton label='Review device photos' small onPress={() => setDevice(true)} />
-                <Text style={{ color: theme.textMuted, fontSize: 12 }}>{files.length} images{hasMore ? ' loaded' : ''}</Text>
-            </View>
-        </GlassCard>
-        {!!error && <GlassCard><InlineNotice message={error} /><PillButton label='Retry images' small onPress={() => void load(false)} /></GlassCard>}
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-            {files.map(file => <View key={file.id} style={{ width: '48%', gap: 5 }}>
-                <Pressable accessibilityRole='button' accessibilityLabel={`View ${file.name}`} onPress={() => setPreview(file)}><Image source={{ uri: galleryImageUrl(settings, file.id, true) }} style={{ width: '100%', aspectRatio: 1, borderRadius: 16, backgroundColor: theme.ambientNeutral }} resizeMode='cover' /></Pressable>
+    if (albumsOpen) return <GalleryAlbumsScreen settings={settings} onClose={() => {
+        setAlbumsOpen(false)
+        changeFilter({ search: '', favorites: false, albumId: '' })
+        void loadAlbums()
+    }} onOpenAlbum={albumId => {
+        setAlbumsOpen(false)
+        changeFilter({ search: '', favorites: false, albumId })
+        void loadAlbums()
+    }} />
+    return <Screen title='Images' subtitle='Your Hanasand library' scroll={false} contentStyle={{ paddingHorizontal: 0, paddingBottom: 0, gap: 0 }}>
+        <FlatList data={files} keyExtractor={file => file.id} numColumns={2} style={{ flex: 1 }}
+            initialNumToRender={6} maxToRenderPerBatch={6} windowSize={5}
+            contentContainerStyle={{ paddingHorizontal: spacing.lg, paddingBottom: 168, gap: spacing.md }}
+            columnWrapperStyle={{ gap: 10 }}
+            ListHeaderComponent={<View style={{ gap: spacing.md }}>
+                <GlassCard>
+                    <View style={{ gap: spacing.sm }}>
+                        <TextInput accessibilityLabel='Search images' autoCorrect={false} autoCapitalize='none' placeholder='Search images or places' placeholderTextColor={theme.textSoft} value={filter.search} onChangeText={search => changeFilter({ ...filter, search })} style={{ color: theme.text, padding: 12, borderRadius: 12, backgroundColor: theme.ambientNeutral }} />
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+                            <PillButton label='Upload photos' tone='accent' small onPress={() => setUploadOpen(true)} />
+                            <PillButton label='Manage albums' small onPress={() => setAlbumsOpen(true)} />
+                            <PillButton label='Library' tone={!filter.favorites && !filter.albumId ? 'accent' : 'default'} small onPress={() => changeFilter({ ...filter, favorites: false, albumId: '' })} />
+                            <PillButton label='Favorites' tone={filter.favorites ? 'accent' : 'default'} small onPress={() => changeFilter({ ...filter, favorites: true, albumId: '' })} />
+                            <PillButton label={loading ? 'Loading…' : 'Refresh'} small disabled={loading} onPress={() => void load(false)} />
+                        </View>
+                        {!!albums.length && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }}>{albums.map(album => <PillButton key={album.id} label={`${album.name} (${album.photo_count})`} small tone={filter.albumId === album.id ? 'accent' : 'default'} onPress={() => changeFilter({ ...filter, albumId: album.id, favorites: false })} />)}</ScrollView>}
+                        {!!albumError && <><InlineNotice message={`Albums: ${albumError}`} /><PillButton label='Retry albums' small onPress={() => void loadAlbums()} /></>}
+                        <PillButton label='Review device photos' small onPress={() => setDevice(true)} />
+                        <Text style={{ color: theme.textMuted, fontSize: 12 }}>{files.length} images{hasMore ? ' loaded' : ''}</Text>
+                    </View>
+                </GlassCard>
+                {!!error && <GlassCard><InlineNotice message={error} /><PillButton label='Retry images' small onPress={() => void load(false)} /></GlassCard>}
+            </View>}
+            renderItem={({ item: file }) => <View style={{ flex: 1, maxWidth: '48.5%', gap: 5 }}>
+                <Pressable accessibilityRole='button' accessibilityLabel={`View ${file.name}`} onPress={() => setPreview(file)}><GalleryAlbumImage settings={settings} fileId={file.id} style={{ width: '100%', aspectRatio: 1, borderRadius: 16, backgroundColor: theme.ambientNeutral }} /></Pressable>
                 <Text numberOfLines={1} style={{ color: theme.text, fontSize: 12 }}>{file.name}</Text>
                 <PillButton label={file.is_favorite ? '♥ Favorite' : '♡ Favorite'} small disabled={!!favoriteBusy} onPress={() => void toggleFavorite(file)} />
-            </View>)}
-        </View>
-        {!files.length && !loading && !error && <GlassCard><SectionTitle eyebrow='Library' title='No images found' body={filter.search || filter.favorites || filter.albumId ? 'Try another search or library.' : 'Images in your CDN account appear here.'} /></GlassCard>}
-        {hasMore && <PillButton label={loading ? 'Loading…' : 'Load more'} disabled={loading} onPress={() => void load(true)} />}
+            </View>}
+            ListEmptyComponent={!loading && !error ? <GlassCard><SectionTitle eyebrow='Library' title='No images found' body={filter.search || filter.favorites || filter.albumId ? 'Try another search or library.' : 'Images in your CDN account appear here.'} /></GlassCard> : null}
+            ListFooterComponent={hasMore ? <PillButton label={loading ? 'Loading…' : 'Load more'} disabled={loading} onPress={() => void load(true)} /> : null}
+        />
         {uploadOpen && <PhotoUploadPicker settings={settings} onClose={() => setUploadOpen(false)} onUploaded={() => {
             changeFilter({ search: '', favorites: false, albumId: '' })
             void loadAlbums()
@@ -107,7 +124,7 @@ function CloudLibrary({ settings }: { settings: AppSettings }) {
         <Modal visible={!!preview} animationType='fade' onRequestClose={() => setPreview(null)}>
             <View style={{ flex: 1, backgroundColor: theme.backgroundRaised, padding: 24, paddingTop: 64, gap: 16 }}>
                 <PillButton label='Close image' onPress={() => setPreview(null)} />
-                {preview && <><Text style={{ color: theme.text }}>{preview.name}</Text><Image source={{ uri: galleryImageUrl(settings, preview.id) }} resizeMode='contain' style={{ flex: 1 }} /></>}
+                {preview && <><Text style={{ color: theme.text }}>{preview.name}</Text><GalleryAlbumImage settings={settings} fileId={preview.id} thumbnail={false} resizeMode='contain' style={{ flex: 1 }} /></>}
             </View>
         </Modal>
     </Screen>
