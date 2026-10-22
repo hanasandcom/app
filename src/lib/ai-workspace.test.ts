@@ -106,6 +106,16 @@ describe('shared mobile AI workspace', () => {
         expect(api.portalMessages(values).at(-1)?.pending).toBe(true)
         expect(api.portalMessages(values).at(-1)?.content).toContain('working')
     })
+    it('keeps both agents in the visible conversation after reopening or switching agents', () => {
+        const native = [{ id: 'native-user', role: 'user' as const, content: 'Hanasand question', createdAt: Date.parse('2026-10-22T10:00:00Z') }, { id: 'native-answer', role: 'assistant' as const, content: 'Hanasand answer', createdAt: Date.parse('2026-10-22T10:00:01Z'), modelName: 'Hanasand GPT' }]
+        const portal = [item('done', '2026-10-22T11:00:00Z', 'done')]
+        const visible = api.workspaceMessages(native, portal)
+        expect(visible.map(row => row.id)).toEqual(['native-user', 'native-answer', 'done-request', 'done-response'])
+        expect(visible.at(-1)?.content).toBe('Result done')
+        expect(native).toHaveLength(2)
+        expect(api.workspaceMessages([], portal)).toHaveLength(2)
+        expect(api.conversationContext(native, portal).map(row => row.content)).toEqual(visible.map(row => row.content))
+    })
     it('sends role-preserving prior context once and native multipart without a JSON content type', async () => {
         payload = { items: [] }
         const prior = api.conversationContext([{ id: 'u', role: 'user', content: 'Earlier', createdAt: 1 }, { id: 'a', role: 'assistant', content: 'Earlier answer', createdAt: 2 }, { id: 'p', role: 'assistant', content: 'In line', createdAt: 3, pending: true }], [])

@@ -140,8 +140,11 @@ export function portalMessages(items: PromptPortalItem[]): WorkspaceMessage[] {
         ]
     })
 }
-export function conversationContext(messages: WorkspaceMessage[], portal: PromptPortalItem[]): PromptContextMessage[] {
+export function workspaceMessages(messages: WorkspaceMessage[], portal: PromptPortalItem[]): WorkspaceMessage[] {
     return [...messages, ...portalMessages(portal)].sort((left, right) => left.createdAt - right.createdAt)
+}
+export function conversationContext(messages: WorkspaceMessage[], portal: PromptPortalItem[]): PromptContextMessage[] {
+    return workspaceMessages(messages, portal)
         .filter(message => !message.pending && !message.error && message.content.trim())
         .map(message => {
             const itemId = String(message.metadata?.promptPortalId || '')

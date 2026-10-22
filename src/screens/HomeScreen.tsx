@@ -6,7 +6,7 @@ import { ArrowUp, Sparkles } from 'lucide-react-native'
 import type { AiChatMessage, AppSettings, DesktopAgentStatus } from '../types'
 import { fetchDesktopAgentStatus, fetchDesktopScreenshot, isHanasandOrganizationMember, runDesktopAgentCommand } from '../lib/api'
 import { InlineNotice, PillButton, Screen } from '../components/ui'
-import { createAiConversation, fetchAiWorkspace, fetchChatGptActivity, submitChatGptPrompt, portalMessages, conversationContext, newConversation, nextAiMessageTimestamp, persistAiMessage, runHanasandPrompt, type AiConversation, type WorkspaceMessage, type PromptPortalItem } from '../lib/ai-workspace'
+import { createAiConversation, fetchAiWorkspace, fetchChatGptActivity, submitChatGptPrompt, workspaceMessages, conversationContext, newConversation, nextAiMessageTimestamp, persistAiMessage, runHanasandPrompt, type AiConversation, type WorkspaceMessage, type PromptPortalItem } from '../lib/ai-workspace'
 import { spacing, type ThemePalette } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
 
@@ -68,7 +68,7 @@ export function HomeScreen({
     const workspaceAccountRef = useRef('')
     const preferenceKey = `hanasand-mobile/ai-active/${settings.userId}/${settings.selectedOrganizationId || 'personal'}`
     const activeConversation = conversations.find(item => item.id === activeConversationId)
-    const latestMessages = selectedAgent === 'chatgpt' ? portalMessages(portalItems) : activeConversation?.messages || []
+    const latestMessages = workspaceMessages(activeConversation?.messages || [], portalConversationRef.current === activeConversationId ? portalItems : [])
     const readOnly = activeConversation?.collaboration?.role === 'reviewer'
 
     useEffect(() => { saveAiMessagesRef.current = onSaveAiMessages }, [onSaveAiMessages])
@@ -143,7 +143,7 @@ export function HomeScreen({
         setPortalError('')
         setPortalReady(false)
         setPortalRefreshing(false)
-        if (selectedAgent !== 'chatgpt' || !canUseChatGpt || !activeConversationId || !persistedConversationIds.current.has(activeConversationId)) return () => controller.abort()
+        if (!canUseChatGpt || !activeConversationId || !persistedConversationIds.current.has(activeConversationId)) return () => controller.abort()
         const refresh = async () => {
             setPortalRefreshing(true)
             try {
@@ -164,7 +164,7 @@ export function HomeScreen({
         }
         void refresh()
         return () => { controller.abort(); if (timer) clearTimeout(timer) }
-    }, [selectedAgent, canUseChatGpt, activeConversationId, settings.siteBaseUrl, settings.authToken, settings.userId, portalRevision])
+    }, [canUseChatGpt, activeConversationId, settings.siteBaseUrl, settings.authToken, settings.userId, portalRevision])
 
     async function ensureConversation(title: string) {
         let conversation = conversationsRef.current.find(item => item.id === selectedConversationRef.current)
@@ -436,7 +436,7 @@ export function HomeScreen({
                     {conversations.filter(item => !item.archivedAt).map(item => <PillButton key={item.id} label={item.title} tone={item.id === activeConversationId ? 'accent' : 'default'} onPress={() => selectConversation(item.id)} />)}
                 </ScrollView>}
                 {readOnly && <Text style={styles.emptyChat}>This shared conversation has reviewer access.</Text>}
-                {selectedAgent === 'chatgpt' && <>
+                {canUseChatGpt && (selectedAgent === 'chatgpt' || portalItems.length > 0 || !!portalError) && <>
                     <InlineNotice message={portalError} />
                     <View style={styles.remoteButtonRow}>
                         <Text style={[styles.macStatusText, { alignSelf: 'center' }]}>{portalItems.filter(item => item.status === 'queued').length} queued · {portalItems.filter(item => item.status === 'running').length} running</Text>
