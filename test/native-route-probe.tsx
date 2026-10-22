@@ -10,6 +10,7 @@ import { loadMail } from '../src/lib/mail-api'
 import { loadGalleryPage, loadGalleryAlbums, loadWorkspaceCronJobs } from '../src/lib/workspace-data'
 import { loadAccountSubscription, loadHostAccess, loadHostUpdates } from '../src/lib/account-system-tools'
 import { loadActorProfiles, loadDeliveryHealth } from '../src/lib/intelligence'
+import { loadGalleryAlbumImage } from '../src/lib/gallery-albums'
 import { siteNavigation, workspacePageDefinition, type SiteNavigationItem } from '../src/data/site-navigation'
 import { fetchWorkspaceSection, workspaceRequestUrl, workspaceRows } from '../src/screens/WorkspacePageScreen'
 
@@ -31,10 +32,9 @@ void (async () => {
                 const bucket = requests
                 const target = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
                 const url = new URL(target)
-                let path = url.pathname
-                for (const id of [settings.userId, settings.impersonatingUserId, settings.selectedOrganizationId]) {
-                    if (id && id !== 'personal') path = path.replaceAll(encodeURIComponent(id), ':account').replaceAll(id, ':account')
-                }
+                const ids = new Set([settings.userId, settings.impersonatingUserId, settings.selectedOrganizationId].filter(id => id && id !== 'personal'))
+                const segments = url.pathname.split('/')
+                const path = segments.map((segment, index) => ids.has(decodeURIComponent(segment)) ? ':account' : segments[index - 1] === 'files' && segment !== 'user' ? ':file' : segment).join('/')
                 const entry = { method: (init?.method || (typeof input === 'object' && 'method' in input ? input.method : 'GET')).toUpperCase(), endpoint: `${url.origin}${path}`, status: null as number | null }
                 bucket.push(entry)
                 const response = await nativeFetch(...args)
@@ -54,6 +54,12 @@ void (async () => {
                     ['mail', () => loadMail(settings, {}).then(row => ({ accounts: row.accessibleAccounts.length, mailboxes: row.mailboxes.length }))],
                     ['notes', () => fetchNotes(settings).then(rows => ({ count: rows.length }))],
                     ['images', () => loadGalleryPage(settings, { search: '', favorites: false, albumId: '' }, 0).then(row => ({ count: row.files.length }))],
+                    ['image-bytes', async () => {
+                        const page = await loadGalleryPage(settings, { search: '', favorites: false, albumId: '' }, 0)
+                        const sample = page.files.slice(0, 3)
+                        await Promise.all(sample.map(file => loadGalleryAlbumImage(settings, file.id, true, signal())))
+                        return { count: sample.length }
+                    }],
                     ['albums', () => loadGalleryAlbums(settings).then(rows => ({ count: rows.length }))],
                     ['cron', () => loadWorkspaceCronJobs(settings).then(row => ({ count: row.jobs.length, ready: row.ready }))],
                     ['health-checks', () => fetchAutomationOverview(settings).then(row => ({ count: row.automations.length }))],
