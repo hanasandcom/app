@@ -23,6 +23,7 @@ describe('native website navigation', () => {
         expect(nativeToolForPath('/ti/profiles')).toBe('intel-profiles')
         expect(nativeToolForPath('/ti/timeliness')).toBe('delivery-health')
         expect(nativeToolForPath('/organizations/api-keys')).toBe('api-keys')
+        for (const category of ['match', 'analysis', 'detection'] as const) expect(nativeToolForPath(`/rules/${category}`)).toBe(`rules-${category}`)
         expect(nativeToolForPath('/unknown')).toBeUndefined()
         const items = leaves(siteNavigation('synthetic-user'))
         for (const path of ['/ti/profiles', '/ti/timeliness', '/organizations/api-keys']) {
