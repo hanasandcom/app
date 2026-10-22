@@ -11,7 +11,7 @@ bun install
 bun run start
 ```
 
-Then use the Expo CLI to open a development build or simulator. The repository also provides `bun run ios`, `bun run android`, and `bun run prebuild` for native development. `bun run lint` and `bun run typecheck` check the JavaScript and TypeScript source; `bun run test:mobile` checks session storage and refresh, authenticated transport, AI history, CDN sessions, and native navigation.
+Then use the Expo CLI to open a development build or simulator. The repository also provides `bun run ios`, `bun run android`, and `bun run prebuild` for native development. Rebuild the native app after adding a native dependency; a JavaScript update alone cannot add modules such as the Files picker. `bun run lint` and `bun run typecheck` check the JavaScript and TypeScript source; `bun run test:mobile` checks session storage and refresh, authenticated transport, AI history, mail attachments, profile sessions, CDN sessions and uploads, and native navigation.
 
 The workspace API defaults to `https://api.hanasand.com/api`. Mobile authentication and browser-backed AI routes use `https://hanasand.com/api`; mail uses `https://mail.hanasand.com/api`, and image libraries use `https://cdn.hanasand.com/api`. To point a development build at another API, set `EXPO_PUBLIC_API_BASE_URL` before starting Expo. Password, passkey, Google, and configured SSO sign-in are available on the login screen; see [mobile authentication](docs/mobile-authentication.md) for the service routes and provider setup. Native app metadata, identifiers, permissions, and the current app version are in [`app.json`](app.json).
 
@@ -21,7 +21,7 @@ Hanasand sessions are bound to a P-256 device key. The app stores the private ke
 
 Use the workspace name in any screen header to select Personal or an organization. Notes and other organization content use that selection; account caches are separated by user and workspace. The Menu groups the website’s tasks, with native mail, notes, images, profile, organizations, cron jobs, and service views. Pages without a native workflow open the website.
 
-Mail supports mailbox and folder switching, message actions, attachments, and composing replies. Images reads the signed-in CDN library, albums, and favorites; device cleanup is separate. Notes keeps pending edits locally, reports sync failures, and lets you preserve both versions when a remote edit conflicts. Concurrent server writes still need server-side conditional updates for atomic conflict protection.
+Mail supports mailbox and folder switching, message actions, opening and sending attachments, and composing replies. Choose outgoing attachments with the native Files picker; the app checks the mail service's request-size limit before sending. Images reads the signed-in CDN library, albums, and favorites, and uploads explicitly selected device photos; device cleanup is separate. Profile sessions include device search, network details, and session revocation. Notes keeps pending edits locally, reports sync failures, and lets you preserve both versions when a remote edit conflicts. Concurrent server writes still need server-side conditional updates for atomic conflict protection.
 
 ## Mobile releases
 

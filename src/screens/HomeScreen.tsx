@@ -49,6 +49,9 @@ export function HomeScreen({
     const [remoteKeyboardText, setRemoteKeyboardText] = useState('')
     const [remoteKeyboardVisible, setRemoteKeyboardVisible] = useState(false)
     const [remoteBusy, setRemoteBusy] = useState('')
+    const desktopConnectionLabel = desktopStatus?.ok
+        ? `${desktopStatus.hostname || 'Mac'} · ${desktopStatus.platform || 'desktop'}`
+        : desktopIssue || (remoteBusy === 'pc' ? 'Connecting to desktop…' : 'Desktop not connected')
     const remoteKeyboardInputRef = useRef<TextInput | null>(null)
     const aiMessagesRef = useRef<WorkspaceMessage[]>([])
     const saveAiMessagesRef = useRef(onSaveAiMessages)
@@ -442,7 +445,7 @@ export function HomeScreen({
 
                 <Pressable
                     accessibilityRole='button'
-                    accessibilityLabel='Tap Mac screen preview to click the Mac'
+                    accessibilityLabel={desktopScreenshotUri ? 'Tap Mac screen preview to click the Mac' : desktopConnectionLabel}
                     disabled={!desktopScreenshotUri}
                     onLayout={event => setScreenPreviewSize(event.nativeEvent.layout)}
                     onPress={event => desktopScreenshotUri ? void clickDesktopPreview(event.nativeEvent.locationX, event.nativeEvent.locationY) : undefined}
@@ -453,11 +456,7 @@ export function HomeScreen({
                     ) : (
                         <View style={styles.macPlaceholder}>
                             <View style={[styles.infraDot, desktopStatus?.ok ? styles.infraDotLive : styles.infraDotIdle]} />
-                            <Text style={styles.macStatusText} numberOfLines={2}>
-                                {desktopStatus?.ok
-                                    ? `${desktopStatus.hostname || 'Mac'} · ${desktopStatus.platform || 'desktop'}`
-                                    : desktopIssue || (remoteBusy === 'pc' ? 'Connecting to desktop…' : 'Desktop not connected')}
-                            </Text>
+                            <Text style={styles.macStatusText}>{desktopConnectionLabel}</Text>
                         </View>
                     )}
                 </Pressable>
