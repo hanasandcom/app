@@ -105,10 +105,18 @@ export async function revokeAccountSession(settings: AppSettings, tokenId: numbe
     if (result.revoked !== true) throw new Error('This session could not be revoked. Refresh sessions and try again.')
 }
 export async function logOutCurrentAccountSession(settings: AppSettings, clearLocalSession: () => Promise<void>, selected?: AccountSession) {
-    const current = selected ?? (await fetchAccountSessions(settings)).find(session => session.current && !session.revoked_at)
-    if (!current?.current || current.revoked_at) throw new Error('Unable to identify your current session. Refresh sessions and try again.')
-    await revokeAccountSession(settings, current.token_id)
+    let serverRevoked = false
+    try {
+        const current = selected ?? (await fetchAccountSessions(settings)).find(session => session.current && !session.revoked_at)
+        if (current?.current && !current.revoked_at) {
+            await revokeAccountSession(settings, current.token_id)
+            serverRevoked = true
+        }
+    } catch {
+        // A remote failure must not prevent removing this device's credentials.
+    }
     await clearLocalSession()
+    return { serverRevoked }
 }
 export const revokeOtherAccountSessions = (settings: AppSettings) => accountRequest(settings, 'auth/sessions/revoke', { method: 'POST', body: JSON.stringify({ keep_current: true }) })
 export const fetchAccountPasskeys = async (settings: AppSettings) => list<AccountPasskey>(await accountRequest(settings, 'auth/passkeys'), 'passkeys')

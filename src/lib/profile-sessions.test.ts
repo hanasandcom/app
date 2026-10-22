@@ -95,12 +95,13 @@ describe('existing Identity session contracts', () => {
     it('revokes the selected current session before clearing local credentials', async () => {
         let cleared = false
         response = () => { expect(cleared).toBe(false); return Response.json({ revoked: true }) }
-        await logOutCurrentAccountSession(settings, async () => {
+        const result = await logOutCurrentAccountSession(settings, async () => {
             expect(calls.length).toBe(1)
             expect(calls[0].url).toBe('https://api.example.test/api/auth/sessions/3')
             expect(calls[0].init.method).toBe('DELETE')
             cleared = true
         }, session({ current: true }))
+        expect(result).toEqual({ serverRevoked: true })
         expect(cleared).toBe(true)
     })
 
@@ -117,21 +118,51 @@ describe('existing Identity session contracts', () => {
         expect(cleared).toBe(true)
     })
 
-    it('retains local credentials when server revocation fails', async () => {
+    it('clears local credentials and reports unconfirmed server revocation when DELETE fails', async () => {
         let cleared = false
         response = () => Response.json({ revoked: false })
-        await expect(logOutCurrentAccountSession(settings, async () => { cleared = true }, session({ current: true }))).rejects.toThrow('could not be revoked')
-        expect(cleared).toBe(false)
+        expect(await logOutCurrentAccountSession(settings, async () => { cleared = true }, session({ current: true }))).toEqual({ serverRevoked: false })
+        expect(calls[0].init.method).toBe('DELETE')
+        expect(cleared).toBe(true)
     })
 
-    it('does not revoke a non-current selection or clear credentials when current state is unknown', async () => {
-        let cleared = false
-        const clear = async () => { cleared = true }
-        await expect(logOutCurrentAccountSession(settings, clear, session())).rejects.toThrow('identify your current session')
+    it('allows local logout when offline or session lookup returns 401', async () => {
+        for (const failure of ['offline', 'expired']) {
+            calls = []
+            let cleared = false
+            response = () => {
+                if (failure === 'offline') throw new Error('Network unavailable')
+                return Response.json({ error: 'Session expired.' }, { status: 401 })
+            }
+            expect(await logOutCurrentAccountSession(settings, async () => { cleared = true })).toEqual({ serverRevoked: false })
+            expect(calls).toHaveLength(1)
+            expect(calls[0].init.method).toBeUndefined()
+            expect(cleared).toBe(true)
+        }
+    })
+
+    it('allows local logout without revoking a non-current or already revoked selection', async () => {
+        for (const selected of [session(), session({ current: true, revoked_at: '2026-10-22T12:00:00Z' })]) {
+            let cleared = false
+            expect(await logOutCurrentAccountSession(settings, async () => { cleared = true }, selected)).toEqual({ serverRevoked: false })
+            expect(cleared).toBe(true)
+        }
         expect(calls).toHaveLength(0)
-        await expect(logOutCurrentAccountSession(settings, clear)).rejects.toThrow('identify your current session')
+    })
+
+    it('allows local logout when the server list has no current session', async () => {
+        let cleared = false
+        response = () => Response.json({ sessions: [session()] })
+        expect(await logOutCurrentAccountSession(settings, async () => { cleared = true })).toEqual({ serverRevoked: false })
+        expect(cleared).toBe(true)
         expect(calls).toHaveLength(1)
-        expect(cleared).toBe(false)
+    })
+
+    it('propagates local credential-clear failure with and without confirmed server revocation', async () => {
+        for (const revoked of [true, false]) {
+            response = () => Response.json({ revoked })
+            await expect(logOutCurrentAccountSession(settings, async () => { throw new Error('SecureStore unavailable') }, session({ current: true }))).rejects.toThrow('SecureStore unavailable')
+        }
     })
 
     it('reports authorization and malformed list failures', async () => {

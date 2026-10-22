@@ -107,6 +107,10 @@ export function ProfileScreen({ settings, onLogout, onDeleted, initialSection }:
             if (reload) setRevision(value => value + 1)
         } catch (cause) { setError(message(cause)) } finally { setBusy(false) }
     }
+    async function logOut(selected?: AccountSession) {
+        const result = await logOutCurrentAccountSession(settings, onLogout, selected)
+        if (!result.serverRevoked) Alert.alert('Signed out on this device', 'Server sign-out could not be confirmed. Your server session may still be active. Sign in again to review Sessions.')
+    }
     function confirm(title: string, body: string, label: string, work: () => Promise<unknown>, success: string) {
         Alert.alert(title, body, [
             { text: 'Cancel', style: 'cancel' },
@@ -165,7 +169,7 @@ export function ProfileScreen({ settings, onLogout, onDeleted, initialSection }:
                 <GlassCard style={styles.card}>
                     <SectionTitle eyebrow='Account' title='Access' />
                     <View style={styles.row}>
-                        <PillButton label='Log out' disabled={busy} onPress={() => confirm('Log out?', 'End your session on this device.', 'Log out', () => logOutCurrentAccountSession(settings, onLogout), '')} />
+                        <PillButton label='Log out' disabled={busy} onPress={() => confirm('Log out?', 'End your session on this device.', 'Log out', () => logOut(), '')} />
                         <PillButton label='Delete account' tone='danger' disabled={busy} onPress={() => confirm('Delete account?', 'Your account will be logged out everywhere and scheduled for permanent deletion after 30 days.', 'Delete', async () => { await deleteHanasandAccount(settings); await onDeleted() }, '')} />
                     </View>
                 </GlassCard>
@@ -192,7 +196,7 @@ export function ProfileScreen({ settings, onLogout, onDeleted, initialSection }:
                             <Text style={styles.meta}>Signed in {date(session.created_at)}</Text>
                             <Text selectable style={styles.fingerprint}>User agent: {session.user_agent || 'Not recorded'}</Text>
                             {!session.revoked_at && (session.current
-                                ? <PillButton small label='Log out this device' tone='danger' disabled={busy} onPress={() => confirm('Log out this device?', 'End your current session and return to sign in.', 'Log out', () => logOutCurrentAccountSession(settings, onLogout, session), '')} />
+                                ? <PillButton small label='Log out this device' tone='danger' disabled={busy} onPress={() => confirm('Log out this device?', 'End your current session and return to sign in.', 'Log out', () => logOut(session), '')} />
                                 : <PillButton small label='Revoke session' tone='danger' disabled={busy} onPress={() => confirm(`Revoke ${details.device}?`, `${details.address}. This device will need to sign in again.`, 'Revoke', () => revokeAccountSession(settings, session.token_id), 'Session revoked.')} />)}
                         </>}
                     </View>
