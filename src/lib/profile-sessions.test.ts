@@ -12,7 +12,7 @@ mock.module('./api', () => ({
         return response()
     },
 }))
-const { describeAccountSession, filterAccountSessions, fetchAccountSessions, revokeAccountSession, revokeOtherAccountSessions } = await import('./profile-api')
+const { describeAccountSession, filterAccountSessions, fetchAccountSessions, revokeAccountSession, revokeOtherAccountSessions, logOutCurrentAccountSession } = await import('./profile-api')
 const settings = { apiBaseUrl: 'https://api.example.test/api/', authToken: 'synthetic-token', userId: 'synthetic-user', impersonationToken: '' } as AppSettings
 const session = (changes: Partial<AccountSession> = {}): AccountSession => ({
     token_id: 3, id: 'synthetic-user', ip: '203.0.113.10', current: false, user_agent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X) Version/18.0 Safari/605.1',
@@ -90,6 +90,48 @@ describe('existing Identity session contracts', () => {
         expect(calls[0].url).toBe('https://api.example.test/api/auth/sessions/revoke')
         expect(calls[0].init.method).toBe('POST')
         expect(JSON.parse(String(calls[0].init.body))).toEqual({ keep_current: true })
+    })
+
+    it('revokes the selected current session before clearing local credentials', async () => {
+        let cleared = false
+        response = () => { expect(cleared).toBe(false); return Response.json({ revoked: true }) }
+        await logOutCurrentAccountSession(settings, async () => {
+            expect(calls.length).toBe(1)
+            expect(calls[0].url).toBe('https://api.example.test/api/auth/sessions/3')
+            expect(calls[0].init.method).toBe('DELETE')
+            cleared = true
+        }, session({ current: true }))
+        expect(cleared).toBe(true)
+    })
+
+    it('uses the same policy for security-page logout without an already loaded session', async () => {
+        let cleared = false
+        response = () => calls.length === 1
+            ? Response.json({ sessions: [session({ token_id: 9 }), session({ current: true })] })
+            : Response.json({ revoked: true })
+        await logOutCurrentAccountSession(settings, async () => { cleared = true })
+        expect(calls.map(call => [call.url, call.init.method || 'GET'])).toEqual([
+            ['https://api.example.test/api/auth/sessions', 'GET'],
+            ['https://api.example.test/api/auth/sessions/3', 'DELETE'],
+        ])
+        expect(cleared).toBe(true)
+    })
+
+    it('retains local credentials when server revocation fails', async () => {
+        let cleared = false
+        response = () => Response.json({ revoked: false })
+        await expect(logOutCurrentAccountSession(settings, async () => { cleared = true }, session({ current: true }))).rejects.toThrow('could not be revoked')
+        expect(cleared).toBe(false)
+    })
+
+    it('does not revoke a non-current selection or clear credentials when current state is unknown', async () => {
+        let cleared = false
+        const clear = async () => { cleared = true }
+        await expect(logOutCurrentAccountSession(settings, clear, session())).rejects.toThrow('identify your current session')
+        expect(calls).toHaveLength(0)
+        await expect(logOutCurrentAccountSession(settings, clear)).rejects.toThrow('identify your current session')
+        expect(calls).toHaveLength(1)
+        expect(cleared).toBe(false)
     })
 
     it('reports authorization and malformed list failures', async () => {

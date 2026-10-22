@@ -7,7 +7,7 @@ import {
     addAccountSshKey, fetchAccountIdentity, fetchAccountPasskeys, fetchAccountSessions, fetchAccountSshKeys,
     fetchAccountSupportTickets, fetchSupportMessages, sendSupportMessage, nativePasskeysSupported, registerAccountPasskey, removeAccountPasskey,
     removeAccountSshKey, renameAccountPasskey, revokeAccountSession, revokeOtherAccountSessions, updateAccountIdentity,
-    describeAccountSession, filterAccountSessions,
+    describeAccountSession, filterAccountSessions, logOutCurrentAccountSession,
     type AccountIdentity, type AccountPasskey, type AccountSession, type AccountSshKey, type SupportTicket, type SupportMessage,
 } from '../lib/profile-api'
 import { GlassCard, InlineNotice, LabeledInput, PillButton, Screen, SectionTitle } from '../components/ui'
@@ -165,7 +165,7 @@ export function ProfileScreen({ settings, onLogout, onDeleted, initialSection }:
                 <GlassCard style={styles.card}>
                     <SectionTitle eyebrow='Account' title='Access' />
                     <View style={styles.row}>
-                        <PillButton label='Log out' disabled={busy} onPress={() => confirm('Log out?', 'End your session on this device.', 'Log out', onLogout, '')} />
+                        <PillButton label='Log out' disabled={busy} onPress={() => confirm('Log out?', 'End your session on this device.', 'Log out', () => logOutCurrentAccountSession(settings, onLogout), '')} />
                         <PillButton label='Delete account' tone='danger' disabled={busy} onPress={() => confirm('Delete account?', 'Your account will be logged out everywhere and scheduled for permanent deletion after 30 days.', 'Delete', async () => { await deleteHanasandAccount(settings); await onDeleted() }, '')} />
                     </View>
                 </GlassCard>
@@ -192,7 +192,7 @@ export function ProfileScreen({ settings, onLogout, onDeleted, initialSection }:
                             <Text style={styles.meta}>Signed in {date(session.created_at)}</Text>
                             <Text selectable style={styles.fingerprint}>User agent: {session.user_agent || 'Not recorded'}</Text>
                             {!session.revoked_at && (session.current
-                                ? <PillButton small label='Log out this device' tone='danger' disabled={busy} onPress={() => confirm('Log out this device?', 'End your current session and return to sign in.', 'Log out', onLogout, '')} />
+                                ? <PillButton small label='Log out this device' tone='danger' disabled={busy} onPress={() => confirm('Log out this device?', 'End your current session and return to sign in.', 'Log out', () => logOutCurrentAccountSession(settings, onLogout, session), '')} />
                                 : <PillButton small label='Revoke session' tone='danger' disabled={busy} onPress={() => confirm(`Revoke ${details.device}?`, `${details.address}. This device will need to sign in again.`, 'Revoke', () => revokeAccountSession(settings, session.token_id), 'Session revoked.')} />)}
                         </>}
                     </View>

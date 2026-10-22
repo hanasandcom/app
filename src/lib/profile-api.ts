@@ -104,6 +104,12 @@ export async function revokeAccountSession(settings: AppSettings, tokenId: numbe
     const result = await accountRequest<{ revoked: boolean }>(settings, `auth/sessions/${tokenId}`, { method: 'DELETE' })
     if (result.revoked !== true) throw new Error('This session could not be revoked. Refresh sessions and try again.')
 }
+export async function logOutCurrentAccountSession(settings: AppSettings, clearLocalSession: () => Promise<void>, selected?: AccountSession) {
+    const current = selected ?? (await fetchAccountSessions(settings)).find(session => session.current && !session.revoked_at)
+    if (!current?.current || current.revoked_at) throw new Error('Unable to identify your current session. Refresh sessions and try again.')
+    await revokeAccountSession(settings, current.token_id)
+    await clearLocalSession()
+}
 export const revokeOtherAccountSessions = (settings: AppSettings) => accountRequest(settings, 'auth/sessions/revoke', { method: 'POST', body: JSON.stringify({ keep_current: true }) })
 export const fetchAccountPasskeys = async (settings: AppSettings) => list<AccountPasskey>(await accountRequest(settings, 'auth/passkeys'), 'passkeys')
 export const removeAccountPasskey = (settings: AppSettings, id: string) => accountRequest(settings, `auth/passkeys/${encodeURIComponent(id)}`, { method: 'DELETE' })
