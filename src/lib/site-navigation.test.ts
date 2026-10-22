@@ -39,6 +39,26 @@ describe('native website navigation', () => {
         }
     })
 
+    it('keeps log dashboard counters separate from paginated search and realtime views', () => {
+        for (const path of ['/logs', '/logs/search', '/logs/realtime']) {
+            const section = workspacePageDefinition(path)!.sections[0]
+            const params = new URL(section.endpoint, 'https://synthetic.invalid/').searchParams
+            const dashboard = path === '/logs'
+            const realtime = path === '/logs/realtime'
+            expect(section.origin).toBe('site')
+            expect(params.get('hours')).toBe('24')
+            expect(params.get('hql')).toBe(`Logs | take ${realtime ? 100 : 200}`)
+            expect(params.get('stats')).toBe(dashboard ? '1' : null)
+            expect(params.get('paginate')).toBe(dashboard ? null : '1')
+            expect(params.has('stats') && params.has('paginate')).toBe(false)
+            expect(params.get('realtime')).toBe(realtime ? '1' : null)
+            expect(params.get('severity')).toBe(realtime ? 'high,critical' : null)
+            expect(section.cursorPath).toBe(dashboard ? undefined : 'next_cursor')
+            expect(section.cursorParam).toBe(dashboard ? undefined : 'cursor')
+        }
+        expect(workspacePageDefinition('/logs/errors')!.sections[0].endpoint).toBe('api/backend/logs/errors?limit=150')
+    })
+
     it('opens account and workspace tasks in native screens', () => {
         const items = leaves(siteNavigation('account-id'))
         for (const tab of ['Profile', 'Mail', 'Notes', 'Images', 'Organizations', 'Automations']) {

@@ -217,7 +217,16 @@ const definitions: WorkspacePageDefinition[] = [
     ] },
     { path: '/content/articles', sections: [{ label: 'Articles', endpoint: 'articles?workspace=true', listPath: '', titlePath: 'title', fields: [['Created', 'created', 'date'], ['Updated', 'modified', 'date'], ['Size', 'size', 'bytes']], detailEndpoint: 'article/:id', detailKey: 'id', detailFields: [['Title', 'title'], ['Updated', 'modified', 'date'], ['Article', 'content']] }] },
     { path: '/content/thoughts', sections: [{ label: 'Thoughts', endpoint: 'thoughts?workspace=true', listPath: '', titlePath: 'title', fields: [['Created', 'created_at|created', 'date'], ['Updated', 'updated_at|modified', 'date'], ['Thought', 'content|body']] }] },
-    ...['/logs', '/logs/realtime', '/logs/search'].map(path => ({ path, sections: [{ label: path === '/logs/realtime' ? 'Recent high severity logs' : 'Logs', endpoint: `api/backend/logs/search?hours=24&hql=Logs%20%7C%20take%20200&paginate=1${path === '/logs/realtime' ? '&realtime=1&severity=high,critical' : path === '/logs' ? '&stats=1' : ''}`, origin: 'site' as const, listPath: 'rows', titlePath: 'normalized.message|id', fields: logFields, searchParam: 'search', cursorPath: 'next_cursor', cursorParam: 'cursor' }] })),
+    ...['/logs', '/logs/realtime', '/logs/search'].map(path => {
+        const dashboard = path === '/logs'
+        const realtime = path === '/logs/realtime'
+        return { path, sections: [{
+            label: realtime ? 'Recent high severity logs' : 'Logs',
+            endpoint: `api/backend/logs/search?hours=24&hql=Logs%20%7C%20take%20${realtime ? 100 : 200}${dashboard ? '&stats=1' : '&paginate=1'}${realtime ? '&realtime=1&severity=high,critical' : ''}`,
+            origin: 'site' as const, listPath: 'rows', titlePath: 'normalized.message|id', fields: logFields, searchParam: 'search',
+            cursorPath: dashboard ? undefined : 'next_cursor', cursorParam: dashboard ? undefined : 'cursor',
+        }] }
+    }),
     { path: '/logs/errors', sections: [{ label: 'Errors', endpoint: 'api/backend/logs/errors?limit=150', origin: 'site', listPath: 'errors', titlePath: 'message|error_code', fields: [...logFields, ['Status code', 'status_code'], ['Path', 'path'], ['Error code', 'error_code']] }] },
     ...['match', 'analysis', 'detection'].map(category => ({ path: `/rules/${category}`, requiresOrganization: true, sections: [{ label: `${category[0].toUpperCase()}${category.slice(1)} rules`, endpoint: `rules?view=list&category=${category}`, listPath: 'rules', titlePath: 'name|id', fields: [['Description', 'description'], ['Enabled', 'enabled'], ['Matches', 'hitCount'], ['Updated', 'updatedAt|updated_at', 'date']] as WorkspaceField[], detailEndpoint: 'rules/:id', detailKey: 'id', detailObjectPath: 'rule', detailFields: [['Name', 'name'], ['Description', 'description'], ['Enabled', 'enabled'], ['Stage', 'definition.stage'], ['Action', 'definition.action'], ['Query', 'definition.query']] as WorkspaceField[] }] })),
     { path: '/watchlists', requiresOrganization: true, sections: [{ label: 'Watchlists', endpoint: 'organizations/:organizationId/watchlists', listPath: 'watchlistItems', titlePath: 'value', fields: [['Kind', 'kind'], ['Status', 'status'], ['Notes', 'notes'], ['Tags', 'tags'], ['Created', 'createdAt', 'date'], ['Updated', 'updatedAt', 'date']] }] },
