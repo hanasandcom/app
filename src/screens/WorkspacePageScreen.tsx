@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { BackHandler, Pressable, Text, TextInput, View } from 'react-native'
 import type { AppSettings } from '../types'
 import { apiFetch } from '../lib/api'
+import { workspaceRequestTimeoutMs } from '../lib/workspace-timeout'
 import { workspacePageDefinition, type WorkspaceField, type WorkspaceSection } from '../data/site-navigation'
 import { GlassCard, InlineNotice, PillButton, Screen, SectionTitle } from '../components/ui'
 import { useAppTheme } from '../theme/context'
@@ -178,7 +179,7 @@ export function WorkspacePageScreen({ settings, path, title }: { settings: AppSe
 
     useEffect(() => {
         const controller = new AbortController()
-        const timeout = setTimeout(() => controller.abort(), 20_000)
+        const timeout = setTimeout(() => controller.abort(), Math.max(20_000, ...(definition?.sections.map(section => workspaceRequestTimeoutMs(section)) || [])))
         let active = true
         const loadKey = JSON.stringify([accountScope, serverSearch])
         const retainStatus = path === '/status' && loadedScope.current === loadKey
@@ -209,7 +210,7 @@ export function WorkspacePageScreen({ settings, path, title }: { settings: AppSe
 
     useEffect(() => {
         const controller = new AbortController()
-        const timeout = setTimeout(() => controller.abort(), 20_000)
+        const timeout = setTimeout(() => controller.abort(), selected ? workspaceRequestTimeoutMs({ ...selected.section, endpoint: selected.section.detailEndpoint || selected.section.endpoint }) : 20_000)
         const requestId = ++sequence.current
         setDetail(null); setDetailFiles([]); setError('')
         if (!selected?.section.detailEndpoint) { setDetailLoading(false); clearTimeout(timeout); return }
@@ -243,7 +244,7 @@ export function WorkspacePageScreen({ settings, path, title }: { settings: AppSe
         const requestId = ++pagingRequest.current
         const index = activeSection
         const controller = new AbortController()
-        const timeout = setTimeout(() => controller.abort(), 20_000)
+        const timeout = setTimeout(() => controller.abort(), workspaceRequestTimeoutMs(section.definition))
         setPaging(true)
         try {
             const payload = await fetchWorkspaceSection(settings, section.definition, controller.signal, undefined, serverSearch, section.nextCursor)
