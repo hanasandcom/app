@@ -13,7 +13,7 @@ mock.module('./api', () => ({ apiFetch: async (settings: AppSettings, url: strin
     if (image) return image.clone()
     return Response.json(reply, { status })
 } }))
-const { listManagedAlbums, loadAlbumDetail, createGalleryAlbum, updateGalleryAlbum, deleteGalleryAlbum, addAlbumPhotos, canRemoveAlbumPhoto, removeAlbumPhoto, changeAlbumMember, removeAlbumMember, loadGalleryAlbumImage } = await import('./gallery-albums')
+const { listManagedAlbums, loadAlbumDetail, createGalleryAlbum, updateGalleryAlbum, deleteGalleryAlbum, addAlbumPhotos, canRemoveAlbumPhoto, removeAlbumPhoto, changeAlbumMember, removeAlbumMember, loadGalleryAlbumImage, galleryAlbumPageOffset, toggleAlbumPhotoSelection } = await import('./gallery-albums')
 const settings = { userId: 'owner', authToken: 'synthetic /;=', cdnBaseUrl: 'https://cdn.hanasand.test/api', impersonatingUserId: '' } as AppSettings
 const album = { id: 'album /?', name: 'Photos', owner: settings.userId, is_public: false, role: 'owner' as const, items: [], total: 0, limit: 60, offset: 0, members: [] }
 beforeEach(() => { calls.length = 0; reply = {}; status = 200; image = null; pendingImage = null })
@@ -190,5 +190,28 @@ describe('private album image transport', () => {
         await expect(loadGalleryAlbumImage(settings, 'photo', true, controller.signal)).rejects.toThrow('cancelled')
         image = new Response(new Uint8Array(5 * 1024 * 1024 + 1), { headers: { 'Content-Type': 'image/png', 'Content-Length': '1' } })
         await expect(loadGalleryAlbumImage(settings, 'photo')).rejects.toThrow('too large')
+    })
+})
+
+describe('bounded album pages', () => {
+    it('moves by the actual 60 item page without accumulating offsets or leaving the supported range', () => {
+        expect(galleryAlbumPageOffset(0, 'next')).toBe(60)
+        expect(galleryAlbumPageOffset(60, 'next')).toBe(120)
+        expect(galleryAlbumPageOffset(120, 'previous')).toBe(60)
+        expect(galleryAlbumPageOffset(0, 'previous')).toBe(0)
+        expect(galleryAlbumPageOffset(999960, 'next')).toBe(1000000)
+        expect(() => galleryAlbumPageOffset(-1, 'next')).toThrow('Invalid')
+    })
+    it('preserves selection across replacement pages and caps it at the server batch limit', () => {
+        let selected = toggleAlbumPhotoSelection([], 'first-page-photo')
+        const nextPage = galleryAlbumPageOffset(0, 'next')
+        expect(nextPage).toBe(60)
+        selected = toggleAlbumPhotoSelection(selected, 'second-page-photo')
+        expect(selected).toEqual(['first-page-photo', 'second-page-photo'])
+        selected = toggleAlbumPhotoSelection(selected, 'first-page-photo')
+        expect(selected).toEqual(['second-page-photo'])
+        const full = Array.from({ length: 500 }, (_, index) => String(index))
+        expect(toggleAlbumPhotoSelection(full, 'new-photo')).toBe(full)
+        expect(toggleAlbumPhotoSelection(full, '0')).toHaveLength(499)
     })
 })

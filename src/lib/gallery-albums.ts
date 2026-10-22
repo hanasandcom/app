@@ -179,3 +179,14 @@ export async function loadGalleryAlbumImage(settings: AppSettings, id: string, t
         return `data:${type};base64,${btoa(binary)}`
     } finally { release() }
 }
+
+export function galleryAlbumPageOffset(offset: number, direction: 'previous' | 'next') {
+    if (!Number.isInteger(offset) || offset < 0 || offset > 1000000) throw new Error('Invalid album page.')
+    return direction === 'previous' ? Math.max(0, offset - 60) : Math.min(1000000, offset + 60)
+}
+// Selection belongs to the picker session, not its visible page. Navigating to
+// another page must not drop IDs chosen on earlier pages.
+export function toggleAlbumPhotoSelection(selected: string[], id: string): string[] {
+    if (selected.includes(id)) return selected.filter(value => value !== id)
+    return selected.length >= 500 ? selected : [...selected, id]
+}

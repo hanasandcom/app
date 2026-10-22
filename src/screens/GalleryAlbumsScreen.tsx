@@ -4,7 +4,7 @@ import type { AppSettings } from '../types'
 import { GlassCard, InlineNotice, PillButton, Screen } from '../components/ui'
 import { useAppTheme } from '../theme/context'
 import { loadGalleryPage, workspaceAccountKey, type GalleryFile } from '../lib/workspace-data'
-import { addAlbumPhotos, canRemoveAlbumPhoto, changeAlbumMember, createGalleryAlbum, deleteGalleryAlbum, listManagedAlbums, loadAlbumDetail, removeAlbumMember, removeAlbumPhoto, updateGalleryAlbum, loadGalleryAlbumImage, type AlbumDetail, type AlbumMember, type ManagedAlbum } from '../lib/gallery-albums'
+import { addAlbumPhotos, canRemoveAlbumPhoto, changeAlbumMember, createGalleryAlbum, deleteGalleryAlbum, listManagedAlbums, loadAlbumDetail, removeAlbumMember, removeAlbumPhoto, updateGalleryAlbum, loadGalleryAlbumImage, galleryAlbumPageOffset, toggleAlbumPhotoSelection, type AlbumDetail, type AlbumMember, type ManagedAlbum } from '../lib/gallery-albums'
 
 type Props = { settings: AppSettings, onClose: () => void, onOpenAlbum: (id: string) => void }
 export function GalleryAlbumsScreen(props: Props) {
@@ -30,7 +30,7 @@ function Albums({ settings, onClose, onOpenAlbum }: Props) {
     const operation = useRef(false)
     const sequence = useRef(0)
     const listSequence = useRef(0)
-    const libraryOffset = useRef(0)
+    const [libraryOffset, setLibraryOffset] = useState(0)
     const abort = useRef<AbortController | null>(null)
     useEffect(() => {
         alive.current = true
@@ -59,17 +59,16 @@ function Albums({ settings, onClose, onOpenAlbum }: Props) {
         sequence.current++; abort.current?.abort()
         setAlbum(null); setPicker(false); setSelected([]); setTitle(''); setMemberId(''); setError(''); setLoading(false)
     }
-    async function open(id: string, more = false) {
+    async function open(id: string, offset = 0) {
         const version = ++sequence.current
         abort.current?.abort(); abort.current = new AbortController()
         setLoading(true); setError('')
-        if (!more) { setAlbum(null); setPicker(false); setSelected([]); setMemberId('') }
+        if (album?.id !== id) { setAlbum(null); setPicker(false); setSelected([]); setMemberId('') }
         try {
-            const result = await loadAlbumDetail(settings, id, more && album ? album.offset + album.items.length : 0, abort.current.signal)
+            const result = await loadAlbumDetail(settings, id, offset, abort.current.signal)
             if (!alive.current || version !== sequence.current) return
-            // Keep offset zero while accumulating pages; next offset is the loaded count.
-            setAlbum(previous => more && previous?.id === id ? { ...result, offset: 0, items: [...previous.items, ...result.items.filter(item => !previous.items.some(old => old.id === item.id))] } : result)
-            if (!more) setTitle(result.name)
+            setAlbum(result)
+            setTitle(result.name)
         } catch (cause) { if (alive.current && version === sequence.current) setError(message(cause)) }
         finally { if (alive.current && version === sequence.current) setLoading(false) }
     }
@@ -88,16 +87,15 @@ function Albums({ settings, onClose, onOpenAlbum }: Props) {
         await open(detail.id)
         if (alive.current) await reloadList()
     }
-    async function loadLibrary(more = false) {
+    async function loadLibrary(offset = 0) {
         if (operation.current || loading) return
         const version = ++sequence.current
         setPicker(true); setLoading(true); setError('')
-        if (!more) { setLibrary([]); setSelected([]); libraryOffset.current = 0 }
         try {
-            const result = await loadGalleryPage(settings, { search: '', favorites: false, albumId: '' }, more ? libraryOffset.current : 0)
+            const result = await loadGalleryPage(settings, { search: '', favorites: false, albumId: '' }, offset)
             if (!alive.current || version !== sequence.current) return
-            setLibrary(previous => more ? [...previous, ...result.files.filter(file => !previous.some(old => old.id === file.id))] : result.files)
-            libraryOffset.current = result.nextOffset; setMoreLibrary(result.hasMore)
+            setLibrary(result.files)
+            setLibraryOffset(offset); setMoreLibrary(result.hasMore)
         } catch (cause) { if (alive.current && version === sequence.current) setError(message(cause)) }
         finally { if (alive.current && version === sequence.current) setLoading(false) }
     }
@@ -139,30 +137,32 @@ function Albums({ settings, onClose, onOpenAlbum }: Props) {
                 {canEdit && <><TextInput accessibilityLabel='Album name' value={title} maxLength={120} onChangeText={setTitle} style={input} editable={!busy} />
                     <PillButton label='Save name' disabled={busy || loading || !title.trim() || title.trim() === album.name} onPress={() => { void run(async () => { await updateGalleryAlbum(settings, album, { name: title }); await refresh(album) }) }} />
                 </>}
-                {canAdd && <PillButton label='Add library photos' tone='accent' disabled={busy || loading} onPress={() => { void loadLibrary() }} />}
+                {canAdd && <PillButton label='Add library photos' tone='accent' disabled={busy || loading} onPress={() => { setSelected([]); setLibrary([]); setLibraryOffset(0); void loadLibrary() }} />}
                 {!canAdd && <Text style={text}>You can view this album. Only its owner and contributors can add photos.</Text>}
             </GlassCard>
             {picker ? <GlassCard>
-                <Text style={{ color: theme.text, fontSize: 20 }}>Choose library photos</Text><Text style={text}>Select photos already uploaded to your account. Adding them does not upload device photos.</Text>
+                <Text style={{ color: theme.text, fontSize: 20 }}>Choose library photos</Text><Text style={text}>Select up to 500 photos already uploaded to your account. Your selection stays when you change pages. Adding them does not upload device photos.</Text>
                 <View style={row}><PillButton label='Cancel selection' disabled={busy || loading} onPress={() => { sequence.current++; setPicker(false); setSelected([]) }} /><PillButton label={`Add selected (${selected.length})`} tone='accent' disabled={busy || loading || !selected.length} onPress={() => { void run(async () => {
                     const result = await addAlbumPhotos(settings, album, selected)
                     if (!alive.current) return
                     setPicker(false); setSelected([]); await refresh(album)
                     if (alive.current) setNotice(`${result.added} of ${result.requested} selected photos added. Photos already in the album or unavailable to your account are skipped.`)
                 }) }} /></View>
-                {!library.length && !loading && <Text style={text}>No photos in your library.</Text>}
-                <View style={row}>{library.map(file => <Pressable key={file.id} disabled={busy || loading} accessibilityRole='checkbox' accessibilityLabel={file.name || 'Library photo'} accessibilityState={{ checked: selected.includes(file.id), disabled: busy || loading }} onPress={() => setSelected(previous => previous.includes(file.id) ? previous.filter(id => id !== file.id) : previous.length < 500 ? [...previous, file.id] : previous)} style={{ width: '47%', padding: 6, borderRadius: 12, borderWidth: 2, borderColor: selected.includes(file.id) ? theme.accent : theme.surfaceBorder }}>
+                {!library.length && !loading && <Text style={text}>{libraryOffset === 0 ? 'No photos in your library.' : 'No photos on this page. Return to the previous page.'}</Text>}
+                <View style={row}>{library.map(file => <Pressable key={file.id} disabled={busy || loading} accessibilityRole='checkbox' accessibilityLabel={file.name || 'Library photo'} accessibilityState={{ checked: selected.includes(file.id), disabled: busy || loading }} onPress={() => setSelected(previous => toggleAlbumPhotoSelection(previous, file.id))} style={{ width: '47%', padding: 6, borderRadius: 12, borderWidth: 2, borderColor: selected.includes(file.id) ? theme.accent : theme.surfaceBorder }}>
                     <GalleryAlbumImage settings={settings} fileId={file.id} style={{ width: '100%', height: 110, borderRadius: 8 }} /><Text numberOfLines={2} style={text}>{selected.includes(file.id) ? '✓ ' : ''}{file.name || 'Photo'}</Text>
                 </Pressable>)}</View>
-                {moreLibrary && <PillButton label='Load more library photos' disabled={busy || loading} onPress={() => { void loadLibrary(true) }} />}
+                <Text style={text}>{library.length ? `Photos ${libraryOffset + 1}–${libraryOffset + library.length}` : 'No photos on this page'} · {selected.length} selected across pages</Text>
+                <View style={row}><PillButton label='Previous library page' disabled={busy || loading || libraryOffset === 0} onPress={() => { void loadLibrary(galleryAlbumPageOffset(libraryOffset, 'previous')) }} /><PillButton label='Next library page' disabled={busy || loading || !moreLibrary || libraryOffset >= 1000000} onPress={() => { void loadLibrary(galleryAlbumPageOffset(libraryOffset, 'next')) }} /></View>
             </GlassCard> : <GlassCard>
                 <Text style={{ color: theme.text, fontSize: 20 }}>Album contents</Text>
-                {!album.items.length && <Text style={text}>This album is empty.</Text>}
+                {!album.items.length && <Text style={text}>{album.total === 0 ? 'This album is empty.' : 'No items on this page. Return to the previous page or refresh.'}</Text>}
                 {album.items.map(photo => <View key={photo.id} style={{ gap: 8, paddingVertical: 8 }}><View style={row}>
                     {photo.type.startsWith('image/') && <GalleryAlbumImage settings={settings} fileId={photo.id} style={{ width: 60, height: 60, borderRadius: 8 }} />}
                     <Text style={[text, { flex: 1 }]}>{photo.name || 'Untitled item'}</Text>
                 </View>{canRemoveAlbumPhoto(settings, album, photo) && <PillButton label={`Remove ${photo.name || 'item'} from album`} small disabled={busy || loading} onPress={() => confirm('Remove from album?', 'The original file stays in its owner’s library.', async () => { await removeAlbumPhoto(settings, album, photo); await refresh(album) }, true)} />}</View>)}
-                {album.items.length < album.total && <PillButton label='Load more album items' disabled={busy || loading} onPress={() => { void open(album.id, true) }} />}
+                <Text style={text}>{album.items.length ? `Items ${album.offset + 1}–${album.offset + album.items.length} of ${album.total}` : 'No items on this page'}</Text>
+                <View style={row}><PillButton label='Previous album page' disabled={busy || loading || album.offset === 0} onPress={() => { void open(album.id, galleryAlbumPageOffset(album.offset, 'previous')) }} /><PillButton label='Next album page' disabled={busy || loading || album.offset + album.items.length >= album.total || album.offset >= 1000000} onPress={() => { void open(album.id, galleryAlbumPageOffset(album.offset, 'next')) }} /></View>
             </GlassCard>}
             {canEdit && <GlassCard>
                 <Text style={{ color: theme.text, fontSize: 20 }}>Sharing & access</Text>
