@@ -404,7 +404,7 @@ export default function App() {
                             </Tab.Screen>
                             <Tab.Screen name='Images'>{() => <ImagesScreen settings={settings} />}</Tab.Screen>
                             <Tab.Screen name='Automations'>
-                                {() => <AutomationsScreen settings={settings} />}
+                                {({ route }) => <AutomationsScreen settings={settings} section={route.params?.section} />}
                             </Tab.Screen>
                             <Tab.Screen name='Explore'>
                                 {() => <ExploreScreen settings={settings} access={navigationAccess} onOpen={openPage} />}
