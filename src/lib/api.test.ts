@@ -318,11 +318,13 @@ describe('workspace transport', () => {
     it('lets the native transport supply the multipart boundary', async () => {
         let sentHeaders = new Headers()
         let sentBody: BodyInit | null | undefined
-        mockFetch(async (_input, init) => { sentHeaders = new Headers(init?.headers); sentBody = init?.body; return new Response('{}') })
+        let credentials: RequestCredentials | undefined
+        mockFetch(async (_input, init) => { sentHeaders = new Headers(init?.headers); sentBody = init?.body; credentials = init?.credentials; return new Response('{}') })
         const form = new FormData()
         form.append('prompt', 'connection check')
         await apiFetch(settings, 'https://hanasand.com/api/prompt', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: form })
         expect(sentHeaders.has('Content-Type')).toBe(false)
         expect(sentBody).toBe(form)
+        expect(credentials).toBe('omit')
     })
 })

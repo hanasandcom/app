@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useIsFocused } from '@react-navigation/native'
 import { Alert, Platform, ScrollView, Text, View } from 'react-native'
 import type { AppSettings } from '../types'
 import { deleteHanasandAccount, fetchProfileStats, type MobileProfileStats } from '../lib/api'
@@ -14,12 +15,14 @@ import { getThemePalette, spacing, type ThemePalette } from '../theme/tokens'
 const sections = ['Profile', 'Security', 'Sessions', 'SSH keys', 'Support'] as const
 type Section = typeof sections[number]
 
-export function ProfileScreen({ settings, onLogout, onDeleted }: {
-    settings: AppSettings; onLogout: () => Promise<void>; onDeleted: () => Promise<void>
+export function ProfileScreen({ settings, onLogout, onDeleted, initialSection }: {
+    initialSection?: Section; settings: AppSettings; onLogout: () => Promise<void>; onDeleted: () => Promise<void>
 }) {
     const theme = getThemePalette(settings.themeMode)
     const styles = useMemo(() => createStyles(theme), [theme])
-    const [section, setSection] = useState<Section>('Profile')
+    const [section, setSection] = useState<Section>(initialSection || 'Profile')
+    const focused = useIsFocused()
+    useEffect(() => { if (focused && initialSection) setSection(initialSection) }, [focused, initialSection])
     const [busy, setBusy] = useState(false)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState('')

@@ -7,7 +7,7 @@ export type RouteShortcut = {
 
 export type RootTabParamList = {
     Home: undefined
-    Profile: undefined
+    Profile: { section?: 'Profile' | 'Security' | 'Sessions' | 'SSH keys' | 'Support' } | undefined
     Mail: undefined
     Scan: undefined
     Notes: undefined

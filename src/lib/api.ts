@@ -71,7 +71,8 @@ export async function apiFetch(settings: AppSettings | undefined, input: Request
         requestHeaders.set('x-device-proof-url', signed.url)
         requestHeaders.set('x-device-proof-method', (init.method || 'GET').toUpperCase())
     }
-    return fetch(input, { ...init, headers: requestHeaders })
+    // Native requests use the selected account, never a shared browser cookie jar.
+    return fetch(input, { ...init, credentials: settings?.authToken ? 'omit' : init.credentials, headers: requestHeaders })
 }
 
 function requireAppAuth(settings: AppSettings, purpose: string) {

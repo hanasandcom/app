@@ -155,7 +155,11 @@ export default function App() {
         }
         switch (item.tab) {
             case 'Home': navigation.navigate('Home'); break
-            case 'Profile': navigation.navigate('Profile'); break
+            case 'Profile': {
+                const section = item.label === 'SSH Keys' ? 'SSH keys' : item.label === 'Tickets' ? 'Support' : ['Security', 'Sessions'].includes(item.label) ? item.label as 'Security' | 'Sessions' : 'Profile'
+                navigation.navigate('Profile', { section })
+                break
+            }
             case 'Mail': navigation.navigate('Mail'); break
             case 'Notes': navigation.navigate('Notes'); break
             case 'Images': navigation.navigate('Images'); break
@@ -382,7 +386,7 @@ export default function App() {
                                 {() => <HomeScreen settings={settings} aiMessages={aiMessages} onSaveAiMessages={handleSaveAiMessages} />}
                             </Tab.Screen>
                             <Tab.Screen name='Profile'>
-                                {() => <ProfileScreen settings={settings} onLogout={clearSession} onDeleted={clearSession} />}
+                                {({ route }) => <ProfileScreen settings={settings} initialSection={route.params?.section} onLogout={clearSession} onDeleted={clearSession} />}
                             </Tab.Screen>
                             <Tab.Screen name='Mail'>
                                 {() => <MailScreen settings={settings} />}

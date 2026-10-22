@@ -15,7 +15,7 @@
     "android": "expo run:android",
     "lint": "eslint index.ts ./src",
     "lint:fix": "eslint index.ts ./src --fix",
-    "test:mobile": "bun test src/lib/storage.test.ts src/lib/session.test.ts src/lib/api.test.ts src/lib/desktop-agent-endpoints.test.ts",
+    "test:mobile": "bun test src/lib/storage.test.ts src/lib/session.test.ts src/lib/api.test.ts src/lib/desktop-agent-endpoints.test.ts && bun test src/lib/ai-workspace.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

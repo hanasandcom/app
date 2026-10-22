@@ -1,0 +1,100 @@
+import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
+const calls: Array<{ url: string; init: RequestInit }> = []
+let payload: unknown = { conversations: [] }
+let status = 200
+mock.module('./api', () => ({ apiFetch: async (_settings: unknown, url: string, init: RequestInit) => { calls.push({ url, init }); return new Response(JSON.stringify(payload), { status }) } }))
+mock.module('expo-crypto', () => ({ randomUUID: () => '11111111-1111-4111-8111-111111111111' }))
+const api = await import('./ai-workspace')
+const settings = { siteBaseUrl: 'https://example.test', apiBaseUrl: 'https://api.example.test/api', codexApiPath: '/tools/ai', authToken: 'token', userId: 'user' } as Parameters<typeof api.fetchAiWorkspace>[0]
+const item = (id: string, createdAt: string, state: 'queued' | 'running' | 'done' | 'error' = 'queued', conversationId = 'conversation-1') => ({ id, createdAt, status: state, conversationId, threadId: `chatgpt-${conversationId}`, prompt: `Prompt ${id}`, priority: 'next' as const, result: state === 'done' ? `Result ${id}` : undefined })
+let socketMode = 'complete'
+class FakeSocket {
+    onclose: (() => void) | null = null
+    onerror: (() => void) | null = null
+    onmessage: ((event: { data: string }) => void) | null = null
+    static sent: object[] = []
+    static closed = 0
+    constructor(url: string) {
+        void url
+        queueMicrotask(() => {
+            if (socketMode === 'hold') return
+            if (socketMode === 'unavailable') this.onerror?.()
+            else this.onmessage?.({ data: JSON.stringify({ type: 'snapshot', clients: [{ name: 'Model' }] }) })
+        })
+    }
+    send(raw: string) {
+        const request = JSON.parse(raw)
+        FakeSocket.sent.push(request)
+        queueMicrotask(() => {
+            if (socketMode === 'after-submit-error') { this.onclose?.(); return }
+            this.onmessage?.({ data: JSON.stringify({ type: 'prompt_delta', conversationId: 'another-thread', delta: 'Wrong response' }) })
+            this.onmessage?.({ data: JSON.stringify({ type: 'prompt_delta', conversationId: request.conversationId, delta: 'Hello' }) })
+            this.onmessage?.({ data: JSON.stringify({ type: 'prompt_complete', conversationId: request.conversationId, content: 'Hello world' }) })
+        })
+    }
+    close() { FakeSocket.closed++ }
+}
+const originalSocket = globalThis.WebSocket
+beforeEach(() => {
+    calls.length = 0; status = 200; payload = { conversations: [] }; socketMode = 'complete'; FakeSocket.sent = []; FakeSocket.closed = 0
+    globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
+})
+afterEach(() => { globalThis.WebSocket = originalSocket })
+describe('shared mobile AI workspace', () => {
+    it('loads the website workspace through its AI service proxy and hydrates ISO dates', async () => {
+        payload = { conversations: [{ id: 'thread', title: 'Existing chat', messages: [{ id: 'message', role: 'user', content: 'Hi', createdAt: '2026-10-22T12:00:00Z' }] }] }
+        const values = await api.fetchAiWorkspace(settings)
+        expect(calls[0].url).toBe('https://example.test/api/backend/ai/workspace')
+        expect(values[0].messages[0].createdAt).toBe(Date.parse('2026-10-22T12:00:00Z'))
+    })
+    it('preserves existing conversation identity and scopes chronological portal history', async () => {
+        payload = { items: [item('new', '2026-10-22T12:00:00Z', 'running'), item('foreign', '2026-10-22T13:00:00Z', 'done', 'other'), item('old', '2026-10-22T11:00:00Z', 'done')] }
+        const values = await api.fetchChatGptActivity(settings, 'conversation-1')
+        expect(values.map(value => value.id)).toEqual(['old', 'new'])
+        expect(calls[0].url).toContain('threadId=chatgpt-conversation-1')
+        expect(api.portalMessages(values).at(-1)?.pending).toBe(true)
+        expect(api.portalMessages(values).at(-1)?.content).toContain('working')
+    })
+    it('sends role-preserving prior context once and native multipart without a JSON content type', async () => {
+        payload = { items: [] }
+        const prior = api.conversationContext([{ id: 'u', role: 'user', content: 'Earlier', createdAt: 1 }, { id: 'a', role: 'assistant', content: 'Earlier answer', createdAt: 2 }, { id: 'p', role: 'assistant', content: 'In line', createdAt: 3, pending: true }], [])
+        await api.submitChatGptPrompt(settings, 'conversation-1', 'New question', prior)
+        const form = calls[0].init.body as FormData
+        expect(JSON.parse(String(form.get('context')))).toEqual([{ role: 'user', content: 'Earlier' }, { role: 'assistant', content: 'Earlier answer' }])
+        expect(form.get('prompt')).toBe('New question')
+        expect(form.get('threadId')).toBe('chatgpt-conversation-1')
+        expect(new Headers(calls[0].init.headers).has('content-type')).toBe(false)
+    })
+    it('shows queued, running and terminal states without treating progress as a completed response', () => {
+        const messages = api.portalMessages([item('q', '2026-10-22T11:00:00Z'), item('r', '2026-10-22T12:00:00Z', 'running'), item('d', '2026-10-22T13:00:00Z', 'done')])
+        expect(messages.filter(message => message.role === 'assistant').map(message => [message.pending, message.content])).toEqual([[true, 'In the queue…'], [true, 'ChatGPT is working…'], [false, 'Result d']])
+    })
+    it('retains stable live conversation ID and appends the new prompt only once', async () => {
+        const updates: string[] = []
+        const result = await api.runHanasandPrompt(settings, 'stable-conversation', 'New prompt', [{ role: 'assistant', content: 'Previous answer' }], text => updates.push(text), new AbortController().signal)
+        expect(FakeSocket.sent).toEqual([{ type: 'prompt_request', conversationId: 'stable-conversation', clientName: 'Model', messages: [{ role: 'assistant', content: 'Previous answer' }, { role: 'user', content: 'New prompt' }], maxTokens: 1024, temperature: 0.35 }])
+        expect(updates).toEqual(['Hello'])
+        expect(result.message).toBe('Hello world')
+        expect(calls).toHaveLength(0)
+    })
+    it('never submits a second model request after the live prompt was accepted', async () => {
+        socketMode = 'after-submit-error'
+        await expect(api.runHanasandPrompt(settings, 'thread', 'Prompt', [], () => {}, new AbortController().signal)).rejects.toThrow('closed')
+        expect(FakeSocket.sent).toHaveLength(1)
+        expect(calls).toHaveLength(0)
+    })
+    it('uses HTTP fallback only when the live request could not be sent', async () => {
+        socketMode = 'unavailable'; payload = { message: 'HTTP answer', status: 'completed' }
+        expect((await api.runHanasandPrompt(settings, 'thread', 'Prompt', [], () => {}, new AbortController().signal)).message).toBe('HTTP answer')
+        expect(calls[0].url).toBe('https://api.example.test/api/tools/ai')
+    })
+    it('cancels the live listener without submitting a fallback request', async () => {
+        socketMode = 'hold'
+        const controller = new AbortController()
+        const pending = api.runHanasandPrompt(settings, 'thread', 'Prompt', [], () => {}, controller.signal)
+        controller.abort()
+        await expect(pending).rejects.toThrow('Stopped listening')
+        expect(FakeSocket.closed).toBe(1)
+        expect(calls).toHaveLength(0)
+    })
+})
