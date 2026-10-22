@@ -174,3 +174,29 @@ describe('explicit read-only preview', () => {
         await expect(api.previewOrganizationRule(settings, scope, custom.definition, window, null, controller.signal)).rejects.toThrow('cancelled')
     })
 })
+
+describe('rule editor safeguards', () => {
+    it('keeps Create and editing read only for either complete or partial impersonation state', () => {
+        expect(api.rulesImpersonationActive(settings)).toBe(false)
+        expect(api.rulesImpersonationActive({ ...settings, impersonationToken: 'partial-token' })).toBe(true)
+        expect(api.rulesImpersonationActive({ ...settings, impersonatingUserId: 'partial-user' })).toBe(true)
+        expect(api.rulesImpersonationActive({ ...settings, impersonationToken: 'token', impersonatingUserId: 'user' })).toBe(true)
+    })
+    it('detects new draft changes to conditions, stage, severity, action and enabled state before a name is entered', () => {
+        const initial = api.createRuleDraft('match')
+        expect(api.ruleDraftChanged(api.createRuleDraft('match'), initial)).toBe(false)
+        for (const changed of [
+            { ...initial, severity: 'high' },
+            { ...initial, enabled: false },
+            { ...initial, definition: { ...initial.definition, stage: 'detect' } },
+            { ...initial, definition: { ...initial.definition, action: 'drop' } },
+            { ...initial, definition: { ...initial.definition, conditions: [{ path: 'event_type', operator: 'equals' as const, value: 'login' }] } },
+        ]) {
+            expect(changed.name).toBe('')
+            expect(changed.explanation).toBe('')
+            expect(api.ruleDraftChanged(changed, initial)).toBe(true)
+        }
+        expect(api.createRuleDraft('analysis').definition.stage).toBe('analyze')
+        expect(api.createRuleDraft('detection').definition.stage).toBe('detect')
+    })
+})

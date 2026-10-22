@@ -3,7 +3,7 @@ import { Alert, Switch, Text, TextInput, View } from 'react-native'
 import type { AppSettings } from '../types'
 import { GlassCard, InlineNotice, PillButton, Screen } from '../components/ui'
 import { useAppTheme } from '../theme/context'
-import { createOrganizationRule, loadOrganizationRule, loadOrganizationRules, previewOrganizationRule, RuleRequestError, rulePreviewWindow, rulesAccountScope, setOrganizationRuleEnabled, updateOrganizationRule, type OrganizationRule, type RuleCategory, type RuleCondition, type RuleDefinition, type RuleDetail, type RuleDraft, type RulePreview, type RulePreviewWindow, type RulesContext } from '../lib/organization-rules'
+import { createRuleDraft, ruleDraftChanged, rulesImpersonationActive, createOrganizationRule, loadOrganizationRule, loadOrganizationRules, previewOrganizationRule, RuleRequestError, rulePreviewWindow, rulesAccountScope, setOrganizationRuleEnabled, updateOrganizationRule, type OrganizationRule, type RuleCategory, type RuleCondition, type RuleDefinition, type RuleDetail, type RuleDraft, type RulePreview, type RulePreviewWindow, type RulesContext } from '../lib/organization-rules'
 
 export function RulesScreen(props: { settings: AppSettings, category: RuleCategory }) {
     const identity = rulesAccountScope(props.settings)
@@ -12,9 +12,6 @@ export function RulesScreen(props: { settings: AppSettings, category: RuleCatego
     return <RulesWorkspace key={`${account.current.revision}/${props.category}`} {...props} />
 }
 const categoryName = { match: 'Match rules', analysis: 'Analysis rules', detection: 'Detection rules' }
-function newDraft(category: RuleCategory): RuleDraft {
-    return { name: '', explanation: '', severity: 'medium', enabled: true, definition: { stage: category === 'analysis' ? 'analyze' : category === 'detection' ? 'detect' : 'match', action: 'keep', match: 'all', conditions: [{ path: 'event_type', operator: 'equals', value: '' }] } }
-}
 function draftOf(rule: OrganizationRule): RuleDraft {
     return JSON.parse(JSON.stringify({ name: rule.name, explanation: rule.explanation, severity: rule.severity, enabled: rule.enabled, definition: rule.definition })) as RuleDraft
 }
@@ -46,12 +43,13 @@ function RulesWorkspace({ settings, category }: { settings: AppSettings, categor
     const heading = { color: theme.text, fontSize: 19, fontWeight: '600' as const }
     const row = { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: 8, alignItems: 'center' as const }
     const input = { color: theme.text, backgroundColor: theme.surfaceStrong, padding: 12, borderRadius: 12, fontSize: 15 }
-    const editable = !!context?.canManage && (!detail || detail.canEdit && !detail.isHistorical)
+    const impersonating = rulesImpersonationActive(settings)
+    const editable = !impersonating && !!context?.canManage && (!detail || detail.canEdit && !detail.isHistorical)
         && (draft?.definition.stage !== 'analyze' || context?.canManageRetention === true)
     const filtered = context?.rules.filter(rule => `${rule.name} ${rule.id} ${rule.explanation} ${rule.family || ''}`.toLowerCase().includes(query.trim().toLowerCase())) || []
     const visible = filtered.slice(page * 30, (page + 1) * 30)
     const isBuiltin = detail?.rule.source === 'hanasand'
-    const dirty = !!draft && (!detail ? draft.name !== '' || draft.explanation !== '' : JSON.stringify(draft) !== JSON.stringify(draftOf(detail.rule)) || isBuiltin && definitionJson !== JSON.stringify(detail.rule.definition, null, 2))
+    const dirty = !!draft && (ruleDraftChanged(draft, detail ? draftOf(detail.rule) : createRuleDraft(category)) || isBuiltin && definitionJson !== JSON.stringify(detail.rule.definition, null, 2))
     function startRead() {
         controller.current?.abort(); controller.current = new AbortController()
         return { request: ++sequence.current, signal: controller.current.signal }
@@ -136,15 +134,16 @@ function RulesWorkspace({ settings, category }: { settings: AppSettings, categor
     }
     return <Screen title='Rules' subtitle={`${categoryName[category]}${context ? ` · ${context.organization.name}` : ''}`}>
         {!!error && <InlineNotice title={conflict ? 'Rule changed remotely' : 'Rules unavailable'} message={error} />}
+        {impersonating && <InlineNotice title='Read only while impersonating' message='Return to your own account before creating or changing rules.' />}
         {!!notice && <InlineNotice title='Rule saved' message={notice} />}
         {loading && <Text style={text}>Loading…</Text>}
         {!draft && <>
             <View style={row}><PillButton label='Refresh rules' disabled={loading || busy} onPress={() => { void loadList() }} />
-                <PillButton label='Create rule' tone='accent' disabled={!context?.canManage || category === 'analysis' && !context.canManageRetention || loading || busy} onPress={() => { setDetail(null); setDraft(newDraft(category)); setConflict(false); setNotice(''); setPreview(null); setError('') }} /></View>
+                <PillButton label='Create rule' tone='accent' disabled={impersonating || !context?.canManage || category === 'analysis' && !context.canManageRetention || loading || busy} onPress={() => { setDetail(null); setDraft(createRuleDraft(category)); setConflict(false); setNotice(''); setPreview(null); setError('') }} /></View>
             {context && <>
                 {category === 'analysis' && context.canManage && !context.canManageRetention && <Text style={text}>Creating Analyze rules also requires active Hanasand owner or editor access for log retention.</Text>}
                 {!context.canManage && <Text style={text}>You can read these rules. An organization owner, admin, or editor can change them.</Text>}
-                <TextInput accessibilityLabel='Search rules' placeholder='Search name, ID, or description' placeholderTextColor={theme.textSoft} value={query} onChangeText={value => { setQuery(value); setPage(0) }} style={input} />
+                <TextInput accessibilityLabel='Search rules' autoCorrect={false} autoCapitalize='none' placeholder='Search name, ID, or description' placeholderTextColor={theme.textSoft} value={query} onChangeText={value => { setQuery(value); setPage(0) }} style={input} />
                 <Text style={text}>{filtered.length} rules</Text>
                 {!filtered.length && <Text style={text}>No rules match this view.</Text>}
                 {visible.map(item => <GlassCard key={item.id}><Text style={heading}>{item.name}</Text><Text style={text}>{item.explanation}</Text><Text style={text}>{item.enabled ? 'Enabled' : 'Disabled'} · {item.severity} · {item.source || 'Unknown source'} · {item.hitCount == null ? 'Hits unavailable' : `${item.hitCount} hits`}</Text><PillButton label={`Open ${item.name}`} disabled={loading || busy} onPress={() => { setNotice(''); void open(item.id) }} /></GlassCard>)}

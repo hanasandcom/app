@@ -21,6 +21,15 @@ export function rulesAccountScope(settings: AppSettings) {
     // Memory-only comparison; never render, persist or log this credential scope.
     return JSON.stringify([settings.apiBaseUrl, settings.userId, settings.authToken, settings.selectedOrganizationId, settings.impersonatingUserId, settings.impersonationToken])
 }
+export function rulesImpersonationActive(settings: AppSettings) {
+    return Boolean(settings.impersonationToken || settings.impersonatingUserId)
+}
+export function createRuleDraft(category: RuleCategory): RuleDraft {
+    return { name: '', explanation: '', severity: 'medium', enabled: true, definition: { stage: category === 'analysis' ? 'analyze' : category === 'detection' ? 'detect' : 'match', action: 'keep', match: 'all', conditions: [{ path: 'event_type', operator: 'equals', value: '' }] } }
+}
+export function ruleDraftChanged(draft: RuleDraft, initial: RuleDraft) {
+    return JSON.stringify(draft) !== JSON.stringify(initial)
+}
 function organizationId(settings: AppSettings) {
     if (!settings.userId || !settings.authToken) throw new Error('Sign in to load organization rules.')
     if (!settings.selectedOrganizationId || settings.selectedOrganizationId === 'personal') throw new Error('Select an organization to work with rules.')
@@ -29,7 +38,7 @@ function organizationId(settings: AppSettings) {
 function assertScope(settings: AppSettings, context: RulesContext, mutation = false) {
     const id = organizationId(settings)
     if (context.scope !== rulesAccountScope(settings) || context.organization.id !== id || context.organization.status !== 'active') throw new Error('Your account or organization changed. Reload rules before continuing.')
-    if (mutation && (settings.impersonationToken || settings.impersonatingUserId)) throw new Error('Return to your own account before changing rules.')
+    if (mutation && rulesImpersonationActive(settings)) throw new Error('Return to your own account before changing rules.')
     if (mutation && !context.canManage) throw new Error('An organization owner, admin, or editor is required to change rules.')
 }
 async function request(settings: AppSettings, path: string, init: RequestInit = {}) {
