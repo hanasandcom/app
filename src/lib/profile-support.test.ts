@@ -3,7 +3,7 @@ import type { AppSettings } from '../types'
 import type { SupportTicket } from './profile-api'
 let calls: Array<{ url: string; init: RequestInit }> = []
 let respond = () => Response.json({ tickets: [] })
-mock.module('react-native', () => ({ Platform: { OS: 'ios' } }))
+mock.module('react-native', () => ({ Platform: { OS: 'ios' }, Alert: {}, Text: 'Text', TextInput: 'TextInput', View: 'View' }))
 mock.module('react-native-passkeys', () => ({ create: async () => null, isSupported: () => false }))
 mock.module('./api', () => ({ apiFetch: async (_settings: AppSettings, url: string, init: RequestInit) => { calls.push({ url, init }); return respond() } }))
 const { AccountRequestError, fetchAccountSupportTickets, fetchSupportMessages, sendSupportMessage, sendSupportFeedback, supportTicketAccess, supportAccountScope } = await import('./profile-api')
@@ -128,4 +128,31 @@ test('ticket paths accept UUID versions1–8 instead of artificially rejecting v
     respond = () => Response.json({ messages: [] })
     await fetchSupportMessages(settings, '11111111-1111-7111-8111-111111111111')
     expect(calls[0].url).toEndWith('/11111111-1111-7111-8111-111111111111/messages')
+})
+
+// The navigation transition is the same state used by the panel's conditional
+// list/conversation/composer rendering. GUI coverage uses the100-ticket fixture.
+mock.module('expo-crypto', () => ({ randomUUID: () => id }))
+mock.module('../components/ui', () => ({ GlassCard: 'GlassCard', InlineNotice: 'InlineNotice', PillButton: 'PillButton', SectionTitle: 'SectionTitle' }))
+mock.module('../theme/context', () => ({ useAppTheme: () => ({}) }))
+const { supportNavigation, canEditSupportDraft } = await import('../components/ProfileSupportPanel')
+test('Support opens one focused task and Back retains the conversation identity for draft-safe resume', () => {
+    const initial = { mode: 'list' as const, ticketId: '' }
+    const opened = supportNavigation(initial, { ticketId: id })
+    expect(opened).toEqual({ mode: 'conversation', ticketId: id })
+    const back = supportNavigation(opened, 'back')
+    expect(back).toEqual({ mode: 'list', ticketId: id })
+    expect(supportNavigation(back, { ticketId: id })).toEqual(opened)
+    const composing = supportNavigation(back, 'new')
+    expect(composing).toEqual({ mode: 'new', ticketId: '' })
+    expect(supportNavigation(supportNavigation(composing, 'back'), 'new')).toEqual(composing)
+})
+
+test('queued keyboard events cannot replace submitted text while writing or awaiting outcome review', () => {
+    for (const state of [{ writing: true, blocked: false }, { writing: false, blocked: true }, { writing: true, blocked: true }]) {
+        let draft = 'uncertain123'
+        if (canEditSupportDraft(state.writing, state.blocked)) draft = 'late autocorrect'
+        expect(draft).toBe('uncertain123')
+    }
+    expect(canEditSupportDraft(false, false)).toBe(true)
 })

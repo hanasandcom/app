@@ -19,6 +19,8 @@ const tickets: SupportTicket[] = [
     { id: openId, user_id: settings.userId, subject: 'Open synthetic question', status: 'open', resolution_version: 0, feedback_rating: null, updated_at: now, last_message: 'How can we help?' },
     { id: closedId, user_id: settings.userId, subject: 'Resolved synthetic question', status: 'closed', resolution_version: 3, feedback_rating: null, updated_at: now, last_message: 'Your question is resolved.' },
 ]
+//100 tickets make list-before-composer regressions visible without live data.
+for (let index = 0; index < 98; index++) tickets.push({ id: `44444444-4444-4444-8444-${String(index).padStart(12, '0')}`, user_id: settings.userId, subject: `Synthetic history ${index + 1}`, status: 'open', resolution_version: 0, feedback_rating: null, updated_at: now, last_message: 'Earlier synthetic conversation' })
 const messages: Record<string, SupportMessage[]> = {
     [openId]: [{ id: 'initial-open', sender_id: 'fixture-agent', sender_name: 'Synthetic Support', body: 'How can we help?', created_at: now }],
     [closedId]: [{ id: 'initial-closed', sender_id: 'fixture-agent', sender_name: 'Synthetic Support', body: 'Your question is resolved. Please rate your experience.', created_at: now }],
@@ -76,7 +78,7 @@ globalThis.fetch = Object.assign(async (...[input, init]: Parameters<typeof fetc
 
 registerRootComponent(() => <GestureHandlerRootView style={{ flex: 1 }}><AppThemeProvider mode='obsidian'>
     <Screen title='Support fixture' subtitle='Synthetic data only'>
-        <Text style={{ color: '#b2b9c2', fontSize: 13 }}>Closed feedback first returns409: refresh, review the retained draft, then submit again. Reply containing “uncertain” saves once and disconnects; refresh then retry to test deduplication.</Text>
+        <Text style={{ color: '#b2b9c2', fontSize: 13 }}>100 tickets. Open a conversation or New support ticket: the list must disappear. Back to conversations restores the list. Closed feedback first returns409: refresh, review the retained draft, then submit again. Reply containing “uncertain” saves once and disconnects; refresh then retry to test deduplication.</Text>
         <ProfileSupportPanel settings={settings} revision={0} />
     </Screen>
 </AppThemeProvider></GestureHandlerRootView>)
