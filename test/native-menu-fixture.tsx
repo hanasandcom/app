@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { Text, View } from 'react-native'
 import { PillButton } from '../src/components/ui'
+import { TrafficMapScreen } from '../src/screens/TrafficMapScreen'
 import { NativeToolsScreen } from '../src/screens/NativeToolsScreen'
 import { registerRootComponent } from 'expo'
 import { NavigationContainer } from '@react-navigation/native'
@@ -10,6 +11,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { AppThemeProvider } from '../src/theme/context'
 import type { AppSettings, RootTabParamList } from '../src/types'
 const settings = { apiBaseUrl: 'https://traffic.invalid/api', siteBaseUrl: 'https://traffic.invalid', userId: 'synthetic-user', authToken: 'synthetic-token', selectedOrganizationId: 'synthetic-org', impersonationToken: '', impersonatingUserId: '', themeMode: 'obsidian' } as AppSettings
+let finishPolicy: (() => void) | null = null
 const policy = { enabled: true, defaults: { anonymous: { windowMs: 1000, maxRequests: 3 }, authenticated: { windowMs: 60000, maxRequests: 120 }, internal: { windowMs: 1000, maxRequests: 1000 } }, overrides: [], updatedAt: '2026-10-23T03:00:00Z', updatedBy: 'synthetic-user' }
 const limits = { perSecond: null, perMinute: 60, perHour: 1000, perDay: 10000 }
 const apiKey = { id: 'synthetic-key', ownerId: 'synthetic-user', name: 'Synthetic client', tier: 'custom', description: 'Synthetic only', enabled: true, expiresAt: '', scopes: [{ id: 'synthetic-scope', enabled: true, method: 'GET', route: '/api/test', limits }], organizationId: null, keyPrefix: 'synthetic-prefix', createdAt: '2026-10-23T03:00:00Z', updatedAt: '2026-10-23T03:00:00Z', lastUsedAt: null }
@@ -26,7 +28,7 @@ globalThis.fetch = Object.assign(async (...[input, init]: Parameters<typeof fetc
     if (url.pathname === '/api/organizations' && method === 'GET') return json({ organizations: [{ id: '3e735e7b-4d7f-444d-9806-231fa26cfcec', name: 'Hanasand', role: 'editor', lifecycleStatus: 'active' }] })
     if (url.pathname === '/api/users' && method === 'GET') return json([{ id: 'synthetic-user', name: 'Synthetic owner' }])
     if (url.pathname === '/api/rate-limit/settings') {
-        if (method === 'PUT') Object.assign(policy, JSON.parse(String(init?.body)))
+        if (method === 'PUT') { Object.assign(policy, JSON.parse(String(init?.body))); await new Promise<void>(resolve => { finishPolicy = resolve }) }
         else if (method !== 'GET') throw new Error('Unsupported synthetic policy method.')
         return json({ settings: policy, routes: [{ method: 'GET', route: '/api/test' }], tierPresets: [{ id: 'custom', label: 'Custom', description: 'Synthetic tier', defaultLimits: limits }] })
     }
@@ -47,9 +49,26 @@ globalThis.fetch = Object.assign(async (...[input, init]: Parameters<typeof fetc
     }
     throw new Error('Unsupported synthetic route.')
 }, globalThis.fetch)
+let denyStream = false
+const syntheticStream = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input))
+    if (url.origin !== 'https://traffic.invalid' || url.pathname !== '/api/traffic/live' || (init?.method || 'GET') !== 'GET') throw new Error('External stream blocked.')
+    if (denyStream) return { ok: false, status: 401, headers: new Headers(), body: null } as unknown as Response
+    let timer: ReturnType<typeof setInterval>, next = 100
+    const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+            const send = (value: string) => controller.enqueue(new TextEncoder().encode(value))
+            send('event: ready\ndata: {"status":"connected"}\n\n')
+            timer = setInterval(() => send(`event: traffic\ndata: ${JSON.stringify([{ iso: 'NO', count: 2, max_id: String(++next), timestamp: new Date().toISOString() }])}\n\n`), 1000)
+        },
+        cancel() { clearInterval(timer) },
+    })
+    return { ok: true, status: 200, headers: new Headers({ 'content-type': 'text/event-stream' }), body } as unknown as Response
+}) as unknown as typeof fetch
 const Stack = createNativeStackNavigator()
 function Fixture() {
-    const [tool, setTool] = useState<RootTabParamList['Tools']['tool']>('rate-limits')
-    return <View style={{ flex: 1 }}><View style={{ paddingTop: 52, paddingHorizontal: 16, backgroundColor: '#101418', gap: 6 }}><Text style={{ color: '#b2b9c2' }}>Synthetic data only · no external requests</Text><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>{(['traffic-overview', 'rate-limits', 'database', 'backups'] as const).map(value => <PillButton small key={value} label={value} onPress={() => setTool(value)} />)}</View></View><NativeToolsScreen key={tool} tool={tool} settings={settings} onManageSshKeys={() => {}} /></View>
+    const [tool, setTool] = useState<RootTabParamList['Tools']['tool']>('traffic-map')
+    const [streamRevision, setStreamRevision] = useState(0)
+    return <View style={{ flex: 1 }}><View style={{ paddingTop: 52, paddingHorizontal: 16, backgroundColor: '#101418', gap: 6 }}><Text style={{ color: '#b2b9c2' }}>Synthetic data only · no external requests</Text><PillButton small label='Finish synthetic policy response' onPress={() => { finishPolicy?.(); finishPolicy = null }} /><PillButton small label='Toggle synthetic stream access' onPress={() => { denyStream = !denyStream; setStreamRevision(value => value + 1) }} /><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>{(['traffic-map', 'traffic-overview', 'rate-limits', 'database', 'backups'] as const).map(value => <PillButton small key={value} label={value} onPress={() => setTool(value)} />)}</View></View>{tool === 'traffic-map' ? <TrafficMapScreen key={streamRevision} settings={settings} streamTransport={syntheticStream} /> : <NativeToolsScreen key={tool} tool={tool} settings={settings} onManageSshKeys={() => {}} />}</View>
 }
 registerRootComponent(() => <GestureHandlerRootView style={{ flex: 1 }}><AppThemeProvider mode='obsidian'><NavigationContainer><Stack.Navigator screenOptions={{ headerShown: false }}><Stack.Screen name='SyntheticTraffic' component={Fixture} /></Stack.Navigator></NavigationContainer></AppThemeProvider></GestureHandlerRootView>)

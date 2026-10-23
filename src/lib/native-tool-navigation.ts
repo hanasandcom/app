@@ -1,6 +1,7 @@
 import type { RootTabParamList } from '../types'
 
 const tools: Record<string, RootTabParamList['Tools']['tool']> = {
+    '/traffic/map': 'traffic-map',
     '/traffic': 'traffic-overview',
     '/traffic/recent': 'traffic-recent',
     '/system/rates': 'rate-limits',

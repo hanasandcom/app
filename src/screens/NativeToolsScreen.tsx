@@ -1,3 +1,4 @@
+import { TrafficMapScreen } from './TrafficMapScreen'
 import { TrafficScreen } from './TrafficScreen'
 import { RateLimitsScreen } from './RateLimitsScreen'
 import { DatabaseScreen } from './DatabaseScreen'
@@ -14,6 +15,7 @@ import { OrganizationApiKeysScreen } from './OrganizationApiKeysScreen'
 
 export function NativeToolsScreen({ settings, tool, onManageSshKeys }: { settings: AppSettings; tool: RootTabParamList['Tools']['tool']; onManageSshKeys: () => void }) {
     switch (tool) {
+        case 'traffic-map': return <TrafficMapScreen settings={settings} />
         case 'traffic-overview': return <TrafficScreen settings={settings} mode='overview' />
         case 'traffic-recent': return <TrafficScreen settings={settings} mode='recent' />
         case 'rate-limits': return <RateLimitsScreen settings={settings} />

@@ -19,7 +19,7 @@ export type RootTabParamList = {
     Organizations: { section?: OrganizationSection } | undefined
     Watchlists: undefined
     WorkspacePage: { path: string; title: string }
-    Tools: { tool: 'traffic-overview' | 'traffic-recent' | 'rate-limits' | 'database' | 'backups' | 'threat-search' | 'password-check' | 'subscription' | 'host-updates' | 'hosts' | 'intel-profiles' | 'delivery-health' | 'api-keys' | 'rules-match' | 'rules-analysis' | 'rules-detection' }
+    Tools: { tool: 'traffic-map' | 'traffic-overview' | 'traffic-recent' | 'rate-limits' | 'database' | 'backups' | 'threat-search' | 'password-check' | 'subscription' | 'host-updates' | 'hosts' | 'intel-profiles' | 'delivery-health' | 'api-keys' | 'rules-match' | 'rules-analysis' | 'rules-detection' }
 }
 
 export type AppSettings = {

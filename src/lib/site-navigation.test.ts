@@ -39,6 +39,7 @@ describe('native website navigation', () => {
             expect(nativeToolForPath(`/rules/${category}`)).toBe(`rules-${category}`)
             expect(leaves(siteNavigation('synthetic-user')).find(item => item.path === `/rules/${category}`)?.tab).toBe('Tools')
         }
+        expect(nativeToolForPath('/traffic/map')).toBe('traffic-map')
         expect(nativeToolForPath('/traffic')).toBe('traffic-overview')
         expect(nativeToolForPath('/traffic/recent')).toBe('traffic-recent')
         expect(nativeToolForPath('/system/rates')).toBe('rate-limits')
