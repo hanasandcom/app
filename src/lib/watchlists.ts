@@ -19,7 +19,7 @@ function identifier(value: string) {
     if (!/^[A-Za-z0-9_.:@-]{1,200}$/.test(value) || ['.', '..', 'personal'].includes(value)) throw new Error('Select a valid organization or watchlist item.')
     return encodeURIComponent(value)
 }
-export function watchlistScope(settings: AppSettings) { return JSON.stringify([settings.apiBaseUrl, settings.userId, settings.authToken, settings.impersonationToken, settings.selectedOrganizationId]) }
+export function watchlistScope(settings: AppSettings) { return JSON.stringify([settings.siteBaseUrl, settings.apiBaseUrl, settings.userId, settings.authToken, settings.impersonationToken, settings.selectedOrganizationId]) }
 export function normalizeWatchlistItem(value: unknown, organizationId: string): WatchlistItem {
     const row = object(value)
     if (!text(row.id) || row.organizationId !== organizationId || !watchlistKinds.includes(row.kind as WatchlistKind) || !['active', 'paused', 'archived'].includes(text(row.status)) || !text(row.value)) throw new Error('The watchlist response is invalid. Refresh before continuing.')
@@ -83,7 +83,7 @@ export async function syncWatchlists(settings: AppSettings, page: WatchlistPage,
 }
 async function request(settings: AppSettings, org: string, suffix: string, init: RequestInit, mutation = false) {
     if (!settings.authToken || !settings.userId) throw new Error('Sign in to view watchlists.')
-    const url = new URL(`${settings.apiBaseUrl.replace(/\/+$/, '')}/organizations/${identifier(org)}/watchlists${suffix}`)
+    const url = new URL(`/api/organizations/${identifier(org)}/watchlists${suffix}`, settings.siteBaseUrl)
     if (url.protocol !== 'https:' || url.username || url.password) throw new Error('Watchlists require a secure API address.')
     const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 20000)
     const abort = () => controller.abort()
@@ -94,7 +94,13 @@ async function request(settings: AppSettings, org: string, suffix: string, init:
         try { response = await apiFetch({ ...settings, selectedOrganizationId: org }, url.toString(), { ...init, signal: controller.signal, credentials: 'omit', headers: { 'Content-Type': 'application/json' } }) }
         catch { throw new WatchlistRequestError(mutation ? 'The save outcome is unknown. Refresh the list before repeating the action.' : 'Watchlists could not be reached. Refresh to try again.', mutation) }
         const body = object(await response.json().catch(() => null))
-        if (!response.ok) throw new WatchlistRequestError(text(body.message) || text(object(body.error).message) || text(body.error) || `Watchlists are unavailable (${response.status}).`, mutation && response.status >= 500)
+        if (!response.ok) {
+            const outcomeUnknown = mutation && response.status >= 500
+            const message = response.status >= 500
+                ? mutation ? 'The save outcome is unknown. Refresh the list before repeating the action.' : 'Watchlists are temporarily unavailable. Refresh to try again.'
+                : text(body.message) || text(object(body.error).message) || text(body.error) || `Watchlists are unavailable (${response.status}).`
+            throw new WatchlistRequestError(message, outcomeUnknown)
+        }
         return body
     } finally { clearTimeout(timer); init.signal?.removeEventListener('abort', abort) }
 }

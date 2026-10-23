@@ -4,7 +4,7 @@ const calls: Array<{ settings: AppSettings; url: string; init: RequestInit }> = 
 let respond = () => Promise.resolve(Response.json({}))
 mock.module('./api', () => ({ apiFetch: async (settings: AppSettings, url: string, init: RequestInit) => { calls.push({ settings, url, init }); return respond() } }))
 const api = await import('./watchlists')
-const settings = { apiBaseUrl: 'https://api.hanasand.com/api', userId: 'synthetic-user', authToken: 'synthetic', selectedOrganizationId: 'synthetic-org', impersonationToken: '' } as AppSettings
+const settings = { siteBaseUrl: 'https://hanasand.com', apiBaseUrl: 'https://api.hanasand.com/api', userId: 'synthetic-user', authToken: 'synthetic', selectedOrganizationId: 'synthetic-org', impersonationToken: '' } as AppSettings
 const org = settings.selectedOrganizationId!
 const item = { id: 'synthetic-item', organizationId: org, kind: 'company' as const, value: 'Synthetic Company', notes: 'Synthetic context', status: 'active' as const, updatedAt: '' }
 const receipt = (status = 'synchronized') => ({ schemaVersion: 'organization.watchlist_projection_receipt.v1', organizationId: org, itemIds: [item.id], projection: { status, source: 'identity', checkedAt: status === 'synchronized' ? '2026-10-23T01:00:00Z' : null, watchlistIds: [`org_shared_watchlist:${org}:${item.id}`], unresolvedItemIds: [] }, alertRebuild: { status: 'not_requested', reason: 'projection_only' } })
@@ -17,7 +17,7 @@ describe('native canonical organization watchlists', () => {
     it('loads archived and active terms from Core using the signed selected organization', async () => {
         const result = await api.loadWatchlists(settings, new AbortController().signal)
         expect(result.items).toEqual([item])
-        expect(calls[0].url).toBe(`https://api.hanasand.com/api/organizations/${org}/watchlists?includeArchived=true`)
+        expect(calls[0].url).toBe(`https://hanasand.com/api/organizations/${org}/watchlists?includeArchived=true`)
         expect(calls[0].settings.selectedOrganizationId).toBe(org)
         expect(calls[0].init.credentials).toBe('omit')
     })
@@ -96,6 +96,15 @@ describe('native canonical organization watchlists', () => {
         expect(calls).toHaveLength(1)
         expect(() => api.watchlistMutationResult({}, org)).toThrow('Refresh')
         expect(api.watchlistMutationResult({ saved: true }, org).requiresRefresh).toBe(true)
+    })
+    it('hides internal server configuration errors and preserves uncertain mutation outcomes', async () => {
+        respond = () => Promise.resolve(Response.json({ error: { message: 'Invalid configured Watchlist proof origin.' } }, { status: 500 }))
+        await expect(api.loadWatchlists(settings, new AbortController().signal)).rejects.toThrow('Watchlists are temporarily unavailable.')
+        try { await api.changeWatchlists(settings, page(), { type: 'create', draft }, 'synthetic'); throw new Error('must fail') } catch (error) {
+            expect(error).toBeInstanceOf(api.WatchlistRequestError)
+            expect((error as InstanceType<typeof api.WatchlistRequestError>).outcomeUnknown).toBe(true)
+            expect((error as Error).message).not.toContain('Invalid configured')
+        }
     })
     it('rejects invalid identifiers and stale-state actions before sending a mutation', async () => {
         await expect(api.loadWatchlists({ ...settings, selectedOrganizationId: 'bad/organization' }, new AbortController().signal)).rejects.toThrow('valid')
