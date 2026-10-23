@@ -1038,13 +1038,14 @@ export async function isHanasandOrganizationMember(settings: AppSettings, signal
     } finally { clearTimeout(timeout); signal?.removeEventListener('abort', abort) }
 }
 
-export async function fetchAiModels(settings: AppSettings) {
+export async function fetchAiModels(settings: AppSettings, signal?: AbortSignal) {
+    if (signal?.aborted) throw new Error('Model status request cancelled.')
     if (!settings.apiBaseUrl.trim()) {
         return []
     }
 
     const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'ai/models'), {
-        headers: headers(settings),
+        headers: headers(settings), signal,
     })
     const body = await response.json().catch(() => ({} as Record<string, unknown>))
     if (!response.ok) {

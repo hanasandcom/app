@@ -55,7 +55,7 @@ mock.module('expo-crypto', () => ({
     },
 }))
 
-const { isHanasandOrganizationMember, apiFetch, createHanasandBrowserSignInUrl, fetchNotes, AuthenticationError, exchangeHanasandMobileSsoCode, fetchDesktopAgentStatus, isHanasandGoogleSignInConfigured, loginToHanasand, loginWithHanasandPasskey, refreshHanasandSession, runDesktopAgentCommand } = await import('./api')
+const { isHanasandOrganizationMember, apiFetch, fetchAiModels, createHanasandBrowserSignInUrl, fetchNotes, AuthenticationError, exchangeHanasandMobileSsoCode, fetchDesktopAgentStatus, isHanasandGoogleSignInConfigured, loginToHanasand, loginWithHanasandPasskey, refreshHanasandSession, runDesktopAgentCommand } = await import('./api')
 
 const settings: AppSettings = {
     themeMode: 'obsidian',
@@ -337,6 +337,20 @@ describe('desktop command proof', () => {
 
 
 describe('workspace transport', () => {
+    it('forwards discovery cancellation and skips a pre-aborted model read', async () => {
+        const controller = new AbortController()
+        let calls = 0
+        mockFetch(async (_input, init) => {
+            calls++
+            expect(init?.signal).toBe(controller.signal)
+            return new Response(JSON.stringify({ connected: [] }))
+        })
+        expect(await fetchAiModels(settings, controller.signal)).toEqual([])
+        controller.abort()
+        await expect(fetchAiModels(settings, controller.signal)).rejects.toThrow('cancelled')
+        expect(calls).toBe(1)
+    })
+
     it('preserves authenticated proof and cancellation with a native streaming transport', async () => {
         let globalCalls = 0
         mockFetch(async () => { globalCalls++; throw new Error('The buffered fetch must not handle this stream.') })
