@@ -1,5 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient'
-import { createContext, type ReactNode, useContext, useMemo } from 'react'
+import { createContext, type ReactNode, type Ref, useContext, useMemo } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View, type KeyboardTypeOptions } from 'react-native'
 import { AlertCircle, CheckCircle2, ChevronDown, Info, Menu, Settings2 } from 'lucide-react-native'
 import Svg, { Circle, Line, Path } from 'react-native-svg'
@@ -36,6 +36,7 @@ export function Screen({
     children,
     scroll = true,
     contentStyle,
+    scrollViewRef,
 }: {
     title: string
     subtitle?: string
@@ -44,12 +45,13 @@ export function Screen({
     children: ReactNode
     scroll?: boolean
     contentStyle?: object
+    scrollViewRef?: Ref<ScrollView>
 }) {
     const settingsDrawer = useContext(SettingsDrawerContext)
     const theme = useAppTheme()
     const styles = useMemo(() => createStyles(theme), [theme])
     const body = scroll
-        ? <ScrollView contentContainerStyle={[styles.content, contentStyle]}>{children}</ScrollView>
+        ? <ScrollView ref={scrollViewRef} contentContainerStyle={[styles.content, contentStyle]}>{children}</ScrollView>
         : <View style={[styles.content, styles.staticContent, contentStyle]}>{children}</View>
 
     return (

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useIsFocused } from '@react-navigation/native'
-import { Alert, Text, View } from 'react-native'
+import { Alert, Text, View, type ScrollView } from 'react-native'
 import type { AppSettings, OrganizationSection } from '../types'
 import {
     accountRequest, fetchOrganizations, fetchOrganizationMembers, fetchOrganizationInvites,
@@ -26,8 +26,10 @@ export function OrganizationsScreen({ settings, selectedOrganizationId, onSelect
     const [organizations, setOrganizations] = useState<Organization[]>([])
     const [selectedId, setSelectedId] = useState(selectedOrganizationId || '')
     const [tab, setTab] = useState<OrganizationSection>(initialSection || 'Overview')
+    const scrollViewRef = useRef<ScrollView>(null)
     const focused = useIsFocused()
     useEffect(() => { if (focused) setTab(initialSection || 'Overview') }, [focused, initialSection])
+    useEffect(() => { if (focused) scrollViewRef.current?.scrollTo({ y: 0, animated: false }) }, [focused, tab])
     const [members, setMembers] = useState<OrganizationMember[]>([])
     const [invites, setInvites] = useState<OrganizationInvite[]>([])
     const [draft, setDraft] = useState<OrganizationSettings>({})
@@ -102,9 +104,10 @@ export function OrganizationsScreen({ settings, selectedOrganizationId, onSelect
         await mutation('settings', 'PUT', { ...draft, name: draft.name.trim(), slug: draft.slug?.trim() || '', retentionDays })
     }
 
-    return <Screen title='Organizations' subtitle={selected?.name || 'Your workspaces'} right={<PillButton small label='Refresh' disabled={busy || loading || detailsLoading} onPress={() => setRevision(value => value + 1)} />}>
+    return <Screen title={selected && tab !== 'Overview' ? tab : 'Organizations'} subtitle={selected?.name || 'Your workspaces'} scrollViewRef={scrollViewRef} right={<PillButton small label='Refresh' disabled={busy || loading || detailsLoading} onPress={() => setRevision(value => value + 1)} />}>
+        {selected && <View style={styles.row}>{(['Overview', 'Team', 'Settings'] as const).map(item => <PillButton key={item} label={item} tone={tab === item ? 'accent' : 'default'} onPress={() => setTab(item)} />)}</View>}
         <InlineNotice message={error} /><InlineNotice message={notice} tone='success' />
-        <GlassCard style={styles.card}>
+        {(!selected || tab === 'Overview') && <GlassCard style={styles.card}>
             <SectionTitle eyebrow='Workspaces' title='Your organizations' body='Select an organization to view its team and settings.' />
             <PillButton label={selectedOrganizationId ? 'Use personal workspace' : 'Personal workspace'} disabled={busy} tone={!selectedOrganizationId ? 'accent' : 'default'} onPress={() => choose('')} />
             {loading && <Text style={styles.meta}>Loading organizations…</Text>}
@@ -123,9 +126,8 @@ export function OrganizationsScreen({ settings, selectedOrganizationId, onSelect
                     setCreating(false); setCreateName(''); choose(payload.organization.id)
                 }, 'Organization created.')} />
             </>}
-        </GlassCard>
+        </GlassCard>}
         {selected && <>
-            <View style={styles.row}>{(['Overview', 'Team', 'Settings'] as const).map(item => <PillButton key={item} label={item} tone={tab === item ? 'accent' : 'default'} onPress={() => setTab(item)} />)}</View>
             {detailsLoading && <Text style={styles.meta}>Loading organization…</Text>}
             {detailErrors.map(item => <InlineNotice key={item} message={item} />)}
             {tab === 'Overview' && <GlassCard style={styles.card}>

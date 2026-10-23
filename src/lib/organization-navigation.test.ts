@@ -6,6 +6,7 @@ import { organizationSectionForPath } from './organization-navigation'
 
 const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8')
 const screen = readFileSync(new URL('../screens/OrganizationsScreen.tsx', import.meta.url), 'utf8')
+const ui = readFileSync(new URL('../components/ui.tsx', import.meta.url), 'utf8')
 
 describe('organization menu navigation', () => {
     it('maps canonical paths to Overview, Team and Settings without matching similar paths', () => {
@@ -44,4 +45,26 @@ describe('organization menu navigation', () => {
         expect(screen).toContain('const [selectedId, setSelectedId] = useState(selectedOrganizationId || \'\')')
         expect(screen).toContain('const [draft, setDraft] = useState<OrganizationSettings>({})')
     })
+
+    it('puts selected Team and Settings content first while keeping the chooser in Overview or no organization', () => {
+        expect(screen).toContain('title={selected && tab !== \'Overview\' ? tab : \'Organizations\'}')
+        expect(screen).toContain('subtitle={selected?.name || \'Your workspaces\'}')
+        expect(screen).toContain('{(!selected || tab === \'Overview\') && <GlassCard')
+        const tabs = screen.indexOf('([\'Overview\', \'Team\', \'Settings\'] as const).map')
+        expect(tabs).toBeGreaterThan(0)
+        expect(tabs).toBeLessThan(screen.indexOf('title=\'Your organizations\''))
+        expect(tabs).toBeLessThan(screen.indexOf('title=\'Members\''))
+        expect(screen).toContain('label={creating ? \'Cancel creation\' : \'Create organization\'}')
+    })
+
+    it('resets only scroll position on focus or tab changes through the existing ScrollView', () => {
+        expect(screen).toContain('const scrollViewRef = useRef<ScrollView>(null)')
+        expect(screen).toContain('scrollViewRef={scrollViewRef}')
+        expect(screen).toContain('useEffect(() => { if (focused) scrollViewRef.current?.scrollTo({ y: 0, animated: false }) }, [focused, tab])')
+        expect(ui).toContain('scrollViewRef?: Ref<ScrollView>')
+        expect(ui).toContain('<ScrollView ref={scrollViewRef} contentContainerStyle={[styles.content, contentStyle]}>')
+        const scrollEffect = screen.split('\n').find(line => line.includes('scrollViewRef.current?.scrollTo'))
+        expect(scrollEffect).not.toMatch(/setSelectedId|setDraft|setInviteEmails|setCreateName|onSelectOrganization/)
+    })
+
 })
