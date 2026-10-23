@@ -1,6 +1,6 @@
 import type { AppSettings } from '../types'
 import { createDeviceProof } from './device-proof'
-import { supportBase } from './profile-api'
+import { supportBase } from './support-endpoint'
 
 export type SupportLiveStatus = 'Connecting' | 'Live' | 'Reconnecting' | 'Refresh access to reconnect' | 'Live updates unavailable'
 export type SupportSocket = {

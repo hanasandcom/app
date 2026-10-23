@@ -3,6 +3,8 @@ import { create, isSupported } from 'react-native-passkeys'
 import type { AppSettings } from '../types'
 import { apiFetch } from './api'
 import { organizationListBase } from './organization-endpoint'
+import { supportBase } from './support-endpoint'
+export { supportBase } from './support-endpoint'
 
 export type AccountIdentity = { id: string; name: string; username: string; email?: string; active?: boolean }
 export type AccountSession = {
@@ -146,7 +148,6 @@ export async function registerAccountPasskey(settings: AppSettings) {
 export const fetchAccountSshKeys = async (settings: AppSettings) => list<AccountSshKey>(await accountRequest(settings, 'user/self/ssh-keys'), 'keys')
 export const addAccountSshKey = (settings: AppSettings, name: string, publicKey: string) => accountRequest(settings, 'user/self/ssh-keys', { method: 'POST', body: JSON.stringify({ name: name.trim(), publicKey: publicKey.trim() }) })
 export const removeAccountSshKey = (settings: AppSettings, id: number) => accountRequest(settings, `user/self/ssh-keys/${id}`, { method: 'DELETE' })
-export const supportBase = () => process.env.EXPO_PUBLIC_SUPPORT_API || 'https://support.hanasand.com/api'
 // In-memory scope only. Never log or persist this credential-bearing key.
 export function supportAccountScope(settings: AppSettings) {
     return JSON.stringify([supportBase(), settings.apiBaseUrl, settings.userId, settings.authToken, settings.impersonationToken, settings.impersonatingUserId])

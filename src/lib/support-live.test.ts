@@ -1,6 +1,6 @@
 import { afterEach, expect, mock, test } from 'bun:test'
 import type { AppSettings } from '../types'
-mock.module('./profile-api', () => ({ supportBase: () => 'https://support.synthetic.invalid/api' }))
+mock.module('./support-endpoint', () => ({ supportBase: () => 'https://support.synthetic.invalid/api' }))
 mock.module('./device-proof', () => ({ createDeviceProof: async () => { throw new Error('Real keystore must not be used.') } }))
 const { startSupportLive, supportLiveAddresses } = await import('./support-live')
 type Port = import('./support-live').SupportSocket
