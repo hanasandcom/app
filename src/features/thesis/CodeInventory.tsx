@@ -105,36 +105,109 @@ export function CodeInventory({ api, canReview, guard, host }: { api: ThesisApi;
     const stale = node && (node.reviewHash !== currentNode?.reviewHash || node.sha256 !== currentNode?.sha256)
     return (
         <View style={{ gap: 14 }}>
+
             <ThesisText heading>Source inventory and review</ThesisText>
+
             <ThesisText muted>{inventory ? `Release ${inventory.release} · ${inventory.nodes.length} indexed items` : 'Loading source inventory…'}</ThesisText>
+
             <InlineNotice message={error} />
+
             <InlineNotice message={message} tone='info' />
+
             {inventory?.sync && <ThesisText muted>{[inventory.sync.phase, inventory.sync.checkedAt, inventory.sync.warning, inventory.sync.error].filter(Boolean).join(' · ')}</ThesisText>}
-            <PillButton label='Refresh inventory and selected source' disabled={busy} onPress={() => { void load(true).then(() => { if (selected) return source(selected, false, true) }) }} />
+
+            <PillButton
+                label='Refresh inventory and selected source'
+                disabled={busy}
+                onPress={() => { void load(true).then(() => { if (selected) return source(selected, false, true) }) }}
+            />
+
             <ThesisField label='Find source files' value={query} onChange={setQuery} host={host} />
-            <Actions>{['all', 'frontend', 'api', 'database', 'source'].map(value => <PillButton key={value} label={`${kind === value ? '✓ ' : ''}${value}`} onPress={() => { setKind(value); setLimit(100) }} />)}</Actions>
-            <Actions>{['all', 'unreviewed', 'changed', 'approved'].map(value => <PillButton key={value} label={`${filter === value ? '✓ ' : ''}${value}`} onPress={() => { setFilter(value); setLimit(100) }} />)}<PillButton label={priority ? 'Sort alphabetically' : 'Sort by review priority'} onPress={() => setPriority(!priority)} /></Actions>
+
+            <Actions>{['all', 'frontend', 'api', 'database', 'source'].map(value => <PillButton
+                key={value}
+                label={`${kind === value ? '✓ ' : ''}${value}`}
+                onPress={() => { setKind(value); setLimit(100) }}
+            />)}</Actions>
+
+            <Actions>
+                {['all', 'unreviewed', 'changed', 'approved'].map(value => <PillButton
+                    key={value}
+                    label={`${filter === value ? '✓ ' : ''}${value}`}
+                    onPress={() => { setFilter(value); setLimit(100) }}
+                />)}
+                <PillButton
+                    label={priority ? 'Sort alphabetically' : 'Sort by review priority'}
+                    onPress={() => setPriority(!priority)}
+                />
+            </Actions>
+
             <ThesisText>{nodes.length} matching items</ThesisText>
-            {nodes.slice(0, limit).map(item => <PillButton key={item.id} label={`${reviewStatus(item)} · ${item.title} · ${item.file}`} onPress={() => void source(item.id)} disabled={busy} />)}
+
+            {nodes.slice(0, limit).map(item => <PillButton
+                key={item.id}
+                label={`${reviewStatus(item)} · ${item.title} · ${item.file}`}
+                onPress={() => void source(item.id)}
+                disabled={busy}
+            />)}
+
             {nodes.length > limit && <PillButton label='Load 100 more items' onPress={() => setLimit(v => v + 100)} />}
-            {node && <GlassCard><View style={{ gap: 10 }}>
-                <ThesisText heading>{node.title}</ThesisText>
-                <ThesisText>{node.file}{node.line ? `:${node.line}` : ''}</ThesisText>
-                <ThesisText muted>Content SHA256 {node.sha256}{'\n'}Review hash {node.reviewHash}</ThesisText>
-                {stale && <InlineNotice message='This source changed. Reload it before reviewing.' tone='info' />}
-                <ScrollView horizontal><Text selectable style={{ color: theme.text, fontFamily: 'Courier', fontSize: 12 }}>{node.content}</Text></ScrollView>
-                <ThesisText heading>Dependencies</ThesisText>
-                <Actions>{node.dependencies.map(id => <PillButton key={id} label={inventory?.nodes.find(item => item.id === id)?.title || id} onPress={() => void source(id)} disabled={busy} />)}</Actions>
-                {node.unresolved.length > 0 && <ThesisText muted>Inspect manually: {node.unresolved.join(' · ')}</ThesisText>}
-                <Actions key={`${host}:${node.id}:${node.reviewHash}`}>
-                    <PillButton label='Approve source' disabled={busy || !canReview || !!pending || !!stale || denied} onPress={() => review(true)} />
-                    <PillButton label='Revoke approval' disabled={busy || !canReview || !!pending || !!stale || denied} onPress={() => review(false)} />
-                    {pending && <PillButton label='Retry same review' disabled={busy || !manualChecked || pending.item.id !== node.id || !!stale || denied} onPress={() => review(pending.approved, true)} />}
-                </Actions>
-                <ThesisText heading>Review history</ThesisText>
-                {detail.history.map(event => <ThesisText key={event.event_id}>{event.approved ? 'Approved' : 'Revoked'} · {event.reviewer} · {event.reviewed_at}{event.review_hash === node.reviewHash ? ' · current source' : ' · earlier source'}</ThesisText>)}
-                {moreHistory && <PillButton label='Older reviews' disabled={busy} onPress={() => void source(node.id, true)} />}
-            </View></GlassCard>}
+
+            {node && <GlassCard>
+                <View style={{ gap: 10 }}>
+
+                    <ThesisText heading>{node.title}</ThesisText>
+
+                    <ThesisText>{node.file}{node.line ? `:${node.line}` : ''}</ThesisText>
+
+                    <ThesisText muted>Content SHA256 {node.sha256}{'\n'}Review hash {node.reviewHash}</ThesisText>
+
+                    {stale && <InlineNotice message='This source changed. Reload it before reviewing.' tone='info' />}
+
+                    <ScrollView horizontal>
+                        <Text selectable style={{ color: theme.text, fontFamily: 'Courier', fontSize: 12 }}>{node.content}</Text>
+                    </ScrollView>
+
+                    <ThesisText heading>Dependencies</ThesisText>
+
+                    <Actions>{node.dependencies.map(id => <PillButton
+                        key={id}
+                        label={inventory?.nodes.find(item => item.id === id)?.title || id}
+                        onPress={() => void source(id)}
+                        disabled={busy}
+                    />)}</Actions>
+
+                    {node.unresolved.length > 0 && <ThesisText muted>Inspect manually: {node.unresolved.join(' · ')}</ThesisText>}
+
+                    <Actions key={`${host}:${node.id}:${node.reviewHash}`}>
+
+                        <PillButton
+                            label='Approve source'
+                            disabled={busy || !canReview || !!pending || !!stale || denied}
+                            onPress={() => review(true)}
+                        />
+
+                        <PillButton
+                            label='Revoke approval'
+                            disabled={busy || !canReview || !!pending || !!stale || denied}
+                            onPress={() => review(false)}
+                        />
+
+                        {pending && <PillButton
+                            label='Retry same review'
+                            disabled={busy || !manualChecked || pending.item.id !== node.id || !!stale || denied}
+                            onPress={() => review(pending.approved, true)}
+                        />}
+                    </Actions>
+
+                    <ThesisText heading>Review history</ThesisText>
+
+                    {detail.history.map(event => <ThesisText key={event.event_id}>{event.approved ? 'Approved' : 'Revoked'} · {event.reviewer} · {event.reviewed_at}{event.review_hash === node.reviewHash ? ' · current source' : ' · earlier source'}</ThesisText>)}
+
+                    {moreHistory && <PillButton label='Older reviews' disabled={busy} onPress={() => void source(node.id, true)} />}
+                </View>
+            </GlassCard>}
+
             {inventory && <DependencyGraph nodes={inventory.nodes} selected={selected} onSelect={id => void source(id)} />}
         </View>
     )

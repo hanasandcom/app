@@ -4,8 +4,9 @@ import { useIsFocused } from '@react-navigation/native'
 import type { AppSettings } from '../../types'
 import { createThesisApi, ownAccount, ThesisError, type ThesisApi } from './api'
 import { sameContent, ThesisState, type ThesisDocument } from './document'
-import { nativeRecovery, type RecoveredDraft, type ThesisRecovery } from './recovery'
+import { nativeRecovery, initializeRecovery, type RecoveredDraft, type ThesisRecovery, type RecoveryController } from './recovery'
 import { thesisLive, type ThesisLive } from './live'
+import { canApplyThesisRead, canEditThesisInput } from './policy'
 
 export type ThesisServices = { api?: ThesisApi; live?: ThesisLive; recovery?: () => Promise<ThesisRecovery> }
 export function useThesis(settings: AppSettings, services?: ThesisServices) {
@@ -20,12 +21,11 @@ export function useThesis(settings: AppSettings, services?: ThesisServices) {
     const [recovered, setRecovered] = useState<RecoveredDraft | null>(null)
     const [connection, reconnect] = useState(0)
     const state = useRef<ThesisState | null>(null)
-    const recovery = useRef<ThesisRecovery | null>(null)
+    const recovery = useRef<RecoveryController | null>(null)
     const alive = useRef(false)
     const epoch = useRef(0)
     const generation = useRef(0)
     const pendingRead = useRef(false)
-    const recoveryPending = useRef(false)
     const authorizationVersion = useRef(0)
     const readController = useRef<AbortController | null>(null)
     const saveController = useRef<AbortController | null>(null)
@@ -36,9 +36,11 @@ export function useThesis(settings: AppSettings, services?: ThesisServices) {
     const visible = focused && active
     const persist = useCallback(async () => {
         const current = state.current
-        if (!current || !recovery.current || recoveryPending.current) return
-        try { await recovery.current.save(current.dirty || current.unknown || current.conflict ? current.draft : null, current.unknown || current.pending) }
-        catch { if (alive.current) setError('The encrypted draft could not be saved on this device. Keep this screen open until your draft is saved to the service.') }
+        const storage = recovery.current
+        const capturedEpoch = epoch.current
+        if (!current || !storage) return
+        try { await storage.persist(current.dirty || current.unknown || current.conflict ? current.draft : null, current.unknown || current.pending) }
+        catch { if (alive.current && epoch.current === capturedEpoch) setError('The encrypted draft could not be saved on this device. Keep this screen open until your draft is saved to the service.') }
     }, [])
 
     const refresh = useCallback(async () => {
@@ -53,19 +55,21 @@ export function useThesis(settings: AppSettings, services?: ThesisServices) {
             const [access, value] = await Promise.all([api.access(controller.signal), api.load(controller.signal)])
             if (!alive.current || controller.signal.aborted || epoch.current !== currentEpoch) return
             if (!access.member) throw new ThesisError('Hanasand organization membership is required.', 403)
-            if ((state.current?.operation ?? 0) === currentOperation && authorizationVersion.current === authorization) setCanEdit(access.canEdit)
+            const validTicket = canApplyThesisRead({ operation: currentOperation, authorization }, { operation: state.current?.operation ?? 0, authorization: authorizationVersion.current, pending: state.current?.pending ?? false })
+            if (validTicket) setCanEdit(access.canEdit)
             if (!state.current) state.current = new ThesisState(value)
-            else state.current.receive(value, !state.current.pending && state.current.operation === currentOperation)
+            else state.current.receive(value, validTicket)
             renew(); notify(); setError('')
             if (!recovery.current) {
-                recoveryPending.current = true
-                const storage = await (services?.recovery ? services.recovery() : nativeRecovery(settings.userId, settings.apiBaseUrl, settings.siteBaseUrl))
-                if (!alive.current || epoch.current !== currentEpoch) return
-                recovery.current = storage
-                const candidate = await storage.load()
-                if (!alive.current || epoch.current !== currentEpoch) return
+                const initialized = await initializeRecovery(
+                    services?.recovery ?? (() => nativeRecovery(settings.userId, settings.apiBaseUrl, settings.siteBaseUrl)),
+                    state.current.draft,
+                    () => alive.current && epoch.current === currentEpoch,
+                )
+                if (!initialized) return
+                const { controller, candidate } = initialized
+                recovery.current = controller
                 if (candidate?.draft && !sameContent(candidate.draft, state.current.draft)) setRecovered(candidate)
-                else recoveryPending.current = false
             }
             reconnect(v => v + 1)
             await persist()
@@ -93,8 +97,9 @@ export function useThesis(settings: AppSettings, services?: ThesisServices) {
             model.saved(sent, saved); setError(''); return true
         } catch (cause) {
             if (epoch.current === currentEpoch && alive.current) {
-                model.failed(cause instanceof ThesisError ? cause.current : undefined)
-                setError(cause instanceof ThesisError && cause.status === 409 ? cause.message : 'The save outcome is uncertain. Your draft is kept. Refresh and review before another save.')
+                const beforeSubmission = cause instanceof ThesisError && cause.submitted === false
+                model.failed(cause instanceof ThesisError ? cause.current : undefined, !beforeSubmission)
+                setError(beforeSubmission ? 'The save was cancelled before submission. Your draft is kept.' : cause instanceof ThesisError && cause.status === 409 ? cause.message : 'The save outcome is uncertain. Your draft is kept. Refresh and review before another save.')
                 if (cause instanceof ThesisError && [401, 403].includes(cause.status)) { authorizationVersion.current++; setCanEdit(false) }
             }
             return false
@@ -115,7 +120,7 @@ export function useThesis(settings: AppSettings, services?: ThesisServices) {
             readController.current?.abort(); saveController.current?.abort()
             if (state.current?.pending) state.current.failed()
             void persist()
-            state.current = null; recovery.current = null; pendingRead.current = false; recoveryPending.current = false
+            state.current = null; recovery.current = null; pendingRead.current = false
             setRecovered(null)
         }
     }, [visible, scope, api])
@@ -127,7 +132,12 @@ export function useThesis(settings: AppSettings, services?: ThesisServices) {
         const currentEpoch = epoch.current
         void (services?.live ?? thesisLive)(settings, controller.signal, value => {
             if (!alive.current || epoch.current !== currentEpoch) return
-            state.current?.receive(value); notify(); void persist()
+            const model = state.current
+            const previousConflict = model?.conflict
+            const previousDraft = model?.draft
+            model?.receive(value)
+            if (model && (previousConflict !== model.conflict || previousDraft && !sameContent(previousDraft, model.draft))) renew()
+            notify(); void persist()
         }, (message, denied) => {
             if (!alive.current || epoch.current !== currentEpoch) return
             setLive(message)
@@ -144,7 +154,7 @@ export function useThesis(settings: AppSettings, services?: ThesisServices) {
 
     function edit(value: ThesisDocument, capturedGeneration: number, group = '', structural = false) {
         const model = state.current
-        if (!alive.current || capturedGeneration !== generation.current || !canEdit || !model || model.unknown || model.conflict || recovered) return
+        if (!model || !canEditThesisInput({ alive: alive.current, generation: capturedGeneration, currentGeneration: generation.current, canEdit, unknown: model.unknown, conflict: !!model.conflict, recovering: !!recovered })) return
         try { model.edit(value, group); if (structural) renew(); notify(); void persist() }
         catch (cause) { setError((cause as Error).message) }
     }
@@ -158,7 +168,7 @@ export function useThesis(settings: AppSettings, services?: ThesisServices) {
             // Recovery always requires an explicit comparison before replacing remote content.
             current.conflict = { ...current.base }
         }
-        recoveryPending.current = false
+        recovery.current?.decide()
         setRecovered(null); renew(); notify(); void persist()
     }
     return { state: state.current, api, visible, epoch, generation, host, loading, canEdit: canEdit && !loading && !recovered, error, liveState, recovered, refresh, save, edit, resolve, recover, notify, persist, renew }

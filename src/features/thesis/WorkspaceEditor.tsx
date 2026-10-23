@@ -27,6 +27,8 @@ export function WorkspaceEditor({ value, enabled, host, guard, onChange, onConte
     const codeEnabled = sheet.settings?.codeReview ?? sheet.name.toLowerCase() === 'code'
     function updateSheets(next: Sheet[], group?: string, structural = false) {
         if (!enabled || !guard()) return
+        if (next.some(sheet => !sheet.title.trim() || sheet.title.length > 500 || sheet.name !== undefined && (!sheet.name.trim() || sheet.name.length > 100))) { setError('Enter a sheet title of 1–500 characters and a page name of 1–100 characters.'); return }
+        setError('')
         onChange({ ...value, body: writeSheets(next) }, group, structural)
     }
     function update(next: Sheet, structural = false, group = '') {
@@ -56,45 +58,166 @@ export function WorkspaceEditor({ value, enabled, host, guard, onChange, onConte
     }
     return (
         <View style={{ gap: 14 }}>
-            <Actions key={`pages:${host}`}>{sheets.map(item => <PillButton key={item.id} label={`${item.id === sheet.id ? '✓ ' : ''}${item.name}`} onPress={() => choose(item.id)} />)}</Actions>
-            <GlassCard><View style={{ gap: 10 }}>
-                <ThesisText heading>{sheet.name}</ThesisText>
-                <ThesisField label='Sheet title' value={sheet.title} host={host} enabled={enabled} onChange={title => update({ ...sheet, title }, false, 'title')} />
-                <Actions key={host}>
-                    <PillButton label={source ? 'Preview Markdown' : 'Edit Markdown'} onPress={() => { onContext(); setSource(!source) }} />
-                    {sheet.settings?.history !== false && <PillButton label='Version history' onPress={onHistory} />}
-                    {codeEnabled && <PillButton label='Source inventory and review' onPress={onCode} />}
-                </Actions>
-                {source ? <ThesisField label='Sheet Markdown' value={sheet.body} onChange={body => update({ ...sheet, body }, false, 'body')} enabled={enabled} host={host} multiline /> : <MarkdownView source={sheet.body} />}
-            </View></GlassCard>
+
+            <Actions key={`pages:${host}`}>{sheets.map(item => <PillButton
+                key={item.id}
+                label={`${item.id === sheet.id ? '✓ ' : ''}${item.name}`}
+                onPress={() => choose(item.id)}
+            />)}</Actions>
+
+            <GlassCard>
+                <View style={{ gap: 10 }}>
+
+                    <ThesisText heading>{sheet.name}</ThesisText>
+
+                    <ThesisField
+                        label='Sheet title'
+                        value={sheet.title}
+                        host={host}
+                        enabled={enabled}
+                        onChange={title => update({ ...sheet, title }, false, 'title')}
+                    />
+
+                    <Actions key={host}>
+
+                        <PillButton
+                            label={source ? 'Preview Markdown' : 'Edit Markdown'}
+                            onPress={() => { onContext(); setSource(!source) }}
+                        />
+
+                        {sheet.settings?.history !== false && <PillButton label='Version history' onPress={onHistory} />}
+
+                        {codeEnabled && <PillButton label='Source inventory and review' onPress={onCode} />}
+                    </Actions>
+
+                    {source ? <ThesisField
+                        label='Sheet Markdown'
+                        value={sheet.body}
+                        onChange={body => update({ ...sheet, body }, false, 'body')}
+                        enabled={enabled}
+                        host={host}
+                        multiline
+                    /> : <MarkdownView source={sheet.body} />}
+                </View>
+            </GlassCard>
+
             {timetable && <TimetableSheet sheet={sheet} host={host} enabled={enabled} guard={guard} onChange={update} />}
-            {plan && parsed.length > 0 && <PlanSheet data={parsed[0].data} host={host} enabled={enabled} guard={guard} onChange={data => update({ ...sheet, body: replaceTableAt(sheet.body, parsed[0], data) }, false, 'plan')} />}
-            {parsed.length > 0 && <GlassCard><View style={{ gap: 12 }}>
-                <ThesisText heading>Table editor</ThesisText>
-                <Actions>{parsed.map((_, index) => <PillButton key={index} label={`Table ${index + 1}`} onPress={() => { onContext(); setTable(index) }} />)}</Actions>
-                <TableEditor key={`${sheet.id}:${tableIndex}`} data={parsed[tableIndex].data} enabled={enabled} host={host} guard={guard} onChange={(data, structural) => update({ ...sheet, body: replaceTableAt(sheet.body, parsed[tableIndex], data) }, structural, `table:${tableIndex}`)} />
-                <PillButton key={host} label='Delete selected table' disabled={!enabled} tone='danger' onPress={() => { if (guard()) update({ ...sheet, body: sheet.body.slice(0, parsed[tableIndex].start) + sheet.body.slice(parsed[tableIndex].end) }, true) }} />
-            </View></GlassCard>}
-            {sheet.settings?.insertTable !== false && <GlassCard><View style={{ gap: 10 }}>
-                <ThesisText heading>Insert table</ThesisText>
-                <ThesisField label='Rows (1–100)' value={rows} onChange={v => { if (guard()) setRows(v) }} enabled={enabled} numeric host={host} />
-                <ThesisField label='Columns (1–20)' value={columns} onChange={v => { if (guard()) setColumns(v) }} enabled={enabled} numeric host={host} />
-                <PillButton key={host} label='Insert table' onPress={insertTable} disabled={!enabled} />
-            </View></GlassCard>}
-            <GlassCard><View style={{ gap: 10 }}>
-                <ThesisText heading>Pages and features</ThesisText>
-                <ThesisField label='Page name' value={sheet.name} host={host} enabled={enabled} onChange={name => { if (name.length <= 100) update({ ...sheet, name }, false, 'name') }} />
-                <Actions key={host}>{(['insertTable', 'history', 'codeReview'] as const).map(key => {
-                    const on = sheet.settings?.[key] ?? (key === 'codeReview' ? codeEnabled : true)
-                    return <PillButton key={key} label={`${on ? '✓ ' : ''}${key === 'insertTable' ? 'Table insertion' : key === 'history' ? 'History' : 'Code review'}`} disabled={!enabled} onPress={() => update({ ...sheet, settings: { ...sheet.settings, [key]: !on } }, true)} />
-                })}</Actions>
-                <ThesisField label='New page name' value={newName} onChange={v => { if (guard()) setNewName(v) }} enabled={enabled} host={host} />
-                <PillButton key={`new:${host}`} label='Add page' disabled={!enabled} onPress={create} />
-                <ThesisField label={`Type ${sheet.name} to delete this page`} value={deleteName} onChange={v => { if (guard()) setDeleteName(v) }} enabled={enabled} host={host} />
-                <PillButton key={`delete:${host}`} label='Delete this page' tone='danger' disabled={!enabled || sheets.length <= 1 || deleteName !== sheet.name} onPress={remove} />
-                <ThesisText muted>Deleting a page keeps earlier shared versions. Undo can restore an unsaved deletion.</ThesisText>
-                <InlineNotice message={error} />
-            </View></GlassCard>
+
+            {plan && parsed.length > 0 && <PlanSheet
+                data={parsed[0].data}
+                host={host}
+                enabled={enabled}
+                guard={guard}
+                onChange={data => update({ ...sheet, body: replaceTableAt(sheet.body, parsed[0], data) }, false, 'plan')}
+            />}
+
+            {parsed.length > 0 && <GlassCard>
+                <View style={{ gap: 12 }}>
+
+                    <ThesisText heading>Table editor</ThesisText>
+
+                    <Actions>{parsed.map((_, index) => <PillButton key={index} label={`Table ${index + 1}`} onPress={() => { onContext(); setTable(index) }} />)}</Actions>
+
+                    <TableEditor
+                        key={`${sheet.id}:${tableIndex}`}
+                        data={parsed[tableIndex].data}
+                        enabled={enabled}
+                        host={host}
+                        guard={guard}
+                        onChange={(data, structural) => update({ ...sheet, body: replaceTableAt(sheet.body, parsed[tableIndex], data) }, structural, `table:${tableIndex}`)}
+                    />
+
+                    <PillButton
+                        key={host}
+                        label='Delete selected table'
+                        disabled={!enabled}
+                        tone='danger'
+                        onPress={() => { if (guard()) update({ ...sheet, body: sheet.body.slice(0, parsed[tableIndex].start) + sheet.body.slice(parsed[tableIndex].end) }, true) }}
+                    />
+                </View>
+            </GlassCard>}
+
+            {sheet.settings?.insertTable !== false && <GlassCard>
+                <View style={{ gap: 10 }}>
+
+                    <ThesisText heading>Insert table</ThesisText>
+
+                    <ThesisField
+                        label='Rows (1–100)'
+                        value={rows}
+                        onChange={v => { if (guard()) setRows(v) }}
+                        enabled={enabled}
+                        numeric
+                        host={host}
+                    />
+
+                    <ThesisField
+                        label='Columns (1–20)'
+                        value={columns}
+                        onChange={v => { if (guard()) setColumns(v) }}
+                        enabled={enabled}
+                        numeric
+                        host={host}
+                    />
+
+                    <PillButton key={host} label='Insert table' onPress={insertTable} disabled={!enabled} />
+                </View>
+            </GlassCard>}
+
+            <GlassCard>
+                <View style={{ gap: 10 }}>
+
+                    <ThesisText heading>Pages and features</ThesisText>
+
+                    <ThesisField
+                        label='Page name'
+                        value={sheet.name}
+                        host={host}
+                        enabled={enabled}
+                        onChange={name => { if (name.length <= 100) update({ ...sheet, name }, false, 'name') }}
+                    />
+
+                    <Actions key={host}>{(['insertTable', 'history', 'codeReview'] as const).map(key => {
+                        const on = sheet.settings?.[key] ?? (key === 'codeReview' ? codeEnabled : true)
+                        return <PillButton
+                            key={key}
+                            label={`${on ? '✓ ' : ''}${key === 'insertTable' ? 'Table insertion' : key === 'history' ? 'History' : 'Code review'}`}
+                            disabled={!enabled}
+                            onPress={() => update({ ...sheet, settings: { ...sheet.settings, [key]: !on } }, true)}
+                        />
+                    })}</Actions>
+
+                    <ThesisField
+                        label='New page name'
+                        value={newName}
+                        onChange={v => { if (guard()) setNewName(v) }}
+                        enabled={enabled}
+                        host={host}
+                    />
+
+                    <PillButton key={`new:${host}`} label='Add page' disabled={!enabled} onPress={create} />
+
+                    <ThesisField
+                        label={`Type ${sheet.name} to delete this page`}
+                        value={deleteName}
+                        onChange={v => { if (guard()) setDeleteName(v) }}
+                        enabled={enabled}
+                        host={host}
+                    />
+
+                    <PillButton
+                        key={`delete:${host}`}
+                        label='Delete this page'
+                        tone='danger'
+                        disabled={!enabled || sheets.length <= 1 || deleteName !== sheet.name}
+                        onPress={remove}
+                    />
+
+                    <ThesisText muted>Deleting a page keeps earlier shared versions. Undo can restore an unsaved deletion.</ThesisText>
+
+                    <InlineNotice message={error} />
+                </View>
+            </GlassCard>
         </View>
     )
 }

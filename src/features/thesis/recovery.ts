@@ -1,4 +1,4 @@
-import { document, type ThesisDocument } from './document'
+import { document, sameContent, type ThesisDocument } from './document'
 
 export type RecoveredDraft = { version: 1; scope: string; sequence: number; savedAt: number; draft: ThesisDocument | null; uncertain: boolean }
 export type RecoveryAdapter = {
@@ -20,7 +20,7 @@ function parse(value: unknown, scope: string): RecoveredDraft {
 
 export function createRecovery(scope: string, adapter: RecoveryAdapter) {
     const aad = encoder.encode('hanasand-thesis-recovery.v1\n' + scope)
-    async function latest() {
+    async function latest(): Promise<RecoveredDraft | null> {
         const candidates = await Promise.all([0, 1].map(async slot => {
             const sealed = await adapter.read(slot)
             if (!sealed) return null
@@ -52,6 +52,33 @@ export function createRecovery(scope: string, adapter: RecoveryAdapter) {
     }
 }
 export type ThesisRecovery = ReturnType<typeof createRecovery>
+
+// A clean service snapshot never acknowledges a different encrypted draft.
+// All callers (live snapshots, save receipts and lifecycle cleanup) share this gate.
+export function recoveryController(storage: ThesisRecovery) {
+    let pending: RecoveredDraft | null = null
+    let loading = true
+    return {
+        async inspect(remote: ThesisDocument) {
+            const candidate = await storage.load()
+            pending = candidate?.draft && !sameContent(candidate.draft, remote) ? candidate : null
+            loading = false
+            return pending
+        },
+        decide() { const previous = pending; pending = null; return previous },
+        persist(draft: ThesisDocument | null, uncertain = false) {
+            return loading || pending ? Promise.resolve() : storage.save(draft, uncertain)
+        },
+    }
+}
+export type RecoveryController = ReturnType<typeof recoveryController>
+export async function initializeRecovery(factory: () => Promise<ThesisRecovery>, remote: ThesisDocument, isCurrent: () => boolean) {
+    const storage = await factory()
+    if (!isCurrent()) return null
+    const controller = recoveryController(storage)
+    const candidate = await controller.inspect(remote)
+    return isCurrent() ? { controller, candidate } : null
+}
 
 const keys = new Map<string, Promise<import('expo-crypto').AESEncryptionKey>>()
 export async function nativeRecovery(userId: string, apiBaseUrl: string, siteBaseUrl: string) {

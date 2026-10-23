@@ -7,7 +7,7 @@ import { Actions, ThesisText } from './ui'
 import { MarkdownView } from './MarkdownView'
 import { identifiedSheets } from './workspace'
 
-export function HistoryPanel({ api, enabled, guard, onRestore }: { api: ThesisApi; enabled: boolean; guard: () => boolean; onRestore: (value: ThesisDocument) => Promise<boolean> }) {
+export function HistoryPanel({ api, enabled, guard, reviewVersion, onRestore }: { api: ThesisApi; enabled: boolean; guard: () => boolean; reviewVersion: () => number; onRestore: (value: ThesisDocument) => Promise<boolean> }) {
     const [items, setItems] = useState<HistoryEntry[] | null>(null)
     const [preview, setPreview] = useState<ThesisDocument | null>(null)
     const [error, setError] = useState('')
@@ -37,27 +37,56 @@ export function HistoryPanel({ api, enabled, guard, onRestore }: { api: ThesisAp
     }
     function restore() {
         const value = preview, reviewed = operation.current
+        const content = reviewVersion()
         if (!value || current.current.busy || !current.current.enabled || !current.current.guard()) return
         Alert.alert('Restore this version?', `Replace the current shared document with revision ${value.revision}. Your current draft must save first.`, [
             { text: 'Cancel', style: 'cancel' },
             { text: 'Restore', style: 'destructive', onPress: () => {
-                if (!mounted.current || reviewed !== operation.current || current.current.busy || current.current.preview !== value || !current.current.enabled || !current.current.guard()) return
+                if (!mounted.current || reviewed !== operation.current || reviewVersion() !== content || current.current.busy || current.current.preview !== value || !current.current.enabled || !current.current.guard()) return
                 setBusy(true)
                 void onRestore(value).then(saved => { if (mounted.current) { if (saved) { setPreview(null); setItems(null) } else setError('Restore did not complete. Review your draft and refresh before trying again.') } }).finally(() => { if (mounted.current) setBusy(false) })
             } },
         ])
     }
     return <View style={{ gap: 12 }}>
+
         <ThesisText heading>Version history</ThesisText>
+
         <ThesisText muted>The immediate previous version is kept with regular checkpoints. After seven days, one checkpoint per eight-hour block remains.</ThesisText>
+
         <InlineNotice message={error} />
-        <PillButton label={busy ? 'Loading…' : 'Load version history'} onPress={() => void load()} disabled={busy || !enabled} />
-        {items?.map(item => <GlassCard key={item.revision}><View style={{ gap: 8 }}><ThesisText>{item.title} · revision {item.revision}</ThesisText><ThesisText muted>{item.saved_at}{item.immediate ? ' · immediate previous version' : ''}</ThesisText><PillButton label='Preview version' onPress={() => void show(item.revision)} disabled={busy || !enabled} /></View></GlassCard>)}
+
+        <PillButton
+            label={busy ? 'Loading…' : 'Load version history'}
+            onPress={() => void load()}
+            disabled={busy || !enabled}
+        />
+
+        {items?.map(item => <GlassCard key={item.revision}>
+            <View style={{ gap: 8 }}>
+                <ThesisText>{item.title} · revision {item.revision}</ThesisText>
+                <ThesisText muted>{item.saved_at}{item.immediate ? ' · immediate previous version' : ''}</ThesisText>
+                <PillButton label='Preview version' onPress={() => void show(item.revision)} disabled={busy || !enabled} />
+            </View>
+        </GlassCard>)}
+
         {more && <PillButton label='Older versions' disabled={busy || !enabled} onPress={() => void load(true)} />}
-        {preview && <GlassCard><View style={{ gap: 12 }}>
-            <ThesisText heading>Revision {preview.revision}</ThesisText>
-            {identifiedSheets(preview.title, preview.body).map(sheet => <View key={sheet.id} style={{ gap: 8 }}><ThesisText heading>{sheet.name}</ThesisText><MarkdownView source={sheet.title + '\n\n' + sheet.body} /></View>)}
-            <Actions><PillButton label='Restore this version' tone='danger' onPress={restore} disabled={!enabled || busy} /><PillButton label='Close preview' onPress={() => { operation.current++; setPreview(null) }} /></Actions>
-        </View></GlassCard>}
+
+        {preview && <GlassCard>
+            <View style={{ gap: 12 }}>
+
+                <ThesisText heading>Revision {preview.revision}</ThesisText>
+
+                {identifiedSheets(preview.title, preview.body).map(sheet => <View key={sheet.id} style={{ gap: 8 }}>
+                    <ThesisText heading>{sheet.name}</ThesisText>
+                    <MarkdownView source={sheet.title + '\n\n' + sheet.body} />
+                </View>)}
+
+                <Actions>
+                    <PillButton label='Restore this version' tone='danger' onPress={restore} disabled={!enabled || busy} />
+                    <PillButton label='Close preview' onPress={() => { operation.current++; setPreview(null) }} />
+                </Actions>
+            </View>
+        </GlassCard>}
     </View>
 }

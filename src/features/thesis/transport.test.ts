@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import type { AppSettings } from '../../types'
 import { createThesisApi, ThesisError } from './api'
 import { createThesisLive, type ThesisSocket } from './live'
-import { createRecovery, type RecoveryAdapter } from './recovery'
+import { createRecovery, initializeRecovery, recoveryController, type RecoveryAdapter, type ThesisRecovery } from './recovery'
 
 const settings = { userId: 'synthetic', authToken: 'synthetic-token', apiBaseUrl: 'https://thesis.invalid/api', siteBaseUrl: 'https://thesis.invalid', impersonationToken: '', impersonatingUserId: '' } as AppSettings
 const draft = { title: 'Synthetic', body: 'Private draft', revision: 1 }
@@ -66,5 +66,57 @@ describe('Thesis transport and encrypted recovery', () => {
         slots.set(0, 'corrupted')
         expect((await store.load())?.draft?.body).toBe('Private draft')
         await store.save(null); expect((await store.load())?.draft).toBeNull()
+    })
+    test('pending recovery survives clean remote plus repeated live and lifecycle persistence until explicit choice', async () => {
+        const writes: unknown[] = []
+        const candidate = { version: 1 as const, scope: 'synthetic', sequence: 4, savedAt: 123, uncertain: true, draft }
+        const storage = { async load() { return candidate }, async save(value: unknown) { writes.push(value) } }
+        const controller = recoveryController(storage)
+        const remote = { ...draft, body: 'Clean remote', revision: 9 }
+        await controller.persist(null) // live arrives before recovery inspection finishes
+        expect(await controller.inspect(remote)).toBe(candidate)
+        await controller.persist(null) // refresh completion
+        await controller.persist(null) // live snapshot
+        await controller.persist(null) // blur/background cleanup
+        expect(writes).toEqual([])
+        expect(await storage.load()).toBe(candidate)
+        controller.decide()
+        await controller.persist(null) // explicit keep-shared decision
+        expect(writes).toEqual([null])
+    })
+    test('late initialization cannot attach the old account store to a new scope', async () => {
+        let epoch = 1
+        let finishOld!: (store: ThesisRecovery) => void
+        const oldWrites: unknown[] = [], newWrites: unknown[] = []
+        const old = initializeRecovery(() => new Promise(resolve => { finishOld = resolve }), draft, () => epoch === 1)
+        epoch = 2
+        const latest = await initializeRecovery(async () => ({ async load() { return null }, async save(value) { newWrites.push(value) } }), draft, () => epoch === 2)
+        finishOld({ async load() { return null }, async save(value) { oldWrites.push(value) } })
+        expect(await old).toBeNull()
+        await latest!.controller.persist({ ...draft, body: 'New account draft' })
+        expect(oldWrites).toEqual([])
+        expect(newWrites).toHaveLength(1)
+    })
+    test('pre-abort sends no request and dispatched PUT deadline is uncertain with no retry', async () => {
+        let calls = 0
+        const api = createThesisApi(settings, async () => { calls++; return new Promise<Response>(() => {}) }, 2)
+        const pre = new AbortController(); pre.abort()
+        try { await api.save(draft, pre.signal); throw new Error('Expected cancellation') } catch (cause) { expect((cause as ThesisError).submitted).toBe(false) }
+        expect(calls).toBe(0)
+        try { await api.save(draft, new AbortController().signal); throw new Error('Expected timeout') } catch (cause) { expect((cause as ThesisError).submitted).toBe(true) }
+        expect(calls).toBe(1)
+    })
+    test('deadline covers held response body and forwards external cancellation', async () => {
+        let inner: AbortSignal | null = null
+        const api = createThesisApi(settings, async (_, __, init) => {
+            inner = init.signal as AbortSignal
+            return { ok: true, status: 200, text: () => new Promise<string>(() => {}) } as Response
+        }, 2)
+        await expect(api.load(new AbortController().signal)).rejects.toThrow('timed out')
+        expect(inner!.aborted).toBe(true)
+        const external = new AbortController()
+        const waiting = api.load(external.signal); external.abort()
+        await expect(waiting).rejects.toThrow()
+        expect(inner!.aborted).toBe(true)
     })
 })

@@ -19,6 +19,7 @@ export class ThesisState {
     unknown = false
     pending = false
     operation = 0
+    contentVersion = 0
     private undoStack: ThesisDocument[] = []
     private redoStack: ThesisDocument[] = []
     private lastEdit = 0
@@ -40,6 +41,7 @@ export class ThesisState {
         this.redoStack = []
         this.group = group; this.lastEdit = now
         this.draft = { ...next, revision: this.base.revision }
+        this.contentVersion++
     }
 
     undo(redo = false) {
@@ -49,11 +51,13 @@ export class ThesisState {
         if (!next) return
         ;(redo ? this.undoStack : this.redoStack).push(this.draft)
         this.draft = { ...next, revision: this.base.revision }; this.group = ''
+        this.contentVersion++
     }
 
     receive(value: ThesisDocument, manual = false) {
         const remote = document(value)
         if (remote.revision < this.base.revision) return
+        if (remote.revision === this.base.revision && !sameContent(remote, this.base)) throw new Error('The service returned conflicting content for one revision. Refresh before saving.')
         if (manual) this.unknown = false
         if (this.pending && this.sent && sameContent(remote, this.sent)) {
             this.base = remote; this.draft = { ...this.draft, revision: remote.revision }
@@ -64,6 +68,7 @@ export class ThesisState {
         } else if (!this.dirty) {
             this.base = remote; this.draft = { ...remote }; this.conflict = null
             this.undoStack = []; this.redoStack = []
+            this.contentVersion++
         } else if (!sameContent(this.base, remote)) this.conflict = remote
     }
 
@@ -77,7 +82,7 @@ export class ThesisState {
 
     saved(sent: ThesisDocument, value: ThesisDocument) {
         const saved = document(value)
-        if (!sameContent(sent, saved)) throw new Error('The saved response does not match this draft.')
+        if (!sameContent(sent, saved) || saved.revision < sent.revision) throw new Error('The saved response does not match this draft.')
         this.pending = false; this.unknown = false; this.sent = null
         if (saved.revision < this.base.revision) return
         this.base = saved
@@ -86,10 +91,10 @@ export class ThesisState {
         if (!this.conflict || this.conflict.revision <= saved.revision) this.conflict = null
     }
 
-    failed(remote?: ThesisDocument) {
+    failed(remote?: ThesisDocument, uncertain = true) {
         this.pending = false; this.sent = null
         if (remote) this.conflict = document(remote)
-        else this.unknown = true
+        else this.unknown = uncertain
     }
 
     resolve(useLocal: boolean) {
@@ -97,5 +102,6 @@ export class ThesisState {
         this.base = this.conflict
         this.draft = useLocal ? { ...this.draft, revision: this.base.revision } : { ...this.base }
         this.conflict = null; this.undoStack = []; this.redoStack = []
+        this.contentVersion++
     }
 }

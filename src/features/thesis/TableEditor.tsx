@@ -35,24 +35,83 @@ export function TableEditor({ data, onChange, enabled, host, guard }: { data: Ta
     }
     return (
         <View style={{ gap: 12 }}>
-            <ScrollView horizontal><View>{data.cells.slice(0, limit).map((line, r) => <View key={`${host}:${r}`} style={{ flexDirection: 'row' }}>{line.map((_, c) => <Pressable key={c} accessibilityRole='button' accessibilityLabel={`Select ${columnName(c)}${r + 1}`} onPress={() => select({ row: r, col: c })} style={{ width: data.widths[c] || 180, minHeight: data.heights[r] || 48, padding: 10, borderWidth: 1, borderColor: row === r && col === c ? theme.accent : theme.surfaceBorder }}><ThesisText>{cellValue(data.cells, r, c)}</ThesisText></Pressable>)}</View>)}</View></ScrollView>
+
+            <ScrollView horizontal>
+                <View>{data.cells.slice(0, limit).map((line, r) => <View key={`${host}:${r}`} style={{ flexDirection: 'row' }}>{line.map((_, c) => <Pressable
+                    key={c}
+                    accessibilityRole='button'
+                    accessibilityLabel={`Select ${columnName(c)}${r + 1}`}
+                    onPress={() => select({ row: r, col: c })}
+                    style={{ width: data.widths[c] || 180, minHeight: data.heights[r] || 48, padding: 10, borderWidth: 1, borderColor: row === r && col === c ? theme.accent : theme.surfaceBorder }}
+                >
+                    <ThesisText>{cellValue(data.cells, r, c)}</ThesisText>
+                </Pressable>)}</View>)}</View>
+            </ScrollView>
+
             {data.cells.length > limit && <PillButton label='Show more rows' onPress={() => setLimit(v => v + 30)} />}
-            <ThesisField key={`${address}:${host}`} label={`Cell ${address}`} value={data.cells[row][col]} onChange={change} enabled={enabled} multiline host={host} />
+
+            <ThesisField
+                key={`${address}:${host}`}
+                label={`Cell ${address}`}
+                value={data.cells[row][col]}
+                onChange={change}
+                enabled={enabled}
+                multiline
+                host={host}
+            />
+
             <Actions>
-                <PillButton label='Previous cell' onPress={() => select({ row: col ? row : Math.max(0, row - 1), col: col ? col - 1 : data.cells[0].length - 1 })} />
-                <PillButton label='Next cell' onPress={() => select({ row: col + 1 < data.cells[0].length ? row : Math.min(data.cells.length - 1, row + 1), col: (col + 1) % data.cells[0].length })} />
+
+                <PillButton
+                    label='Previous cell'
+                    onPress={() => select({ row: col ? row : Math.max(0, row - 1), col: col ? col - 1 : data.cells[0].length - 1 })}
+                />
+
+                <PillButton
+                    label='Next cell'
+                    onPress={() => select({ row: col + 1 < data.cells[0].length ? row : Math.min(data.cells.length - 1, row + 1), col: (col + 1) % data.cells[0].length })}
+                />
             </Actions>
+
             <Actions>
+
                 <PillButton label='Row above' disabled={!enabled} onPress={() => structure('row', Math.max(1, row))} />
+
                 <PillButton label='Row below' disabled={!enabled} onPress={() => structure('row', row + 1)} />
+
                 <PillButton label='Delete row' disabled={!enabled || row === 0} onPress={() => structure('row', row, true)} />
+
                 <PillButton label='Column left' disabled={!enabled} onPress={() => structure('column', col)} />
+
                 <PillButton label='Column right' disabled={!enabled} onPress={() => structure('column', col + 1)} />
-                <PillButton label='Delete column' disabled={!enabled || data.cells[0].length === 1} onPress={() => structure('column', col, true)} />
+
+                <PillButton
+                    label='Delete column'
+                    disabled={!enabled || data.cells[0].length === 1}
+                    onPress={() => structure('column', col, true)}
+                />
             </Actions>
-            <ThesisField label={`Column ${columnName(col)} width (40–1200)`} value={String(data.widths[col] || 180)} enabled={enabled} host={host} numeric onChange={value => { if (!guard() || !Number.isFinite(Number(value))) return; const widths = [...data.widths]; widths[col] = Math.max(40, Math.min(1200, Number(value))); onChange({ ...data, widths }) }} />
-            <ThesisField label={`Row ${row + 1} height (40–1200)`} value={String(data.heights[row] || 48)} enabled={enabled} host={host} numeric onChange={value => { if (!guard() || !Number.isFinite(Number(value))) return; const heights = [...data.heights]; heights[row] = Math.max(40, Math.min(1200, Number(value))); onChange({ ...data, heights }) }} />
+
+            <ThesisField
+                label={`Column ${columnName(col)} width (40–1200)`}
+                value={String(data.widths[col] || 180)}
+                enabled={enabled}
+                host={host}
+                numeric
+                onChange={value => { if (!guard() || !Number.isFinite(Number(value))) return; const widths = [...data.widths]; widths[col] = Math.max(40, Math.min(1200, Number(value))); onChange({ ...data, widths }) }}
+            />
+
+            <ThesisField
+                label={`Row ${row + 1} height (40–1200)`}
+                value={String(data.heights[row] || 48)}
+                enabled={enabled}
+                host={host}
+                numeric
+                onChange={value => { if (!guard() || !Number.isFinite(Number(value))) return; const heights = [...data.heights]; heights[row] = Math.max(40, Math.min(1200, Number(value))); onChange({ ...data, heights }) }}
+            />
+
             <ThesisField label='Cell range to share' value={range} onChange={setRange} />
+
             <PillButton label='Share selected cells' onPress={shareRange} />
         </View>
     )

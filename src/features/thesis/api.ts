@@ -6,7 +6,7 @@ export type ReviewEvent = { event_id: string; item_id: string; content_hash: str
 export type SourceNode = { id: string; kind: 'frontend' | 'api' | 'database' | 'source'; title: string; file: string; line?: number; sha256: string; reviewHash: string; dependencies: string[]; dependencyCount: number; unresolved: string[]; content?: string; review?: ReviewEvent }
 export type Inventory = { version: string | number; hash: string; nodes: SourceNode[]; release: string; revision?: string; sync?: { phase?: string; checkedAt?: string; error?: string; warning?: string } }
 export class ThesisError extends Error {
-    constructor(message: string, readonly status = 0, readonly current?: ThesisDocument) { super(message) }
+    constructor(message: string, readonly status = 0, readonly current?: ThesisDocument, readonly submitted?: boolean) { super(message) }
 }
 export type ThesisFetch = (settings: AppSettings, url: string, init: RequestInit) => Promise<Response>
 const fetchDefault: ThesisFetch = async (settings, url, init) => (await import('../../lib/api')).apiFetch(settings, url, init)
@@ -44,33 +44,43 @@ export function parseInventory(value: unknown): Inventory {
     return { ...v, nodes } as Inventory
 }
 
-export function createThesisApi(settings: AppSettings, transport: ThesisFetch = fetchDefault) {
+export function createThesisApi(settings: AppSettings, transport: ThesisFetch = fetchDefault, deadlineMs = 20000) {
     const fixed = { ...settings, selectedOrganizationId: undefined }
     async function request(path: string, signal: AbortSignal, body?: unknown, site = false, method = body === undefined ? 'GET' : 'PUT') {
         ownAccount(fixed)
         const url = thesisEndpoint(site ? fixed.siteBaseUrl : fixed.apiBaseUrl, path)
         const controller = new AbortController()
         const abort = () => controller.abort()
+        let dispatched = false
+        let rejectAbort!: (error: ThesisError) => void
+        const interrupted = new Promise<never>((_, reject) => { rejectAbort = reject })
+        const onAbort = () => rejectAbort(new ThesisError('The Thesis request timed out or was cancelled. Refresh before trying again.', 0, undefined, method !== 'GET' && dispatched))
+        controller.signal.addEventListener('abort', onAbort, { once: true })
         signal.addEventListener('abort', abort, { once: true })
         if (signal.aborted) controller.abort()
-        const timeout = setTimeout(abort, 20000)
+        const timeout = setTimeout(abort, Math.max(1, Math.min(60000, deadlineMs)))
         try {
-            const response = await transport(fixed, url, {
-                method, signal: controller.signal, credentials: 'omit',
-                headers: { Accept: 'application/json', 'Content-Type': 'application/json', Authorization: `Bearer ${fixed.authToken}`, id: fixed.userId, ...(site && method !== 'GET' ? { Origin: new URL(fixed.siteBaseUrl).origin } : {}) },
-                body: body === undefined ? undefined : JSON.stringify(body),
-            })
-            if (response.status === 204) return null
-            const raw = await response.text()
-            if (raw.length > 8_000_000) throw new ThesisError('The Thesis response exceeded its limit.')
-            let value: unknown
-            try { value = JSON.parse(raw) } catch { throw new ThesisError('The Thesis service returned an invalid response.', response.status) }
-            if (!response.ok) {
-                if (response.status === 409 && !site) throw new ThesisError('Another editor saved a newer version. Your draft is kept.', 409, document(value))
-                throw new ThesisError([401, 403].includes(response.status) ? 'Your Thesis access could not be verified. Refresh after signing in with an eligible account.' : String(row(value).error || 'The Thesis request failed. Refresh before trying again.'), response.status)
+            const work = async () => {
+                if (controller.signal.aborted) throw new ThesisError('The request was cancelled before submission.', 0, undefined, false)
+                dispatched = true
+                const response = await transport(fixed, url, {
+                    method, signal: controller.signal, credentials: 'omit',
+                    headers: { Accept: 'application/json', 'Content-Type': 'application/json', Authorization: `Bearer ${fixed.authToken}`, id: fixed.userId, ...(site && method !== 'GET' ? { Origin: new URL(fixed.siteBaseUrl).origin } : {}) },
+                    body: body === undefined ? undefined : JSON.stringify(body),
+                })
+                if (response.status === 204) return null
+                const raw = await response.text()
+                if (raw.length > 8_000_000) throw new ThesisError('The Thesis response exceeded its limit.')
+                let value: unknown
+                try { value = JSON.parse(raw) } catch { throw new ThesisError('The Thesis service returned an invalid response.', response.status) }
+                if (!response.ok) {
+                    if (response.status === 409 && !site) throw new ThesisError('Another editor saved a newer version. Your draft is kept.', 409, document(value))
+                    throw new ThesisError([401, 403].includes(response.status) ? 'Your Thesis access could not be verified. Refresh after signing in with an eligible account.' : String(row(value).error || 'The Thesis request failed. Refresh before trying again.'), response.status)
+                }
+                return value
             }
-            return value
-        } finally { clearTimeout(timeout); signal.removeEventListener('abort', abort) }
+            return await Promise.race([work(), interrupted])
+        } finally { clearTimeout(timeout); signal.removeEventListener('abort', abort); controller.signal.removeEventListener('abort', onAbort) }
     }
     return {
         async access(signal: AbortSignal) {
