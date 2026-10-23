@@ -153,10 +153,69 @@ test('accepted prompt clears only the matching draft and preserves edits and lif
     }
     const component = await Bun.file(new URL('../components/AiMetricsPrompt.tsx', import.meta.url)).text()
     expect(component).toContain('aiPromptDraftAfterAcceptance(latest.current, snapshot)')
-    expect(component).toContain('if (!mounted.current) return')
+    expect(component).toContain('if (!mounted.current || accepted')
     expect(component).toContain('latest.current.revision !== snapshot.revision')
     expect(component).not.toContain('setPrompt(\'\')')
     const screen = await Bun.file(new URL('../screens/AiMetricsScreen.tsx', import.meta.url)).text()
     expect(screen).toContain('onSend={send}')
     expect(screen).toContain('onAccepted()\n                        setTestStatus(\'Selected client is generating…\')')
+})
+
+
+test('captured input callbacks cannot restore an accepted prompt after send returns idle', async () => {
+    const state = { mounted: true, disabled: false, busy: false, pending: false, currentGeneration: 0 }
+    let prompt = 'Reviewed synthetic prompt'
+    const capture = () => {
+        const generation = state.currentGeneration
+        return (value: string) => { if (api.canEditAiPrompt({ ...state, generation })) prompt = value }
+    }
+    const oldCallback = capture()
+    oldCallback('Reviewed synthetic prompt')
+    expect(prompt).toBe('Reviewed synthetic prompt')
+    state.pending = true; state.currentGeneration++ // Immediate send claim, before a disabled render.
+    oldCallback('Queued before busy rendered')
+    expect(prompt).toBe('Reviewed synthetic prompt')
+    state.currentGeneration++; prompt = '' // Accepted callback clears only the reviewed draft.
+    const acceptedCallback = capture()
+    oldCallback('Queued after acceptance')
+    acceptedCallback('Still pending')
+    expect(prompt).toBe('')
+    state.pending = false; state.currentGeneration++ // Completion invalidates every earlier callback.
+    oldCallback('Late callback after idle')
+    acceptedCallback('Late accepted-generation callback after idle')
+    expect(prompt).toBe('')
+    capture()('Fresh idle draft')
+    expect(prompt).toBe('Fresh idle draft')
+    const component = await Bun.file(new URL('../components/AiMetricsPrompt.tsx', import.meta.url)).text()
+    expect(component).toContain('canEditAiPrompt({ mounted: mounted.current')
+    expect(component).toContain('generation: capturedGeneration, currentGeneration: generation.current')
+    expect(component).toContain('onChangeText={value => edit(value, inputGeneration)}')
+    expect(component).toContain('pending.current = true; generation.current++')
+    expect(component).toContain('accepted = true; generation.current++')
+    expect(component).toContain('pending.current = false; generation.current++')
+    expect(component).toContain('generation.current !== snapshot.inputGeneration')
+    expect(component).toContain('await onSend(snapshot.prompt, snapshot.epoch')
+})
+test('input ownership rejects unmounted, disabled, busy and pending events independently', () => {
+    const valid = { mounted: true, disabled: false, busy: false, pending: false, generation: 4, currentGeneration: 4 }
+    expect(api.canEditAiPrompt(valid)).toBe(true)
+    for (const change of [{ mounted: false }, { disabled: true }, { busy: true }, { pending: true }, { generation: 3 }, { currentGeneration: 5 }])
+        expect(api.canEditAiPrompt({ ...valid, ...change })).toBe(false)
+})
+test('pre-send failure retains its draft but only a fresh idle callback can edit it', async () => {
+    const state = { mounted: true, disabled: false, busy: false, pending: false, currentGeneration: 0 }
+    let prompt = 'Retained pre-send draft'
+    const capture = () => {
+        const generation = state.currentGeneration
+        return (value: string) => { if (api.canEditAiPrompt({ ...state, generation })) prompt = value }
+    }
+    const oldCallback = capture()
+    state.pending = true; state.currentGeneration++
+    try { await Promise.reject(new api.AiMetricsPromptError('Synthetic validation failure', false)) }
+    catch { expect(prompt).toBe('Retained pre-send draft') }
+    finally { state.pending = false; state.currentGeneration++ }
+    oldCallback('Stale value')
+    expect(prompt).toBe('Retained pre-send draft')
+    capture()('Corrected pre-send draft')
+    expect(prompt).toBe('Corrected pre-send draft')
 })

@@ -20,6 +20,9 @@ export type AiMetricsObserver = {
 }
 export type AiTestMessage = { role: 'user' | 'assistant'; content: string }
 export type AiPromptDraft = { prompt: string; epoch: number; clientName: string; revision: number }
+export function canEditAiPrompt(state: { mounted: boolean; disabled: boolean; busy: boolean; pending: boolean; generation: number; currentGeneration: number }) {
+    return state.mounted && !state.disabled && !state.busy && !state.pending && state.generation === state.currentGeneration
+}
 export function aiPromptDraftAfterAcceptance(current: AiPromptDraft, reviewed: AiPromptDraft) {
     return current.epoch === reviewed.epoch && current.clientName === reviewed.clientName
         && current.revision === reviewed.revision && current.prompt === reviewed.prompt ? '' : current.prompt
