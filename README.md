@@ -44,6 +44,8 @@ Findings uses the scoped website feed, opaque cursor pages, loaded-result search
 Rule Tuning uses the fixed Hanasand workspace: review log patterns, edit and preview rules against stored logs, create a rule, and inspect or cancel reprocessing jobs. Starting reprocessing requires confirmation because it can permanently remove eligible matching Low logs and originals. Interrupted changes require refresh and review. API reference and OpenAPI JSON use the website’s public contract; application examples are a pinned copy of the website’s fictional examples. Neither reference screen submits the described API operations.
 
 
+Thesis opens the shared Hanasand document in a native editor with sheet switching, Markdown and tables, Plan, Timetable and PDF sharing. It uses revision checks, explicit conflict review, version history, source inventory and review, and a dependency graph. Unsaved drafts are encrypted on the device. Editing requires fresh Thesis permissions on your own account; an interrupted save requires reconciliation before another write. These workflows have local contract and model checks; device behavior and production authorization still need verification.
+
 ## Mobile releases
 
 Mobile builds use [EAS Build](https://docs.expo.dev/build/introduction/) and the manual GitHub Actions workflow at **Actions → Mobile EAS build → Run workflow**. It supports iOS, Android, or both, with a `preview` (internal distribution) or `production` (store-signed artifact) profile. The workflow only builds artifacts; it does not submit them to either app store or publish an update. Preview builds are the default.

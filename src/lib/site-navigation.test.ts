@@ -138,3 +138,10 @@ it('shares the native load-test workflow between its public and administration m
         expect(nativeToolForPath(path)).toBe('load-tests')
     }
 })
+
+it('opens Thesis in its native shared document workflow', () => {
+    const item = leaves(siteNavigation('synthetic-user')).find(row => row.path === '/thesis')
+    expect(item?.tab).toBe('Tools')
+    expect(item?.disabledReason).toBeUndefined()
+    expect(nativeToolForPath(item?.path)).toBe('thesis')
+})
