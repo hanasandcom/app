@@ -244,7 +244,12 @@ export function HomeScreen({
             setDesktopStatus(await fetchDesktopAgentStatus(settings))
         } catch (cause) {
             setDesktopStatus(null)
-            if (explicit) setDesktopIssue(cause instanceof Error ? cause.message : 'Desktop connection failed.')
+            if (explicit) {
+                const message = cause instanceof Error ? cause.message : 'Desktop connection failed.'
+                setDesktopIssue(/timed out|timeout/i.test(message)
+                    ? 'Desktop agent did not respond. Open Hanasand on your Mac, then try again.'
+                    : message)
+            }
         } finally {
             setRemoteBusy('')
         }

@@ -12,6 +12,7 @@ const defaultMailApiBaseUrl = process.env.EXPO_PUBLIC_MAIL_API_BASE_URL || 'http
 const desktopAgentCoverTrafficIntervalMs = 1_000
 const desktopAgentPresenceCacheMs = 15_000
 const desktopAgentDiscoveryTimeoutMs = 12_000
+const desktopAgentStatusRetryDelayMs = 300
 const desktopAgentMaximumQueuedRequests = 32
 const desktopAgentMaximumInFlightRequests = 4
 
@@ -389,6 +390,7 @@ async function performDesktopAgentPath(settings: AppSettings, path: string, init
     const certificate = desktopAgentSessionCertificate(settings)
 
     let lastError: unknown
+    let timedOutStatusEndpoint: (typeof endpoints)[number] | undefined
     for (const endpoint of endpoints) {
         let response: Response
         try {
@@ -396,10 +398,27 @@ async function performDesktopAgentPath(settings: AppSettings, path: string, init
             response = await requestPinnedDesktopAgent(endpoint, path, signedInit)
         } catch (error) {
             lastError = error
+            if (path === 'status' && error instanceof Error && /timed out|timeout/i.test(error.message)) {
+                timedOutStatusEndpoint ??= endpoint
+            }
             continue
         }
         if (response.status !== 401) return openDesktopAgentResponse(response, certificate)
         lastError = new Error('Desktop agent rejected this login session.')
+    }
+
+    // Status is a read-only check. Retry one timeout once to recover from a transient
+    // mobile-network interruption; never replay commands or other desktop writes.
+    if (timedOutStatusEndpoint) {
+        await new Promise(resolve => setTimeout(resolve, desktopAgentStatusRetryDelayMs + Math.floor(Math.random() * desktopAgentStatusRetryDelayMs)))
+        try {
+            const signedInit = await desktopAgentProofRequest(path, init, certificate)
+            const response = await requestPinnedDesktopAgent(timedOutStatusEndpoint, path, signedInit)
+            if (response.status !== 401) return openDesktopAgentResponse(response, certificate)
+            lastError = new Error('Desktop agent rejected this login session.')
+        } catch (error) {
+            lastError = error
+        }
     }
 
     throw lastError instanceof Error ? lastError : new Error('Desktop agent is unreachable.')

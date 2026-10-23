@@ -312,6 +312,32 @@ describe('desktop command proof', () => {
         await expect(fetchDesktopAgentStatus(requestSettings)).rejects.toThrow('without the required encryption envelope')
     })
 
+    it('retries a timed-out read-only desktop status once and never retries a command', async () => {
+        const requestSettings = { ...settings, authToken: 'status-timeout-token', desktopAgentBaseUrl: 'https://desktop.example.test:45731' }
+        mockFetch(async () => new Response(JSON.stringify({ agents: [{
+            deviceId: 'mac', endpoints: ['https://desktop.example.test:45731'], tlsCertificateSha256: 'c'.repeat(64),
+        }] }), { status: 200 }))
+        const certificate = createHash('sha256')
+            .update(`hanasand-desktop-agent-session-v1\n${requestSettings.userId}\n${requestSettings.authToken}`)
+            .digest('hex')
+        const key = createHash('sha256').update(`hanasand-desktop-agent-transport-v1\n${certificate}`).digest()
+        let statusCalls = 0
+        pinnedRequest = async (_endpoint, path) => {
+            if (path === 'status' && ++statusCalls === 1) throw new Error('The request timed out.')
+            const iv = randomBytes(12)
+            const cipher = createCipheriv('aes-256-gcm', key, iv)
+            const encrypted = Buffer.concat([cipher.update(JSON.stringify({ ok: true, agent: 'Hanasand' })), cipher.final(), cipher.getAuthTag()])
+            return Response.json({ encrypted: true, payload: Buffer.concat([iv, encrypted]).toString('base64') })
+        }
+        await expect(fetchDesktopAgentStatus(requestSettings)).resolves.toMatchObject({ ok: true, agent: 'Hanasand' })
+        expect(statusCalls).toBe(2)
+
+        statusCalls = 0
+        pinnedRequest = async () => { statusCalls++; throw new Error('The request timed out.') }
+        await expect(runDesktopAgentCommand(requestSettings, 'mac_control_status')).rejects.toThrow('The request timed out.')
+        expect(statusCalls).toBe(1)
+    }, 5_000)
+
     it('encrypts commands and authenticates the exact encrypted request body with HMAC-SHA256', async () => {
         const requestSettings = { ...settings, authToken: 'encrypted-command-token', desktopAgentBaseUrl: 'https://desktop.example.test:45731' }
         const command = `mac_control_type_text:${'ø🚲'.repeat(50)}`
