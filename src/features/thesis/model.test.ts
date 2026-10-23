@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import { readSheets, writeSheets, tables, writeTable, reshape, cellValue } from './workspace'
 import { activityError, isoWeek, timetable } from './timetableData'
 import { safeLink } from './markdown'
+import { planModel, updatePlan } from './plan'
+import { timetableHtml } from './pdf'
 
 describe('website-compatible Thesis models', () => {
     test('workspace lengths preserve marker examples and malformed metadata', () => {
@@ -35,5 +37,21 @@ describe('website-compatible Thesis models', () => {
         const result = timetable({ cells: [['Week', 'Research', 'Total'], ['43', '2', '2']], widths: [], heights: [] }, { startYear: 2026, activities: [] })
         expect(result.weeks[0].legacy).toBe(true)
         expect(result.weeks[0].activities).toEqual([])
+    })
+    test('plan aliases and subgoals update progress without changing estimates', () => {
+        const data = { cells: [['Goal', 'Effort', 'State', '% complete', 'Checklist'], ['Ship', '12', 'Planned', '0', '']], widths: [], heights: [] }
+        const next = updatePlan(data, 1, 4, '- [x] First\n- [ ] Second')
+        expect(next.cells[1][3]).toBe('50')
+        expect(planModel(next).hours).toBe(12)
+        expect(planModel(next).fields.task).toBe(0)
+    })
+    test('local PDF HTML escapes all supplied prose and retains Unicode', () => {
+        const log = { startYear: 2026, activities: [{ id: 'a', date: '2026-10-23', hours: 2, category: 'Æøå', description: '<script>bad()</script>' }] }
+        const model = timetable({ cells: [['Week', 'Æøå', 'Total']], widths: [], heights: [] }, log)
+        const html = timetableHtml('<img onerror=x>', model, log)
+        expect(html).not.toContain('<script>')
+        expect(html).not.toContain('<img onerror')
+        expect(html).toContain('Æøå')
+        expect(html).toContain('Daily totals')
     })
 })
