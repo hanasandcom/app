@@ -17,7 +17,7 @@ export function FindingEvidence({ items }: { items: Evidence[] }) {
             <Text style={meta}>Published: {time(item.publishedAt)}</Text>
             <Text style={meta}>Collected: {time(item.collectedAt)}</Text>
             {!!item.redactionState && <Text style={meta}>{label(item.redactionState)}</Text>}
-            <Text selectable style={{ color: theme.text, fontSize: 14, lineHeight: 22 }}>{item.excerpt}</Text>
+            <Text selectable style={{ color: theme.text, fontSize: 14, lineHeight: 22 }}>{item.safeToShow ? item.excerpt : 'The excerpt is restricted. Only evidence metadata is shown.'}</Text>
             <Text selectable style={meta}>Capture: {item.captureId || 'Not recorded'}</Text>
             <Text selectable style={meta}>Content hash: {item.contentHash || 'Not recorded'}</Text>
         </GlassCard>)}

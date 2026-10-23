@@ -31,7 +31,7 @@ test('uses finite website GET and exact scoped query/auth transport, preserving 
 test('projects complete embedded evidence and exact linked case identity without detail calls', async () => {
     const page = await loadFindings(settings)
     expect(page.items[0]).toMatchObject({ title: 'Example', actor: 'Actor name', summary: 'Example was mentioned by the source.', observation: 'Historical match', recommendedAction: 'Review the captured evidence.' })
-    expect(page.items[0].evidence[0]).toEqual({ id: 'evidence', sourceName: 'Source', captureMode: 'metadata_only', redactionState: 'metadata_only', excerpt: 'Source claim', contentHash: 'sha256hash', captureId: 'capture', observedAt: '2026-10-23T01:00:00.000Z', publishedAt: '2026-10-23T00:30:00.000Z', collectedAt: '2026-10-23T01:30:00.000Z' })
+    expect(page.items[0].evidence[0]).toEqual({ id: 'evidence', sourceName: 'Source', captureMode: 'metadata_only', redactionState: 'metadata_only', excerpt: 'Source claim', safeToShow: true, contentHash: 'sha256hash', captureId: 'capture', observedAt: '2026-10-23T01:00:00.000Z', publishedAt: '2026-10-23T00:30:00.000Z', collectedAt: '2026-10-23T01:30:00.000Z' })
     expect(findingCaseRef(page.items[0])).toEqual({ caseId: 'case-one', organizationId: 'org', alertId: 'finding' })
     expect(calls).toHaveLength(1)
 })
@@ -124,4 +124,31 @@ test('a valid personal case preserves absent organization instead of inventing a
     handle = () => Response.json(feed({ organization: undefined, alerts: [source({ tenantId: 'user', organizationId: undefined, workflowContext: { caseId: 'personal-case' } })] }))
     const page = await loadFindings({ ...settings, selectedOrganizationId: 'personal' })
     expect(findingCaseRef(page.items[0])).toEqual({ caseId: 'personal-case', alertId: 'finding', organizationId: undefined })
+})
+
+test('restricted evidence never projects arbitrary private prose while metadata and counts remain', async () => {
+    for (const flags of [{ redactionState: 'raw_sensitive' }, { safeToShow: false, redactionState: 'public_safe' }]) {
+        const privateProse = 'A private sentence without any credential-shaped pattern.'
+        handle = () => Response.json(feed({ alerts: [source({ evidence: [{ id: 'private-evidence', sourceName: 'Source', captureMode: 'metadata_only', observedAt: '2026-10-23T01:00:00Z', contentHash: 'retained-hash', provenance: { captureId: 'retained-capture' }, excerpt: privateProse, ...flags }] })] }))
+        const page = await loadFindings(settings)
+        expect(page.items[0].evidence).toHaveLength(1)
+        expect(page.items[0].evidence[0]).toMatchObject({ id: 'private-evidence', safeToShow: false, excerpt: '', sourceName: 'Source', contentHash: 'retained-hash', captureId: 'retained-capture' })
+        expect(JSON.stringify(page)).not.toContain(privateProse)
+    }
+    const component = await Bun.file(new URL('../components/FindingEvidence.tsx', import.meta.url)).text()
+    expect(component).toContain('item.safeToShow ? item.excerpt : \'The excerpt is restricted.')
+})
+test('prefixed, embedded, escaped and double-encoded JSON exposes only allowed metadata', () => {
+    const metadata = { actor: 'Group', unknown: 'private-other-prose', token: 'private token with spaces' }
+    const json = JSON.stringify(metadata)
+    for (const value of [json, `Capture payload ${json}`, `Prefix ${json} suffix`, json.replaceAll('"', '\\"'), JSON.stringify(json), JSON.stringify(JSON.stringify(json)), 'Capture "token":"private token with spaces"']) {
+        const display = findingExcerpt(value)
+        expect(display).not.toContain('private-other-prose')
+        expect(display).not.toContain('private token with spaces')
+        expect(display).not.toContain('unknown')
+        expect(display === 'Group' || display === 'Evidence metadata is available.').toBe(true)
+    }
+    expect(findingExcerpt('Prefix {"actor":"Group","unknown":"unterminated')).toBe('Evidence metadata is available.')
+    expect(findingExcerpt('Safe plain source excerpt.')).toBe('Safe plain source excerpt.')
+    expect(findingText('"token":"private value with spaces"')).not.toContain('private value')
 })
