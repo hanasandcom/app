@@ -97,7 +97,7 @@ async function request(settings: AppSettings, path: string, signal: AbortSignal,
         const endpoint = loadEndpoint(settings.apiBaseUrl, path)
         if (controller.signal.aborted) throw new LoadTestError('Request cancelled before submission.')
         dispatched = true
-        const response = await apiFetch(settings, endpoint, { method: write ? 'POST' : 'GET', ...(write ? { body: JSON.stringify(body) } : {}), signal: controller.signal, credentials: 'omit', redirect: 'error', cache: 'no-store', headers: { Accept: 'application/json', 'Content-Type': 'application/json' } })
+        const response = await apiFetch(settings, endpoint, { method: write ? 'POST' : 'GET', ...(write ? { body: JSON.stringify(body) } : {}), signal: controller.signal, credentials: 'omit', redirect: 'error', cache: 'no-store', headers: { Accept: 'application/json', 'Content-Type': 'application/json', Authorization: `Bearer ${settings.authToken}`, id: settings.userId, ...(settings.impersonationToken ? { 'x-impersonation-token': settings.impersonationToken } : {}) } })
         const declared = response.headers?.get('content-length')
         if (declared && Number(declared) > 2 * 1024 * 1024) throw new LoadTestError('Result exceeded the 2 MiB response limit.', response.status, write)
         const raw = await response.text()
@@ -143,3 +143,5 @@ export async function rerunLoadTest(settings: AppSettings, id: string, signal: A
 export type LoadReadTicket = { operation: number; serial: number }
 export const canReconcileLoad = (ticket: LoadReadTicket | null, operation: number, serial: number) => ticket !== null && ticket.operation === operation && ticket.serial === serial
 export const canEditLoad = (state: { active: boolean; pending: boolean; locked: boolean; generation: number }, captured: number) => state.active && !state.pending && !state.locked && state.generation === captured
+
+export const canReadLoadInput = (state: { active: boolean; pending: boolean; reading: boolean; generation: number }, captured: number) => state.active && !state.pending && !state.reading && state.generation === captured

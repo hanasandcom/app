@@ -54,7 +54,7 @@ export function LoadTestHistory({ rows, lane, onLane, onSelect, query, onQuery, 
 }) {
     const [page, setPage] = useState(0), current = Math.min(page, Math.max(0, Math.ceil((rows?.length || 0) / 10) - 1))
     return <GlassCard style={{ gap: 12 }}>
-        <SectionTitle title='Result history' eyebrow='Account Mine · public Global' body='Latest 50 per lane. The server provides no older-page cursor.' />
+        <SectionTitle title='Result history' eyebrow='Account Mine · public Global' body='Latest 50 checks in each view. Open another check using its scan ID.' />
         <View style={{ flexDirection: 'row', gap: 8 }}>
             <PillButton label='My checks' tone={lane === 'mine' ? 'accent' : 'default'} disabled={disabled} onPress={() => { setPage(0); onLane('mine') }} />
             <PillButton label='Global checks' tone={lane === 'recent' ? 'accent' : 'default'} disabled={disabled} onPress={() => { setPage(0); onLane('recent') }} />
@@ -120,7 +120,7 @@ export function LoadTestReport({ test, disabled, busy, liveStatus, participants,
                 <PillButton label='Share result link' onPress={onShare} />
                 <PillButton label='Review rerun' disabled={disabled || ['queued', 'running'].includes(test.status)} onPress={onRerun} />
             </View>
-            <Copy>Stopping listening does not stop a run. Reruns use the existing server rules; this endpoint has no quota check.</Copy>
+            <Copy>Stopping listening does not stop a run. Reruns repeat the saved traffic configuration.</Copy>
         </GlassCard>
         <GlassCard style={{ gap: 12 }}>
             <Summary value={test.summary} title='Latest run metrics' />

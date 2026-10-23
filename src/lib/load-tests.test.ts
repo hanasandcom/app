@@ -186,3 +186,57 @@ test('public stream session byte limit closes without retry or unlimited retaine
     for (let index = 0; index < 40; index++) socket.event({ type: 'update', data: { type: 'log', message: 'x'.repeat(60000) } })
     expect(socket.closed).toBe(true); expect(errors).toHaveLength(1); expect(errors[0]).toContain('session limit')
 })
+
+
+test('custom HTTPS HTTP transport receives explicit actor headers rather than relying on managed-domain injection', async () => {
+    reply([row()])
+    const custom = { ...settings, apiBaseUrl: 'https://configured.synthetic.invalid/api' }
+    await api.loadTestHistory(custom, 'mine', signal())
+    expect(calls[0].url).toBe('https://configured.synthetic.invalid/api/tests/mine?limit=50')
+    const headers = new Headers(calls[0].init.headers)
+    expect(headers.get('authorization')).toBe('Bearer synthetic-token')
+    expect(headers.get('id')).toBe('synthetic-account')
+    expect(headers.get('x-impersonation-token')).toBeNull()
+    reply([row()])
+    await api.loadTestHistory({ ...custom, impersonationToken: 'synthetic-delegation' }, 'recent', signal())
+    expect(new Headers(calls[1].init.headers).get('x-impersonation-token')).toBe('synthetic-delegation')
+    reply({ ok: true, status: 'queued' })
+    await api.rerunLoadTest(custom, 'scan-1', signal())
+    expect(new Headers(calls[2].init.headers).get('authorization')).toBe('Bearer synthetic-token')
+    expect(new Headers(calls[2].init.headers).get('id')).toBe('synthetic-account')
+    expect(calls[2].init.credentials).toBe('omit')
+})
+
+
+test('old native Refresh target cannot mint a manual reconciliation ticket after an unknown write', async () => {
+    const state = { active: true, pending: false, reading: false, generation: 0 }
+    let serial = 0, operation = 0, locked = false, mountedGeneration = -1, target = 0
+    const targets = new Map<number, () => Promise<void>>()
+    function commit() {
+        if (mountedGeneration !== state.generation) { targets.delete(target); target++; mountedGeneration = state.generation }
+        const captured = state.generation
+        targets.set(target, async () => {
+            if (!api.canReadLoadInput(state, captured)) return
+            const ticket = { operation, serial: ++serial }
+            await api.loadTestHistory(settings, 'mine', signal())
+            if (api.canReconcileLoad(ticket, operation, serial)) { locked = false; serial++ }
+        })
+        return target
+    }
+    reply([])
+    expect(locked).toBe(false)
+    const before = commit(), capturedBeforeCommit = targets.get(before)!
+    state.pending = true; state.generation++; operation++
+    await capturedBeforeCommit(); expect(calls).toHaveLength(0)
+    commit()
+    locked = true; state.pending = false; state.generation++ // POST500 completed; new idle host.
+    const fresh = commit()
+    await targets.get(before)?.()
+    expect(calls).toHaveLength(0); expect(locked).toBe(true)
+    await targets.get(fresh)?.()
+    expect(calls).toHaveLength(1); expect(locked).toBe(false)
+    const source = await Bun.file(new URL('../screens/LoadTestsScreen.tsx', import.meta.url)).text()
+    expect(source).toContain('key={`refresh:${hostRevision}`}')
+    expect(source).toContain('if (readableInput()) void refresh(true)')
+    expect(source).toContain('pending.current || manual && !readableInput()')
+})

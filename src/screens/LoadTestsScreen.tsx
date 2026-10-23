@@ -5,7 +5,7 @@ import type { AppSettings } from '../types'
 import { GlassCard, InlineNotice, PillButton, Screen, SectionTitle } from '../components/ui'
 import { LoadTestHistory, LoadTestLaunch, LoadTestReport } from '../components/LoadTestWorkspace'
 import { joinLoadTestLive, applyLoadLive, type LoadSocketTransport } from '../lib/load-test-live'
-import { canEditLoad, canReconcileLoad, createLoadTest, loadEndpoint, loadOwnAccount, loadPresets, loadScope, loadTestHistory, loadTestQuota, loadTestResult, rerunLoadTest, validateLoadDraft, LoadTestError, type LoadDraft, type LoadQuota, type LoadReadTicket, type LoadTest } from '../lib/load-tests'
+import { canEditLoad, canReadLoadInput, canReconcileLoad, createLoadTest, loadEndpoint, loadOwnAccount, loadPresets, loadScope, loadTestHistory, loadTestQuota, loadTestResult, rerunLoadTest, validateLoadDraft, LoadTestError, type LoadDraft, type LoadQuota, type LoadReadTicket, type LoadTest } from '../lib/load-tests'
 
 export function LoadTestsScreen({ settings, liveTransport }: { settings: AppSettings; liveTransport?: LoadSocketTransport }) {
     return <LoadTestsWorkspace key={loadScope(settings)} settings={settings} liveTransport={liveTransport} />
@@ -48,10 +48,10 @@ function LoadTestsWorkspace({ settings, liveTransport }: { settings: AppSettings
         void refresh(false)
         return () => { active.current = false; epoch.current++; reading.current?.abort(); stream.current?.abort() }
     }, [focused, foreground])
-    function readableInput() { return alive.current && active.current && !pending.current && !reading.current && inputGeneration === generation.current }
+    function readableInput() { return canReadLoadInput({ active: alive.current && active.current, pending: pending.current, reading: !!reading.current, generation: generation.current }, inputGeneration) }
     function editable() { return canEditLoad({ active: alive.current && active.current, pending: pending.current || !!reading.current, locked: lock.current, generation: generation.current }, inputGeneration) }
     async function refresh(manual: boolean) {
-        if (!active.current || pending.current) return
+        if (!active.current || pending.current || manual && !readableInput()) return
         reading.current?.abort(); stopStream()
         const controller = new AbortController(), own = ++epoch.current
         const ticket: LoadReadTicket | null = manual ? { operation: operation.current, serial: ++serial.current } : null
@@ -154,7 +154,7 @@ function LoadTestsWorkspace({ settings, liveTransport }: { settings: AppSettings
         ])
     }
     return <Screen scrollViewRef={scroll} title='Load testing' subtitle='Account checks · public global results · not organization scoped'
-        right={<PillButton small label='Refresh stored results' disabled={loading || busy} onPress={() => void refresh(true)} />}>
+        right={<PillButton key={`refresh:${hostRevision}`} small label='Refresh stored results' disabled={loading || busy} onPress={() => { if (readableInput()) void refresh(true) }} />}>
         <InlineNotice message={error} /><InlineNotice message={notice} />
         {locked && <InlineNotice message='Requests are locked. Refresh manually and review stored results before another submission. No request is retried automatically.' />}
         {(settings.impersonationToken || settings.impersonatingUserId) && <InlineNotice message='Read-only while impersonating. Load generation and live queue joins require your own account.' />}
