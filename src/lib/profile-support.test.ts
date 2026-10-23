@@ -135,7 +135,7 @@ test('ticket paths accept UUID versions1–8 instead of artificially rejecting v
 mock.module('expo-crypto', () => ({ randomUUID: () => id }))
 mock.module('../components/ui', () => ({ GlassCard: 'GlassCard', InlineNotice: 'InlineNotice', PillButton: 'PillButton', SectionTitle: 'SectionTitle' }))
 mock.module('../theme/context', () => ({ useAppTheme: () => ({}) }))
-const { supportNavigation, canEditSupportDraft } = await import('../components/ProfileSupportPanel')
+const { supportNavigation } = await import('../components/ProfileSupportPanel')
 test('Support opens one focused task and Back retains the conversation identity for draft-safe resume', () => {
     const initial = { mode: 'list' as const, ticketId: '' }
     const opened = supportNavigation(initial, { ticketId: id })
@@ -148,13 +148,14 @@ test('Support opens one focused task and Back retains the conversation identity 
     expect(supportNavigation(supportNavigation(composing, 'back'), 'new')).toEqual(composing)
 })
 
-test('queued keyboard events cannot replace submitted text while writing or awaiting outcome review', () => {
+test('queued keyboard events cannot replace submitted text while writing or awaiting outcome review', async () => {
+    const { canEditCustomerSupportInput } = await import('./profile-support')
     for (const state of [{ writing: true, blocked: false }, { writing: false, blocked: true }, { writing: true, blocked: true }]) {
         let draft = 'uncertain123'
-        if (canEditSupportDraft(state.writing, state.blocked)) draft = 'late autocorrect'
+        if (canEditCustomerSupportInput({ mounted: true, writing: state.writing, locked: state.blocked, generation: 0, selection: '' }, 0, '')) draft = 'late autocorrect'
         expect(draft).toBe('uncertain123')
     }
-    expect(canEditSupportDraft(false, false)).toBe(true)
+    expect(canEditCustomerSupportInput({ mounted: true, writing: false, locked: false, generation: 0, selection: '' }, 0, '')).toBe(true)
 })
 
 
@@ -232,4 +233,73 @@ test('focused form replacement removes delayed rating and Send targets across su
     const source = await Bun.file(new URL('../components/ProfileSupportPanel.tsx', import.meta.url)).text()
     expect(source).toContain('<View key={`support-form:${inputKey}:${ticketId}:${mode}`}')
     expect(source).toContain('if (!canEdit() || loading || error || !access.ownAccount) return')
+})
+
+
+test('preexisting or automatic reads cannot reconcile a newer unknown Support write', async () => {
+    const { CustomerSupportReviews } = await import('./profile-support')
+    const reviews = new CustomerSupportReviews()
+    const beforeManual = reviews.beginRead()
+    reviews.requestManual('conversation')
+    const oldReview = reviews.beginRead()
+    // The actual POST fails after the explicit list GET has started.
+    reviews.invalidate()
+    reviews.invalidate() // Unknown outcome invalidates again; no read may infer success from this failure.
+    expect(reviews.finishRead(beforeManual, 'conversation', true)).toBe(false)
+    expect(reviews.finishRead(oldReview, 'conversation', true)).toBe(false)
+    expect(reviews.finishRead(reviews.beginRead(), 'conversation', true)).toBe(false)
+    reviews.requestManual('conversation')
+    const current = reviews.beginRead()
+    expect(reviews.finishRead(current, 'conversation', true)).toBe(true)
+    expect(reviews.finishRead(current, 'conversation', true)).toBe(false)
+})
+test('failed, cancelled or retargeted manual reads are consumed without granting a later automatic unlock', async () => {
+    const { CustomerSupportReviews } = await import('./profile-support')
+    for (const outcome of ['failed', 'cancelled', 'retargeted']) {
+        const reviews = new CustomerSupportReviews()
+        reviews.requestManual('first')
+        const ticket = reviews.beginRead()
+        expect(reviews.finishRead(ticket, outcome === 'retargeted' ? 'second' : 'first', false)).toBe(false)
+        expect(reviews.finishRead(ticket, 'first', true)).toBe(false)
+        expect(reviews.finishRead(reviews.beginRead(), 'first', true)).toBe(false)
+    }
+})
+test('queued Refresh is blocked during writes and the actual panel owns each explicit review read', async () => {
+    const { canRefreshCustomerSupport } = await import('./profile-support')
+    const ready = { mounted: true, writing: false, generation: 3, selection: 'first' }
+    expect(canRefreshCustomerSupport(ready, 3, 'first')).toBe(true)
+    for (const change of [{ mounted: false }, { writing: true }, { generation: 4 }, { selection: 'second' }])
+        expect(canRefreshCustomerSupport({ ...ready, ...change }, 3, 'first')).toBe(false)
+    const source = await Bun.file(new URL('../components/ProfileSupportPanel.tsx', import.meta.url)).text()
+    expect(source).toContain('review = reviews.current.beginRead()')
+    expect(source).toContain('reviews.current.finishRead(review, selectedId.current, true)')
+    expect(source).toContain('reviews.current.finishRead(review, selectedId.current, false)')
+    expect(source).toContain('reviews.current.requestManual(selectedId.current)')
+    expect(source).toContain('if (!canRefreshCustomerSupport(')
+    expect(source).toContain('key={`refresh:${inputKey}`}')
+    expect(source).toContain('if (uncertainOutcome.current !== \'create\')')
+    expect(source).not.toContain('explicitRefresh')
+    expect(source).not.toContain('canEditSupportDraft')
+})
+
+test('actual delayed customer GET cannot clear the lock from a subsequent reply POST500', async () => {
+    const { CustomerSupportReviews } = await import('./profile-support')
+    const reviews = new CustomerSupportReviews()
+    reviews.requestManual(id)
+    const oldReview = reviews.beginRead()
+    let finishGet!: (response: Response) => void, locked: boolean
+    const delayed = new Promise<Response>(resolve => { finishGet = resolve })
+    respond = (() => calls.at(-1)?.init.method === 'POST' ? Response.json({}, { status: 500 }) : delayed) as unknown as typeof respond
+    const read = fetchAccountSupportTickets(settings).then(() => {
+        if (reviews.finishRead(oldReview, id, true)) locked = false
+    })
+    reviews.invalidate() // Claiming the send invalidates the older explicit read.
+    await expect(sendSupportMessage(settings, id, '', 'Retained reply', id)).rejects.toMatchObject({ status: 500 })
+    locked = true; reviews.invalidate() // The uncertain outcome cannot be reconciled by the old read.
+    finishGet(Response.json({ tickets: [ticket({ status: 'open' })] }))
+    await read
+    expect(locked).toBe(true)
+    expect(calls.filter(call => call.init.method === 'POST')).toHaveLength(1)
+    expect(calls.filter(call => !call.init.method || call.init.method === 'GET')).toHaveLength(1)
+    expect(reviews.finishRead(reviews.beginRead(), id, true)).toBe(false)
 })

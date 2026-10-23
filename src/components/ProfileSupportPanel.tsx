@@ -2,13 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { Alert, Text, TextInput, View, type TextInputProps } from 'react-native'
 import { randomUUID } from 'expo-crypto'
 import type { AppSettings } from '../types'
-import { canEditCustomerSupportInput } from '../lib/profile-support'
+import { canEditCustomerSupportInput, canRefreshCustomerSupport, CustomerSupportReviews } from '../lib/profile-support'
 import { AccountRequestError, fetchAccountSupportTickets, fetchSupportMessages, sendSupportFeedback, sendSupportMessage, supportTicketAccess, type SupportMessage, type SupportTicket } from '../lib/profile-api'
 import { GlassCard, InlineNotice, PillButton, SectionTitle } from './ui'
 import { useAppTheme } from '../theme/context'
 import { getThemePalette, spacing } from '../theme/tokens'
-
-export function canEditSupportDraft(writing: boolean, awaitingReview: boolean) { return !writing && !awaitingReview }
 
 type SupportNavigation = { mode: 'list' | 'conversation' | 'new'; ticketId: string }
 export function supportNavigation(current: SupportNavigation, target: 'back' | 'new' | { ticketId: string }): SupportNavigation {
@@ -33,30 +31,29 @@ export function ProfileSupportPanel({ settings, revision }: { settings: AppSetti
     const [loading, setLoading] = useState(true), [messagesLoading, setMessagesLoading] = useState(false)
     const [error, setError] = useState(''), [messagesError, setMessagesError] = useState(''), [notice, setNotice] = useState('')
     const [busy, setBusy] = useState(false), [reload, setReload] = useState(0), [inputKey, setInputKey] = useState(0)
-    const inputGeneration = useRef(0)
+    const inputGeneration = useRef(0), reviews = useRef(new CustomerSupportReviews())
     const capturedGeneration = inputGeneration.current
-    function renewInputs() { inputGeneration.current++; setInputKey(inputGeneration.current) }
+    function renewInputs() { reviews.current.invalidate(); inputGeneration.current++; setInputKey(inputGeneration.current) }
     const mounted = useRef(true), replyRequest = useRef<{ ticket: string; body: string; id: string } | null>(null)
-    const explicitRefresh = useRef(false), submitting = useRef(false), selectedId = useRef(''), draftLocked = useRef(false)
+    const submitting = useRef(false), selectedId = useRef(''), draftLocked = useRef(false)
     const uncertainOutcome = useRef<typeof uncertain>(null)
     const ticket = tickets.find(row => row.id === ticketId)
     const access = supportTicketAccess(settings, ticket)
-    useEffect(() => { mounted.current = true; return () => { mounted.current = false; inputGeneration.current++ } }, [])
+    useEffect(() => { mounted.current = true; return () => { mounted.current = false; reviews.current.invalidate(); inputGeneration.current++ } }, [])
     useEffect(() => {
-        const controller = new AbortController()
+        const controller = new AbortController(), review = reviews.current.beginRead()
         setLoading(true); setError('')
         void fetchAccountSupportTickets(settings, controller.signal).then(rows => {
             if (controller.signal.aborted) return
             setTickets(rows)
-            if (explicitRefresh.current) {
+            if (reviews.current.finishRead(review, selectedId.current, true)) {
                 const fresh = rows.find(row => row.id === selectedId.current)
                 setFeedbackVersion(fresh?.resolution_version ?? null); setConflict(false)
                 if (uncertainOutcome.current !== 'create') { if (draftLocked.current) renewInputs(); uncertainOutcome.current = null; draftLocked.current = false; setUncertain(null) }
-                explicitRefresh.current = false
             }
-        }).catch(cause => { if (!controller.signal.aborted) setError(explain(cause)) })
+        }).catch(cause => { reviews.current.finishRead(review, selectedId.current, false); if (!controller.signal.aborted) setError(explain(cause)) })
             .finally(() => { if (!controller.signal.aborted) setLoading(false) })
-        return () => controller.abort()
+        return () => { reviews.current.finishRead(review, selectedId.current, false); controller.abort() }
         // A new account/session/service mounts a new panel. Selection does not reload the list.
     }, [revision, reload])
     useEffect(() => {
@@ -88,7 +85,12 @@ export function ProfileSupportPanel({ settings, revision }: { settings: AppSetti
         if (uncertain === 'create') Alert.alert('Start another ticket?', 'The previous request may already have created a ticket. Refresh and check your conversations first.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Start another ticket', onPress: () => select(undefined, true) }])
         else select()
     }
-    function refresh() { explicitRefresh.current = true; setReload(value => value + 1) }
+    function refresh() {
+        if (!canRefreshCustomerSupport({ mounted: mounted.current, writing: submitting.current,
+            generation: inputGeneration.current, selection: selectedId.current }, capturedGeneration, ticketId)) return
+        reviews.current.requestManual(selectedId.current)
+        setReload(value => value + 1)
+    }
     async function submit(feedback = false) {
         if (!canEdit() || loading || error || !access.ownAccount) return
         if (feedback && (!ticket || !access.canFeedback || conflict || uncertain || feedbackVersion === null)) return
@@ -113,9 +115,9 @@ export function ProfileSupportPanel({ settings, revision }: { settings: AppSetti
         } catch (cause) {
             if (!mounted.current) return
             setError(explain(cause))
-            if (cause instanceof AccountRequestError && cause.status === 409) { draftLocked.current = true; setConflict(true) }
+            if (cause instanceof AccountRequestError && cause.status === 409) { reviews.current.invalidate(); draftLocked.current = true; setConflict(true) }
             else if (!(cause instanceof AccountRequestError) || cause.status >= 500) {
-                draftLocked.current = true; uncertainOutcome.current = feedback ? 'feedback' : ticketId ? 'reply' : 'create'; setUncertain(uncertainOutcome.current)
+                reviews.current.invalidate(); draftLocked.current = true; uncertainOutcome.current = feedback ? 'feedback' : ticketId ? 'reply' : 'create'; setUncertain(uncertainOutcome.current)
             }
         } finally { submitting.current = false; if (mounted.current) { renewInputs(); setBusy(false) } }
     }
@@ -124,7 +126,7 @@ export function ProfileSupportPanel({ settings, revision }: { settings: AppSetti
         <View style={styles.row}>
             {mode !== 'list' && <PillButton label='Back to conversations' disabled={busy} onPress={() => { if (!submitting.current) { renewInputs(); setNavigation(supportNavigation(navigation, 'back')) } }} />}
             {(mode === 'list' || mode === 'conversation' && ticket?.status === 'closed' || uncertain === 'create') && <PillButton label={mode === 'list' && !ticketId && draft ? 'Continue new ticket' : uncertain === 'create' && mode === 'new' ? 'Start another ticket' : 'New support ticket'} disabled={busy} onPress={newTicket} />}
-            <PillButton label={mode === 'conversation' ? 'Refresh conversation' : 'Refresh conversations'} disabled={loading || busy} onPress={refresh} />
+            <PillButton key={`refresh:${inputKey}`} label={mode === 'conversation' ? 'Refresh conversation' : 'Refresh conversations'} disabled={loading || busy} onPress={refresh} />
         </View>
         <InlineNotice message={error || messagesError} />
         <InlineNotice message={notice} tone='success' />
