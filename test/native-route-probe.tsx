@@ -61,6 +61,11 @@ void (async () => {
                 const jobs: Array<[string, () => Promise<unknown>]> = [
                     ['organizations', () => fetchOrganizations(settings).then(rows => ({ count: rows.length }))],
                     ['ai-workspace', () => fetchAiWorkspace(settings).then(rows => ({ count: rows.length }))],
+                    ['desktop-presence', async () => {
+                        const section = { label: 'Desktop agents', endpoint: 'desktop-agent/presence', listPath: 'agents', fields: [] }
+                        const payload = await fetchWorkspaceSection(settings, section, signal())
+                        return { count: workspaceRows(payload, section).length }
+                    }],
                     ['profile', () => fetchAccountIdentity(settings).then(() => ({}))],
                     ['sessions', () => fetchAccountSessions(settings).then(rows => ({ count: rows.length }))],
                     ['passkeys', () => fetchAccountPasskeys(settings).then(rows => ({ count: rows.length }))],
