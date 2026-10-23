@@ -18,12 +18,15 @@ export function useThesis(settings: AppSettings, services?: ThesisServices) {
     const [loading, setLoading] = useState(true)
     const [host, setHost] = useState(0)
     const [recovered, setRecovered] = useState<RecoveredDraft | null>(null)
+    const [connection, reconnect] = useState(0)
     const state = useRef<ThesisState | null>(null)
     const recovery = useRef<ThesisRecovery | null>(null)
     const alive = useRef(false)
     const epoch = useRef(0)
     const generation = useRef(0)
     const pendingRead = useRef(false)
+    const recoveryPending = useRef(false)
+    const authorizationVersion = useRef(0)
     const readController = useRef<AbortController | null>(null)
     const saveController = useRef<AbortController | null>(null)
     const scope = JSON.stringify([settings.userId, settings.authToken, settings.apiBaseUrl, settings.siteBaseUrl, settings.impersonationToken, settings.impersonatingUserId])
@@ -33,7 +36,7 @@ export function useThesis(settings: AppSettings, services?: ThesisServices) {
     const visible = focused && active
     const persist = useCallback(async () => {
         const current = state.current
-        if (!current || !recovery.current) return
+        if (!current || !recovery.current || recoveryPending.current) return
         try { await recovery.current.save(current.dirty || current.unknown || current.conflict ? current.draft : null, current.unknown || current.pending) }
         catch { if (alive.current) setError('The encrypted draft could not be saved on this device. Keep this screen open until your draft is saved to the service.') }
     }, [])
@@ -42,6 +45,7 @@ export function useThesis(settings: AppSettings, services?: ThesisServices) {
         if (!alive.current || pendingRead.current || state.current?.pending) return
         const currentEpoch = epoch.current
         const currentOperation = state.current?.operation ?? 0
+        const authorization = authorizationVersion.current
         const controller = new AbortController(); readController.current = controller
         pendingRead.current = true
         try {
@@ -49,21 +53,26 @@ export function useThesis(settings: AppSettings, services?: ThesisServices) {
             const [access, value] = await Promise.all([api.access(controller.signal), api.load(controller.signal)])
             if (!alive.current || controller.signal.aborted || epoch.current !== currentEpoch) return
             if (!access.member) throw new ThesisError('Hanasand organization membership is required.', 403)
-            setCanEdit(access.canEdit)
+            if ((state.current?.operation ?? 0) === currentOperation && authorizationVersion.current === authorization) setCanEdit(access.canEdit)
             if (!state.current) state.current = new ThesisState(value)
             else state.current.receive(value, !state.current.pending && state.current.operation === currentOperation)
             renew(); notify(); setError('')
             if (!recovery.current) {
-                recovery.current = await (services?.recovery ? services.recovery() : nativeRecovery(settings.userId, settings.apiBaseUrl, settings.siteBaseUrl))
-                const candidate = await recovery.current.load()
+                recoveryPending.current = true
+                const storage = await (services?.recovery ? services.recovery() : nativeRecovery(settings.userId, settings.apiBaseUrl, settings.siteBaseUrl))
+                if (!alive.current || epoch.current !== currentEpoch) return
+                recovery.current = storage
+                const candidate = await storage.load()
                 if (!alive.current || epoch.current !== currentEpoch) return
                 if (candidate?.draft && !sameContent(candidate.draft, state.current.draft)) setRecovered(candidate)
+                else recoveryPending.current = false
             }
+            reconnect(v => v + 1)
             await persist()
         } catch (cause) {
             if (!controller.signal.aborted && alive.current && currentEpoch === epoch.current) {
                 setError(cause instanceof Error ? cause.message : 'The thesis could not be loaded.')
-                if (cause instanceof ThesisError && [401, 403].includes(cause.status)) { setCanEdit(false); renew() }
+                if (cause instanceof ThesisError && [401, 403].includes(cause.status)) { authorizationVersion.current++; setCanEdit(false); renew() }
             }
         } finally {
             if (readController.current === controller) { readController.current = null; pendingRead.current = false; if (alive.current) setLoading(false) }
@@ -86,7 +95,7 @@ export function useThesis(settings: AppSettings, services?: ThesisServices) {
             if (epoch.current === currentEpoch && alive.current) {
                 model.failed(cause instanceof ThesisError ? cause.current : undefined)
                 setError(cause instanceof ThesisError && cause.status === 409 ? cause.message : 'The save outcome is uncertain. Your draft is kept. Refresh and review before another save.')
-                if (cause instanceof ThesisError && [401, 403].includes(cause.status)) setCanEdit(false)
+                if (cause instanceof ThesisError && [401, 403].includes(cause.status)) { authorizationVersion.current++; setCanEdit(false) }
             }
             return false
         } finally {
@@ -101,6 +110,18 @@ export function useThesis(settings: AppSettings, services?: ThesisServices) {
         if (!visible) return
         setLoading(true); setCanEdit(false); setError(''); setLive('Connecting')
         void refresh()
+        return () => {
+            alive.current = false; epoch.current++; generation.current++
+            readController.current?.abort(); saveController.current?.abort()
+            if (state.current?.pending) state.current.failed()
+            void persist()
+            state.current = null; recovery.current = null; pendingRead.current = false; recoveryPending.current = false
+            setRecovered(null)
+        }
+    }, [visible, scope, api])
+
+    useEffect(() => {
+        if (!visible || !state.current || !connection) return
         const controller = new AbortController()
         let stop: (() => void) | undefined
         const currentEpoch = epoch.current
@@ -110,17 +131,10 @@ export function useThesis(settings: AppSettings, services?: ThesisServices) {
         }, (message, denied) => {
             if (!alive.current || epoch.current !== currentEpoch) return
             setLive(message)
-            if (denied) { setCanEdit(false); renew() }
+            if (denied) { authorizationVersion.current++; setCanEdit(false); renew() }
         }).then(close => { if (controller.signal.aborted) close(); else stop = close }).catch(() => { if (alive.current && epoch.current === currentEpoch) setLive('Live unavailable. Refresh to reconnect.') })
-        return () => {
-            alive.current = false; epoch.current++; generation.current++
-            controller.abort(); stop?.(); readController.current?.abort(); saveController.current?.abort()
-            if (state.current?.pending) state.current.failed()
-            void persist()
-            state.current = null; recovery.current = null; pendingRead.current = false
-            setRecovered(null)
-        }
-    }, [visible, scope, api])
+        return () => { controller.abort(); stop?.() }
+    }, [visible, scope, api, connection])
 
     useEffect(() => {
         if (!visible || !canEdit || recovered || !state.current?.dirty || state.current.pending || state.current.unknown || state.current.conflict) return
@@ -144,6 +158,7 @@ export function useThesis(settings: AppSettings, services?: ThesisServices) {
             // Recovery always requires an explicit comparison before replacing remote content.
             current.conflict = { ...current.base }
         }
+        recoveryPending.current = false
         setRecovered(null); renew(); notify(); void persist()
     }
     return { state: state.current, api, visible, epoch, generation, host, loading, canEdit: canEdit && !loading && !recovered, error, liveState, recovered, refresh, save, edit, resolve, recover, notify, persist, renew }

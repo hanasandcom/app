@@ -74,7 +74,7 @@ export async function nativeRecovery(userId: string, apiBaseUrl: string, siteBas
             return key
         })()
         keys.set(name, pending)
-        void pending.catch(() => { if (keys.get(name) === pending) keys.delete(name) })
+        void pending.finally(() => { if (keys.get(name) === pending) keys.delete(name) }).catch(() => {})
     }
     const key = await pending
     const directory = new Directory(Paths.document, 'thesis-recovery')

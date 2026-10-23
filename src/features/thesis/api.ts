@@ -24,18 +24,24 @@ const row = (v: unknown): Record<string, unknown> => v && typeof v === 'object' 
 const strings = (v: unknown): string[] => Array.isArray(v) && v.every(x => typeof x === 'string') ? v : []
 export function parseReview(value: unknown): ReviewEvent {
     const v = row(value)
-    if (['event_id', 'item_id', 'content_hash', 'review_hash', 'reviewer', 'reviewed_at'].some(k => typeof v[k] !== 'string') || typeof v.approved !== 'boolean') throw new ThesisError('The review response is invalid.')
+    if (['event_id', 'item_id', 'content_hash', 'review_hash', 'reviewer', 'reviewed_at'].some(k => typeof v[k] !== 'string') || typeof v.approved !== 'boolean'
+        || !/^[a-f0-9]{64}$/.test(String(v.content_hash)) || !/^[a-f0-9]{64}$/.test(String(v.review_hash)) || !Number.isFinite(Date.parse(String(v.reviewed_at)))) throw new ThesisError('The review response is invalid.')
     return v as ReviewEvent
 }
 export function parseNode(value: unknown): SourceNode {
     const v = row(value)
-    if (['id', 'title', 'file', 'sha256', 'reviewHash'].some(k => typeof v[k] !== 'string') || !['frontend', 'api', 'database', 'source'].includes(String(v.kind)) || !Array.isArray(v.dependencies) || !Array.isArray(v.unresolved)) throw new ThesisError('The source inventory is invalid.')
+    if (['id', 'title', 'file', 'sha256', 'reviewHash'].some(k => typeof v[k] !== 'string') || !['frontend', 'api', 'database', 'source'].includes(String(v.kind)) || !Array.isArray(v.dependencies) || !Array.isArray(v.unresolved)
+        || v.dependencies.some(item => typeof item !== 'string') || v.unresolved.some(item => typeof item !== 'string')
+        || !/^[a-f0-9]{64}$/.test(String(v.sha256)) || !/^[a-f0-9]{64}$/.test(String(v.reviewHash))
+        || typeof v.dependencyCount !== 'number' || !Number.isSafeInteger(v.dependencyCount) || v.dependencyCount < 0) throw new ThesisError('The source inventory is invalid.')
     return { ...v, dependencies: strings(v.dependencies), unresolved: strings(v.unresolved), review: v.review ? parseReview(v.review) : undefined } as SourceNode
 }
 export function parseInventory(value: unknown): Inventory {
     const v = row(value)
     if (!Array.isArray(v.nodes) || v.nodes.length > 100000 || typeof v.hash !== 'string' || typeof v.release !== 'string') throw new ThesisError('The source inventory is invalid.')
-    return { ...v, nodes: v.nodes.map(parseNode) } as Inventory
+    const nodes = v.nodes.map(parseNode)
+    if (new Set(nodes.map(item => item.id)).size !== nodes.length) throw new ThesisError('The source inventory contains duplicate items.')
+    return { ...v, nodes } as Inventory
 }
 
 export function createThesisApi(settings: AppSettings, transport: ThesisFetch = fetchDefault) {
@@ -43,21 +49,28 @@ export function createThesisApi(settings: AppSettings, transport: ThesisFetch = 
     async function request(path: string, signal: AbortSignal, body?: unknown, site = false, method = body === undefined ? 'GET' : 'PUT') {
         ownAccount(fixed)
         const url = thesisEndpoint(site ? fixed.siteBaseUrl : fixed.apiBaseUrl, path)
-        const response = await transport(fixed, url, {
-            method, signal, credentials: 'omit',
-            headers: { Accept: 'application/json', 'Content-Type': 'application/json', Authorization: `Bearer ${fixed.authToken}`, id: fixed.userId, ...(site && method !== 'GET' ? { Origin: new URL(fixed.siteBaseUrl).origin } : {}) },
-            body: body === undefined ? undefined : JSON.stringify(body),
-        })
-        if (response.status === 204) return null
-        const raw = await response.text()
-        if (raw.length > 8_000_000) throw new ThesisError('The Thesis response exceeded its limit.')
-        let value: unknown
-        try { value = JSON.parse(raw) } catch { throw new ThesisError('The Thesis service returned an invalid response.', response.status) }
-        if (!response.ok) {
-            if (response.status === 409 && !site) throw new ThesisError('Another editor saved a newer version. Your draft is kept.', 409, document(value))
-            throw new ThesisError([401, 403].includes(response.status) ? 'Your Thesis access could not be verified. Refresh after signing in with an eligible account.' : String(row(value).error || 'The Thesis request failed. Refresh before trying again.'), response.status)
-        }
-        return value
+        const controller = new AbortController()
+        const abort = () => controller.abort()
+        signal.addEventListener('abort', abort, { once: true })
+        if (signal.aborted) controller.abort()
+        const timeout = setTimeout(abort, 20000)
+        try {
+            const response = await transport(fixed, url, {
+                method, signal: controller.signal, credentials: 'omit',
+                headers: { Accept: 'application/json', 'Content-Type': 'application/json', Authorization: `Bearer ${fixed.authToken}`, id: fixed.userId, ...(site && method !== 'GET' ? { Origin: new URL(fixed.siteBaseUrl).origin } : {}) },
+                body: body === undefined ? undefined : JSON.stringify(body),
+            })
+            if (response.status === 204) return null
+            const raw = await response.text()
+            if (raw.length > 8_000_000) throw new ThesisError('The Thesis response exceeded its limit.')
+            let value: unknown
+            try { value = JSON.parse(raw) } catch { throw new ThesisError('The Thesis service returned an invalid response.', response.status) }
+            if (!response.ok) {
+                if (response.status === 409 && !site) throw new ThesisError('Another editor saved a newer version. Your draft is kept.', 409, document(value))
+                throw new ThesisError([401, 403].includes(response.status) ? 'Your Thesis access could not be verified. Refresh after signing in with an eligible account.' : String(row(value).error || 'The Thesis request failed. Refresh before trying again.'), response.status)
+            }
+            return value
+        } finally { clearTimeout(timeout); signal.removeEventListener('abort', abort) }
     }
     return {
         async access(signal: AbortSignal) {
