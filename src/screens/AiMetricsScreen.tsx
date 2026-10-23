@@ -144,7 +144,7 @@ function MetricsWorkspace({ settings, live, onViewLogs }: { settings: AppSetting
         testController.current?.abort(); setPartial('')
     }
     function closeTest() { stopTest(); pending.current = false; setBusy(false); clearTest(); setDisplayEpoch(++epoch.current); setRevision(value => value + 1) }
-    const summary = aiSummary(clients), testDisabled = !active.current || loading || busy || needsReview || authBlocked.current || connection !== 'connected' || !snapshot.current || Boolean(settings.impersonationToken || settings.impersonatingUserId)
+    const summary = aiSummary(clients), testDisabled = !active.current || busy || needsReview || authBlocked.current || connection !== 'connected' || !snapshot.current || Boolean(settings.impersonationToken || settings.impersonatingUserId)
     return <Screen title='AI Metrics' subtitle='Model clients and AI operations' scrollViewRef={scroll}
         right={<PillButton small label='Refresh' disabled={busy || loading} onPress={manualRefresh} />}>
         {errors.map((error, index) => <InlineNotice key={`${error}:${index}`} message={error} />)}

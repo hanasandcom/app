@@ -107,3 +107,13 @@ test('existing discovery HTTP401 and403 retain status and require manual refresh
     }
     expect(models).toBe(2)
 })
+
+test('background HTTP telemetry refresh does not disable a prompt owned by a current live snapshot', async () => {
+    const { readFileSync } = await import('node:fs')
+    const source = readFileSync(new URL('../screens/AiMetricsScreen.tsx', import.meta.url).pathname, 'utf8')
+    const readiness = source.split('testDisabled = ')[1]?.split('\n')[0] || ''
+    expect(readiness).toContain('!snapshot.current')
+    expect(readiness).toContain('connection !== \'connected\'')
+    expect(readiness).toContain('authBlocked.current')
+    expect(readiness).not.toContain('loading')
+})
