@@ -105,7 +105,8 @@ export async function loadWatchlists(settings: AppSettings, signal: AbortSignal)
 export function watchlistMutationResult(value: unknown, organizationId: string, cleanup = false, expectedItemIds?: string[]) {
     const body = object(value)
     if (body.saved !== true) throw new WatchlistRequestError('The save could not be confirmed. Refresh before repeating the action.', true)
-    let items: WatchlistItem[] = [], requiresRefresh = false
+    let items: WatchlistItem[]
+    let requiresRefresh = false
     try {
         if (cleanup) {
             if (!Array.isArray(body.archivedItems)) throw new Error('Missing cleanup result')
