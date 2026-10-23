@@ -198,6 +198,17 @@ export default function App() {
         if (!sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)) return
         navigation.navigate('Automations', { section: 'health', automationId: id, handoffId: ++navigationHandoff.current })
     }
+    function openVms() {
+        if (!sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)) return
+        navigation.navigate('Tools', { tool: 'virtual-machines' })
+    }
+    async function openVmCheckout(url: string) {
+        if (!sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)
+            || settings?.selectedOrganizationId !== currentSettings.current?.selectedOrganizationId) throw new Error('The account or workspace changed before checkout opened.')
+        const target = new URL(url)
+        if (target.origin !== 'https://checkout.stripe.com' || target.username || target.password || target.port) throw new Error('The checkout link is invalid.')
+        await WebBrowser.openBrowserAsync(target.href)
+    }
     function openMonitoredActors(id: string) {
         try { openWebsite(monitoredActorsWebsitePath(id)) }
         catch (error) { Alert.alert('Unable to open actors', String(error)) }
@@ -516,8 +527,9 @@ export default function App() {
                                     onConfigureDelivery={() => navigation.navigate('Tools', { tool: 'integrations' })}
                                     onOpenCase={openCase}
                                     onViewAiLogs={name => openWebsite(name ? `/logs?service=${encodeURIComponent(name)}` : '/logs')}
-                                    onOpenVms={() => navigation.navigate('WorkspacePage', { path: '/vms', title: 'Virtual Machines' })}
+                                    onOpenVms={openVms}
                                     onOpenHealthCheck={openHealthCheck}
+                                    onOpenVmCheckout={openVmCheckout}
                                     onOpenIntelligenceCases={() => openWebsite('/cases')}
                                     onOpenActor={name => navigation.navigate('Tools', { tool: 'threat-search', query: name })}
                                     onOpenMonitoredActors={openMonitoredActors}

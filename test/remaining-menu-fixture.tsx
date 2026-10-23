@@ -15,6 +15,9 @@ import ThoughtsScreen from '../src/screens/ThoughtsScreen'
 import { SystemScreen } from '../src/screens/SystemScreen'
 import { CasesScreen } from '../src/screens/CasesScreen'
 import { caseServices } from '../src/features/cases/api'
+import { VirtualMachinesScreen } from '../src/screens/VirtualMachinesScreen'
+import { vmServices, type VmServices } from '../src/features/virtual-machines/services'
+import { openVmConsole, type ConsoleSocket } from '../src/features/virtual-machines/console'
 import { systemServices, type SystemServices } from '../src/features/system/services'
 import { createPublishingApi } from '../src/features/publishing/api'
 import * as Crypto from 'expo-crypto'
@@ -46,6 +49,9 @@ const containers = Array.from({ length: 32 }, (_, index) => ({ id: (index + 1).t
 const caseRepoId = '12345678-abcd-1234-abcd-123456789abc'
 const caseRepositories = [{ id: caseRepoId, provider: 'forgejo', repository_url: 'https://git.synthetic.invalid/team/app', organization_id: org.id, can_manage: true }]
 const monitoringCases = Array.from({ length: 54 }, (_, index) => ({ id: `HA-${index + 1}`, source: 'monitoring', title: `Synthetic outage ${index + 1}`, summary: 'Synthetic health-check evidence', status: 'open', severity: 'high', canManage: true, organizationId: org.id, automationId: 'fixture-health', notificationsEnabled: true, occurrences: 2, assignedOwner: settings.userId, createdAt: at, updatedAt: at, lastSeenAt: at, comments: [] as Record<string, unknown>[], history: [] as Record<string, unknown>[], resolution: null as Record<string, unknown> | null, notifications: [], relatedChecks: [], currentCheck: { endpoint: 'https://target.synthetic.invalid/health', checkType: 'http' } }))
+const virtualMachines: Record<string, unknown>[] = [{ name: 'fixture-vm', owner: settings.userId, organization_id: org.id, organization_name: org.name, status: 'running', primary_host: 'synthetic-host', failover_host: 'synthetic-standby', failover_premium: true, failover_enabled: true, can_assign_organization: false, limits_cpu: '2', limits_memory: '4GiB', device_eth0_ipv4_address: '192.0.2.10', config_image_os: 'ubuntu', config_image_version: '24.04' }]
+virtualMachines.push({ name: 'fixture-resume', owner: settings.userId, organization_id: org.id, organization_name: org.name, status: 'error', failover_premium: false, failover_enabled: false, limits_cpu: '4', limits_memory: '8GiB', syntheticMissingDetails: true, deletion_restore: { instanceMissing: true } })
+const vmPublicServices = [{ id: 'synthetic-route', name: 'web', type: 'http', port: 3000, hostname: 'web.synthetic.invalid', createdAt: at }]
 let cleanupQueued = false
 const sampleTime = () => new Date().toISOString()
 function systemSnapshot() {
@@ -77,6 +83,42 @@ globalThis.fetch = Object.assign(async (...[input, init]: Parameters<typeof fetc
     const headers = new Headers(init?.headers)
     if (headers.get('authorization') !== 'Bearer synthetic-token' || headers.get('id') !== settings.userId) return json({ error: 'Synthetic actor headers missing.' }, 401)
     const method = init?.method || 'GET', body = init?.body ? JSON.parse(String(init.body)) : {}
+    if (/^\/api\/vms\/(?:access\/)?synthetic-operator$/.test(url.pathname) && method === 'GET') return json(virtualMachines)
+    if (url.pathname === '/api/vms/stop' && method === 'POST') return finishWrite({ success: true, message: 'Synthetic stop requests queued.', vms: virtualMachines.map(item => item.name) })
+    if (url.pathname === '/api/billing/container-products' && method === 'GET') return json({ plans: [{ id: 'failover', name: 'Synthetic failover', priceNok: 99, currency: 'NOK', interval: 'month' }], containers: virtualMachines.map(item => ({ name: item.name, failover_premium: item.failover_premium, primary_host: item.primary_host })) })
+    if (url.pathname === '/api/billing/container-checkout' && method === 'POST') return finishWrite({ url: 'https://checkout.stripe.com/c/pay/synthetic-only' })
+    if (url.pathname === '/api/vm/setup-plan' && method === 'POST') return finishWrite({ summary: 'Synthetic Node setup', services: ['nodejs'], packages: ['git'], website: null, minecraftServerType: null, ...(String(body.prompt).includes('project') ? { projectFiles: [{ path: 'package.json', content: JSON.stringify({ dependencies: { next: 'synthetic', react: 'synthetic', 'react-dom': 'synthetic' }, scripts: { build: 'next build', start: 'next start --hostname 0.0.0.0 --port 3000' } }) }, { path: 'app/page.tsx', content: 'export default function Page() { return <h1>Synthetic project</h1> }' }] } : {}) })
+    if (url.pathname === '/api/vm' && method === 'POST') {
+        const item = { name: body.name, owner: settings.userId, organization_id: body.organization_id || null, status: 'Stopped', failover_premium: false, can_assign_organization: !body.organization_id }
+        const existing = virtualMachines.find(item => item.name === body.name)
+        if (existing) {
+            if (existing.syntheticMissingDetails !== true || existing.deleted_at) return json({ error: 'Synthetic VM already exists.' }, 409)
+            Object.assign(existing, item, { syntheticMissingDetails: false }); return finishWrite(existing, 201)
+        }
+        virtualMachines.push(item); return finishWrite(item, 201)
+    }
+    const vmPath = /^\/api\/vm\/(?:details\/|metrics\/)?([^/]+)(?:\/(.+))?$/.exec(url.pathname)
+    if (vmPath) {
+        const item = virtualMachines.find(item => item.name === decodeURIComponent(vmPath[1]))
+        if (!item) return json({ error: 'Synthetic VM unavailable.' }, 404)
+        const action = vmPath[2] || ''
+        if (url.pathname.startsWith('/api/vm/details/') && method === 'GET') return item.syntheticMissingDetails === true ? json([]) : json({ ...item, profiles: ['default'], ephemeral: false, stateful: false, last_checked: sampleTime() })
+        if (url.pathname.startsWith('/api/vm/metrics/') && method === 'GET') return json(Array.from({ length: 120 }, (_, index) => ({ name: item.name, id: index, created_at: at, cpu_usage_percent: index % 10, cpu_cores: 2, ram_used_mb: 0, ram_total_mb: 4096, net_in_kbps: 0, net_out_kbps: 1, power_state: 'running' })))
+        if (action === 'public-services') {
+            if (method === 'GET') return json({ canManage: true, services: vmPublicServices })
+            if (method === 'POST') { const service = { id: `route-${vmPublicServices.length}`, ...body, hostname: `${body.name}.synthetic.invalid`, createdAt: at }; vmPublicServices.push(service); return finishWrite(service, 201) }
+        }
+        if (action.startsWith('public-services/') && method === 'DELETE') { const index = vmPublicServices.findIndex(service => service.id === action.split('/')[1]); if (index >= 0) vmPublicServices.splice(index, 1); return finishWrite({ ok: true }) }
+        if (['start', 'stop', 'restart'].includes(action) && method === 'POST') { item.status = action === 'stop' ? 'stopped' : 'running'; return finishWrite({ accepted: true }) }
+        if (action === 'host-features' && method === 'PUT') { item.failover_enabled = body.failover_enabled; return finishWrite(item) }
+        if (action === 'failover' && method === 'POST') return finishWrite({ message: 'Synthetic failover queued.', vm: item }, 202)
+        if (action === 'organization' && method === 'PUT') { item.organization_id = body.organizationId; return finishWrite({ status: 200, organization: { id: body.organizationId, name: org.name } }) }
+        if (action === 'connection' && method === 'GET') return finishWrite({ vmName: item.name, vmIp: '192.0.2.10', username: item.name, sshCommand: `ssh ${item.name}@192.0.2.10`, certificateCount: 0, certificates: [] })
+        if (action === 'sudo-password' && method === 'POST') return body.currentPassword === 'synthetic-password' ? finishWrite({ password: 'synthetic-sudo-only' }) : json({ error: 'Synthetic reauthentication rejected.' }, 403)
+        if (action === 'restore' && method === 'POST') { item.deleted_at = null; item.deletion_restore = { instanceMissing: true }; return finishWrite({ message: 'Synthetic record restored; guest remains missing.', vm: item }) }
+        if (!action && method === 'GET') return json([item])
+        if (!action && method === 'DELETE') { if (body.confirmation !== item.name) return json({ error: 'Synthetic name confirmation rejected.' }, 400); item.deleted_at = at; item.delete_after = '2026-10-30T07:00:00Z'; return finishWrite({ message: 'Synthetic VM retained for deletion.', vm: item }) }
+    }
     if (url.pathname.startsWith('/api/cases/')) {
         if (url.searchParams.get('organizationId') !== org.id) return json({ error: 'Synthetic case scope missing.' }, 403)
         if (method === 'GET' && url.pathname === '/api/cases/monitoring') return json({ items: monitoringCases })
@@ -293,6 +335,29 @@ const systemFixtureServices: SystemServices = {
     },
 }
 const caseFixtureServices = caseServices(settings, { transport: (_settings, url, init) => fetch(url, init) })
+const syntheticVmSocket = (address: string): ConsoleSocket => {
+    const url = new URL(address)
+    if (url.origin !== 'wss://api.synthetic.invalid' || !/^\/api\/ws\/vm\/[a-z0-9-]+\/console$/.test(url.pathname)) throw new Error('External VM sockets are disabled.')
+    let closed = false
+    const socket: ConsoleSocket = { readyState: 0, bufferedAmount: 0, onopen: null, onmessage: null, onclose: null, onerror: null,
+        send(data) {
+            if (closed) return
+            const frame = JSON.parse(data)
+            if (frame.type === 'auth') {
+                if (frame.token !== 'synthetic-token' || frame.dpop !== 'synthetic-proof') throw new Error('Synthetic console proof missing.')
+                setTimeout(() => { if (!closed) {
+                    socket.onmessage?.({ data: JSON.stringify({ type: 'ready', username: url.pathname.split('/')[4] }) })
+                    socket.onmessage?.({ data: JSON.stringify({ type: 'output', data: '\u001b[32mSynthetic terminal\u001b[0m\r\n$ ' }) })
+                    socket.onmessage?.({ data: JSON.stringify({ type: 'boot-output', data: 'Synthetic boot log only.\n' }) })
+                } }, 0)
+            } else if (frame.type === 'input') setTimeout(() => { if (!closed) socket.onmessage?.({ data: JSON.stringify({ type: 'output', data: frame.data }) }) }, 0)
+        },
+        close() { closed = true; socket.readyState = 3 },
+    }
+    setTimeout(() => { if (!closed) { socket.readyState = 1; socket.onopen?.() } }, 0)
+    return socket
+}
+const vmFixtureServices: VmServices = { ...vmServices, openConsole: (s, ops, operation, nonce, options) => openVmConsole(s, ops, operation, nonce, { ...options, dependencies: { proof: async () => ({ proof: 'synthetic-proof' }), socket: syntheticVmSocket } }) }
 function Fixture() {
     const [mode, setMode] = useState('Users'), [event, setEvent] = useState('No synthetic operations yet')
     return <View style={{ flex: 1 }}>
@@ -300,7 +365,7 @@ function Fixture() {
             <Text style={{ color: '#b2b9c2' }}>Synthetic only · no external requests</Text>
             <Text style={{ color: '#b2b9c2' }}>{event}</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                {['Users', 'Load testing', 'Thesis', 'Privacy', 'Articles', 'Thoughts', 'System', 'Containers', 'Cases'].map(name => <PillButton key={name} small label={`Fixture ${name}`} onPress={() => setMode(name)} />)}
+                {['Users', 'Load testing', 'Thesis', 'Privacy', 'Articles', 'Thoughts', 'System', 'Containers', 'Cases', 'VMs'].map(name => <PillButton key={name} small label={`Fixture ${name}`} onPress={() => setMode(name)} />)}
                 <PillButton small label='Finish synthetic cleanup' onPress={() => { cleanupQueued = false; setEvent('Synthetic cleanup idle') }} />
                 <PillButton small label='Toggle held response' onPress={() => { hold = !hold; setEvent(`Hold: ${hold}`) }} />
                 <PillButton small label='Release response' onPress={() => { release?.(); release = undefined; setEvent('Released synthetic response') }} />
@@ -309,7 +374,7 @@ function Fixture() {
                 <PillButton small label='Emit shared document change' onPress={() => { shared = { ...shared, revision: shared.revision + 1, body: shared.body + '\n\nSynthetic other-editor change.' }; versions.unshift(clone(shared)); for (const receive of thesisListeners) receive(clone(shared)) }} />
             </View>
         </View>
-        {mode === 'Cases' ? <CasesScreen settings={settings} services={caseFixtureServices} onOpenHealth={id => setEvent(`Synthetic health check: ${id}`)} onOpenIntelligence={() => setEvent('Synthetic intelligence handoff')} /> : mode === 'Users' ? <UserManagementScreen settings={settings} onSelectOrganization={id => setEvent(`Open organization: ${id}`)} /> : mode === 'System' || mode === 'Containers' ? <SystemScreen settings={settings} mode={mode === 'System' ? 'overview' : 'containers'} services={systemFixtureServices} onOpenLogs={name => setEvent(`Synthetic Logs: ${name || 'all'}`)} onOpenVms={() => setEvent('Synthetic VM inventory handoff')} /> : mode === 'Articles' ? <ArticlesScreen settings={settings} services={articleServices} /> : mode === 'Thoughts' ? <ThoughtsScreen settings={settings} services={thoughtServices} /> : mode === 'Privacy' ? <OrganizationPrivacyScreen settings={settings} transport={privacyTransport} exportFile={privacyShare} /> : mode === 'Thesis' ? <ThesisScreen settings={settings} services={thesisServices} /> : <LoadTestsScreen settings={settings} liveTransport={liveTransport} />}
+        {mode === 'VMs' ? <VirtualMachinesScreen settings={settings} services={vmFixtureServices} onOpenCheckout={() => setEvent('Synthetic checkout handoff; no browser opened')} /> : mode === 'Cases' ? <CasesScreen settings={settings} services={caseFixtureServices} onOpenHealth={id => setEvent(`Synthetic health check: ${id}`)} onOpenIntelligence={() => setEvent('Synthetic intelligence handoff')} /> : mode === 'Users' ? <UserManagementScreen settings={settings} onSelectOrganization={id => setEvent(`Open organization: ${id}`)} /> : mode === 'System' || mode === 'Containers' ? <SystemScreen settings={settings} mode={mode === 'System' ? 'overview' : 'containers'} services={systemFixtureServices} onOpenLogs={name => setEvent(`Synthetic Logs: ${name || 'all'}`)} onOpenVms={() => setEvent('Synthetic VM inventory handoff')} /> : mode === 'Articles' ? <ArticlesScreen settings={settings} services={articleServices} /> : mode === 'Thoughts' ? <ThoughtsScreen settings={settings} services={thoughtServices} /> : mode === 'Privacy' ? <OrganizationPrivacyScreen settings={settings} transport={privacyTransport} exportFile={privacyShare} /> : mode === 'Thesis' ? <ThesisScreen settings={settings} services={thesisServices} /> : <LoadTestsScreen settings={settings} liveTransport={liveTransport} />}
     </View>
 }
 registerRootComponent(() => <GestureHandlerRootView style={{ flex: 1 }}><AppThemeProvider mode='obsidian'><NavigationContainer><Stack.Navigator screenOptions={{ headerShown: false }}><Stack.Screen name='SyntheticRemainingMenu' component={Fixture} /></Stack.Navigator></NavigationContainer></AppThemeProvider></GestureHandlerRootView>)

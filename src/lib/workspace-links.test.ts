@@ -67,7 +67,11 @@ test('menu and contextual website handoffs both use the canonical URL helper', a
     const source = await Bun.file(new URL('../App.tsx', import.meta.url)).text()
     expect(source).toContain('WebBrowser.openBrowserAsync(websitePageUrl(settings.siteBaseUrl, path))')
     expect(source).toContain('if (item.disabledReason && item.path) {\n            openWebsite(item.path)')
-    expect(source.match(/WebBrowser\.openBrowserAsync\(/g)?.length).toBe(1)
+    expect(source.match(/WebBrowser\.openBrowserAsync\(/g)?.length).toBe(2)
+    const checkout = source.slice(source.indexOf('async function openVmCheckout'), source.indexOf('function openMonitoredActors'))
+    expect(checkout).toContain('target.origin !== \'https://checkout.stripe.com\'')
+    expect(checkout).toContain('settings?.selectedOrganizationId !== currentSettings.current?.selectedOrganizationId')
+    expect(checkout.indexOf('sessionTransition.current')).toBeLessThan(checkout.indexOf('WebBrowser.openBrowserAsync'))
 })
 
 

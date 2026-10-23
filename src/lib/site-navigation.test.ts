@@ -199,3 +199,16 @@ it('fresh case and health handoffs remount even when the requested ID repeats', 
     expect(app).toContain('onOpenHealthCheck={openHealthCheck}')
     expect(app).toContain('automationId: undefined, handoffId: undefined')
 })
+
+
+it('both VM menu paths and the System fallback use the native VM workflow', async () => {
+    for (const path of ['/vms', '/system/virtual-machines']) {
+        expect(nativeToolForPath(path)).toBe('virtual-machines')
+        expect(leaves(siteNavigation('synthetic-user')).find(item => item.path === path)?.tab).toBe('Tools')
+    }
+    const app = await Bun.file(new URL('../App.tsx', import.meta.url)).text()
+    expect(app).toContain('onOpenVms={openVms}')
+    const open = app.slice(app.indexOf('function openVms()'), app.indexOf('async function openVmCheckout'))
+    expect(open.indexOf('sessionTransition.current')).toBeLessThan(open.indexOf('navigation.navigate'))
+    expect(app).toContain('onOpenVmCheckout={openVmCheckout}')
+})

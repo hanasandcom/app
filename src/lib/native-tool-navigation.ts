@@ -2,6 +2,8 @@ import type { RootTabParamList } from '../types'
 
 const tools: Record<string, RootTabParamList['Tools']['tool']> = {
     '/cases': 'monitoring-cases',
+    '/vms': 'virtual-machines',
+    '/system/virtual-machines': 'virtual-machines',
     '/system': 'system-overview',
     '/system/containers': 'system-containers',
     '/content/articles': 'articles',

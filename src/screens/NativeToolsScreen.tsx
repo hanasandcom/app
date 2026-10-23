@@ -7,6 +7,7 @@ import ArticlesScreen from './ArticlesScreen'
 import ThoughtsScreen from './ThoughtsScreen'
 import { SystemScreen } from './SystemScreen'
 import { CasesScreen } from './CasesScreen'
+import { VirtualMachinesScreen } from './VirtualMachinesScreen'
 import { RuleTuningScreen } from './RuleTuningScreen'
 import { ApiReferenceScreen } from './ApiReferenceScreen'
 import { SupportDeskScreen } from './SupportDeskScreen'
@@ -30,15 +31,16 @@ import { IntelligenceScreen } from './IntelligenceScreen'
 import { RulesScreen } from './RulesScreen'
 import { OrganizationApiKeysScreen } from './OrganizationApiKeysScreen'
 
-export function NativeToolsScreen({ settings, tool, onManageSshKeys, onSelectOrganization, onConfigureDelivery, onOpenCase, onViewAiLogs, onOpenVms, onOpenHealthCheck, onOpenIntelligenceCases, onOpenActor, onOpenMonitoredActors, onOpenApiJson, onOpenGuide, initialQuery, initialCaseId }: {
+export function NativeToolsScreen({ settings, tool, onManageSshKeys, onSelectOrganization, onConfigureDelivery, onOpenCase, onViewAiLogs, onOpenVms, onOpenHealthCheck, onOpenVmCheckout, onOpenIntelligenceCases, onOpenActor, onOpenMonitoredActors, onOpenApiJson, onOpenGuide, initialQuery, initialCaseId }: {
     settings: AppSettings; tool: RootTabParamList['Tools']['tool']; onManageSshKeys: () => void
     onSelectOrganization: (id: string) => void; onConfigureDelivery: () => void
     onOpenCase: (ref: WebsiteCaseRef) => void; onViewAiLogs: (containerName?: string) => void; onOpenVms: () => void
-    onOpenHealthCheck: (id: string) => void; onOpenIntelligenceCases: () => void
+    onOpenHealthCheck: (id: string) => void; onOpenVmCheckout: (url: string) => Promise<void> | void; onOpenIntelligenceCases: () => void
     onOpenActor: (name: string) => void; onOpenMonitoredActors: (organizationId: string) => void
     onOpenApiJson: () => void; onOpenGuide: () => void; initialQuery?: string; initialCaseId?: string
 }) {
     switch (tool) {
+        case 'virtual-machines': return <VirtualMachinesScreen settings={settings} onOpenCheckout={onOpenVmCheckout} />
         case 'monitoring-cases': return <CasesScreen settings={settings} initialCaseId={initialCaseId} onOpenHealth={onOpenHealthCheck} onOpenIntelligence={onOpenIntelligenceCases} />
         case 'system-overview': return <SystemScreen settings={settings} mode='overview' onOpenLogs={onViewAiLogs} onOpenVms={onOpenVms} />
         case 'system-containers': return <SystemScreen settings={settings} mode='containers' onOpenLogs={onViewAiLogs} onOpenVms={onOpenVms} />
