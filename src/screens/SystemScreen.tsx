@@ -30,12 +30,13 @@ function SystemWorkspace({ settings, mode, onOpenLogs, onOpenVms, services: inje
         const read = ops.beginRead(generation, manual)
         if (!read) return
         logRequest.current?.abort(); setLogs(null); setLogsError(''); setError(''); setStorageError(''); setAccess(null); publish()
-        let complete = false
+        let complete = false, canRead = false
         try {
             const permission = await services.access(read.controller.signal)
             if (!ops.current(read.ticket.generation)) return
             setAccess(permission)
-            if (!permission.canRead) { setSnapshot(null); setStorage(null); complete = true; return }
+            canRead = permission.canRead && permission.scope === systemScope(settings)
+            if (!canRead) { setSnapshot(null); setStorage(null); return }
             const [telemetry, disk] = await Promise.allSettled([services.telemetry(read.controller.signal), mode === 'overview' || ops.unknown?.kind === 'cleanup' ? services.storage(read.controller.signal) : Promise.resolve(null)])
             if (!ops.current(read.ticket.generation)) return
             if (telemetry.status === 'fulfilled') { setSnapshot(telemetry.value); latest.current.snapshot = telemetry.value } else { setSnapshot(null); setError(message(telemetry.reason)) }
@@ -43,7 +44,7 @@ function SystemWorkspace({ settings, mode, onOpenLogs, onOpenVms, services: inje
             const unknown = ops.unknown
             complete = telemetry.status === 'fulfilled' && (!unknown || unknown.kind !== 'cleanup' || disk.status === 'fulfilled' && disk.value !== null)
         } catch (cause) { if (ops.current(read.ticket.generation)) setError(message(cause)) }
-        finally { if (ops.finishRead(read.ticket, complete)) publish() }
+        finally { if (ops.finishRead(read.ticket, complete, canRead)) publish() }
     }
     useFocusEffect(useCallback(() => {
         mounted.current = true; focused.current = true; ops.visible = foreground.current; setVisible(ops.visible)

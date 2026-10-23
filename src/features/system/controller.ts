@@ -33,10 +33,10 @@ export class SystemController {
         this.generation++; this.reading = true; this.reviewed = undefined; this.abort = new AbortController()
         return { ticket: { generation: this.generation, manual, intent: this.unknown?.token }, controller: this.abort }
     }
-    finishRead(ticket: ReadTicket, success: boolean) {
+    finishRead(ticket: ReadTicket, success: boolean, canRead: boolean) {
         if (!this.current(ticket.generation)) return false
         this.reading = false
-        if (!success) this.needsReview = true
+        if (!success || !canRead) this.needsReview = true
         else if (ticket.manual) {
             if (!this.unknown) this.needsReview = false
             else if (ticket.intent === this.unknown.token) this.reviewed = ticket.intent

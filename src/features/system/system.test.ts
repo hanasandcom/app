@@ -82,8 +82,8 @@ test('unresolved actions survive replacement/token rotation and require current 
     expect(m.intentScope({ ...settings, authToken: 'rotated', selectedOrganizationId: 'other-workspace' })).toBe(scope)
     const b = new SystemController(scope, registry); b.visible = true
     expect(b.locked).toBe(true); expect(a.finishWrite(write.generation, intent, true)).toBe(false)
-    const auto = b.beginRead(b.generation, false)!; b.finishRead(auto.ticket, true); expect(b.canAcknowledge).toBe(false)
-    const manual = b.beginRead(b.generation, true)!; b.finishRead(manual.ticket, true); expect(b.canAcknowledge).toBe(true)
+    const auto = b.beginRead(b.generation, false)!; b.finishRead(auto.ticket, true, true); expect(b.canAcknowledge).toBe(false)
+    const manual = b.beginRead(b.generation, true)!; b.finishRead(manual.ticket, true, true); expect(b.canAcknowledge).toBe(true)
     expect(b.acknowledge(b.generation - 1, intent.token)).toBe(false)
     expect(b.acknowledge(b.generation, intent.token)).toBe(true); expect(b.locked).toBe(false)
     expect(new SystemController(m.intentScope({ ...settings, userId: 'other' }), registry).unknown).toBeUndefined()
@@ -168,4 +168,28 @@ test('hiding during local proof creation opens no socket; runtime entry truncati
     c.abort(); await pending; expect(connections).toBe(0)
     const parsed = m.parseRuntimeLogs({ generated_at: new Date().toISOString(), runtime_available: true, native_available: true, logs: [{ id: 'entry', message: 'a'.repeat(16001) }] })
     expect(parsed.logs[0].message).toEndWith('[Entry truncated after 16,000 characters]')
+})
+
+test('denied internal visibility cannot acknowledge an existing uncertain action', () => {
+    for (const kind of ['restart', 'cleanup'] as const) {
+        const registry = new SystemIntents(), ops = new SystemController(`denied-${kind}`, registry)
+        ops.visible = true
+        const intent = { token: `uncertain-${kind}`, kind, target: kind === 'restart' ? id : 'docker-storage' }
+        const write = ops.beginWrite(ops.generation, intent)!
+        ops.finishWrite(write.generation, intent, false)
+        const denied = ops.beginRead(ops.generation, true)!
+        // Even a permission-discovery response is not a successful authorized runtime read.
+        ops.finishRead(denied.ticket, true, false)
+        expect(ops.canAcknowledge).toBe(false)
+        expect(ops.acknowledge(ops.generation, intent.token)).toBe(false)
+        expect(ops.locked).toBe(true)
+        expect(ops.unknown).toEqual(intent)
+        const permitted = ops.beginRead(ops.generation, true)!
+        ops.finishRead(permitted.ticket, true, true)
+        expect(ops.canAcknowledge).toBe(true)
+    }
+    const source = readFileSync(fileURLToPath(import.meta.url).replace(/features\/system\/system.test.ts$/, 'screens/SystemScreen.tsx'), 'utf8')
+    expect(source).toContain('canRead = permission.canRead && permission.scope === systemScope(settings)')
+    expect(source).toContain('if (!canRead) { setSnapshot(null); setStorage(null); return }')
+    expect(source).toContain('ops.finishRead(read.ticket, complete, canRead)')
 })
