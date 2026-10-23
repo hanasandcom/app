@@ -30,7 +30,7 @@ import { nativeToolForPath } from './lib/native-tool-navigation'
 import { organizationSectionForPath } from './lib/organization-navigation'
 import { fetchOrganizations, type Organization } from './lib/profile-api'
 import type { SiteNavigationItem } from './data/site-navigation'
-import { loadAiChat, loadSettings, saveAiChat, saveSettings } from './lib/storage'
+import { loadAiChat, loadSettings, saveAiChat, saveSettings, settingsWriteRevision } from './lib/storage'
 import { getThemePalette, palette } from './theme/tokens'
 import { AppThemeProvider } from './theme/context'
 import { PendingDeletionError, refreshHanasandSession, startDesktopAgentCoverTraffic, stopDesktopAgentCoverTraffic, stopMobileImpersonation } from './lib/api'
@@ -263,25 +263,27 @@ export default function App() {
 
     async function returnToOwnView() {
         const before = currentSettings.current
-        if (!before || !before.impersonationToken && !before.impersonatingUserId || returningToOwnView.current) return
+        if (!before || (!before.impersonationToken && !before.impersonatingUserId) || returningToOwnView.current) return
+        const saveRevision = settingsWriteRevision()
         const controller = new AbortController()
         returningToOwnView.current = controller; setReturnPending(true)
         const sameSession = () => {
             const current = currentSettings.current
             return current?.apiBaseUrl === before.apiBaseUrl && current.userId === before.userId
                 && current.authToken === before.authToken && current.impersonationToken === before.impersonationToken
+                && current.impersonatingUserId === before.impersonatingUserId
         }
         try {
             let revoked = true
             try { await stopMobileImpersonation(before, controller.signal) } catch { revoked = false }
-            if (!sameSession()) return
+            if (!sameSession() || settingsWriteRevision() !== saveRevision) return
             const next = { ...currentSettings.current!, impersonationToken: '', impersonatingUserId: '', impersonatingUserName: '' }
-            await saveSettings(next)
-            if (!sameSession()) return
+            await saveSettings(next, saveRevision)
+            if (!sameSession() || settingsWriteRevision() !== saveRevision + 1) return
             currentSettings.current = next; setSettings(next)
             if (!revoked) Alert.alert('Returned to your account', 'The delegated token was removed from this device. The server could not confirm its revocation.')
         } catch {
-            if (sameSession()) Alert.alert('Unable to return to your account', 'Your account settings could not be saved securely. Try again.')
+            if (sameSession() && settingsWriteRevision() <= saveRevision + 1) Alert.alert('Unable to return to your account', 'Your account settings could not be saved securely. Try again.')
         } finally {
             if (returningToOwnView.current === controller) { returningToOwnView.current = null; setReturnPending(false) }
         }
