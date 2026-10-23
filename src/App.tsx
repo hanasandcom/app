@@ -22,6 +22,7 @@ import { ProfileScreen } from './screens/ProfileScreen'
 import { PendingDeletionScreen } from './screens/PendingDeletionScreen'
 import { AutomationsScreen } from './screens/AutomationsScreen'
 import { OrganizationsScreen } from './screens/OrganizationsScreen'
+import { WatchlistsScreen } from './screens/WatchlistsScreen'
 import { WorkspacePageScreen } from './screens/WorkspacePageScreen'
 import { NativeToolsScreen } from './screens/NativeToolsScreen'
 import { nativeToolForPath } from './lib/native-tool-navigation'
@@ -167,6 +168,7 @@ export default function App() {
             case 'Notes': navigation.navigate('Notes'); break
             case 'Images': navigation.navigate('Images'); break
             case 'Organizations': navigation.navigate('Organizations', { section: organizationSectionForPath(item.path) }); break
+            case 'Watchlists': navigation.navigate('Watchlists'); break
             case 'Automations': navigation.navigate('Automations', { section: item.path === '/automation/health' ? 'health' : 'cron' }); break
             case 'Tools': {
                 const tool = nativeToolForPath(item.path)
@@ -338,6 +340,7 @@ export default function App() {
                                     Images: 'images',
                                     Explore: 'explore',
                                     Organizations: 'organizations',
+                                    Watchlists: 'watchlists',
                                     Automations: 'automations',
                                 },
                             },
@@ -412,6 +415,9 @@ export default function App() {
                             </Tab.Screen>
                             <Tab.Screen name='Organizations'>
                                 {({ route }) => <OrganizationsScreen initialSection={route.params?.section} settings={settings} selectedOrganizationId={activeOrganization?.id} onSelectOrganization={id => void selectWorkspace(id)} />}
+                            </Tab.Screen>
+                            <Tab.Screen name='Watchlists'>
+                                {() => <WatchlistsScreen settings={settings} />}
                             </Tab.Screen>
                             <Tab.Screen name='WorkspacePage'>
                                 {({ route }) => <WorkspacePageScreen key={`${route.params.path}:${settings.selectedOrganizationId}`} settings={settings} path={route.params.path} title={route.params.title} />}

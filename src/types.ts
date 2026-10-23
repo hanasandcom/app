@@ -17,6 +17,7 @@ export type RootTabParamList = {
     Automations: { section?: 'health' | 'cron' } | undefined
     Explore: undefined
     Organizations: { section?: OrganizationSection } | undefined
+    Watchlists: undefined
     WorkspacePage: { path: string; title: string }
     Tools: { tool: 'threat-search' | 'password-check' | 'subscription' | 'host-updates' | 'hosts' | 'intel-profiles' | 'delivery-health' | 'api-keys' | 'rules-match' | 'rules-analysis' | 'rules-detection' }
 }

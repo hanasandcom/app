@@ -271,7 +271,7 @@ export function siteNavigation(userId: string, access?: Omit<NavigationAccess, '
     const convert = (item: NavigationItem): SiteNavigationItem => {
         if (item.items) return { label: item.label, items: item.items.map(convert) }
         const path = item.href || ''
-        const tab = path.startsWith(`/profile/${userId}`) ? 'Profile' : nativeToolForPath(path) ? 'Tools' : tabs[path]
+        const tab = path === '/watchlists' || path === '/organizations/watchlists' ? 'Watchlists' : path.startsWith(`/profile/${userId}`) ? 'Profile' : nativeToolForPath(path) ? 'Tools' : tabs[path]
         const supported = tab || workspacePageDefinition(path)
         const area = path.split('/').filter(Boolean)[0] || item.label
         return { label: item.label, path, ...(tab ? { tab } : {}), ...(!supported ? { disabledReason: `${item.label} needs a native ${area} workflow before it can be opened here.` } : {}) }

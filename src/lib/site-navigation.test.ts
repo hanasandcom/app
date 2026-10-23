@@ -81,6 +81,8 @@ describe('native website navigation', () => {
             expect(items.some(item => item.tab === tab && !item.disabledReason)).toBe(true)
         }
         expect(items.some(item => item.label === 'Utilities')).toBe(false)
+        expect(items.find(item => item.path === '/watchlists')?.tab).toBe('Watchlists')
+        expect(items.find(item => item.path === '/watchlists')?.disabledReason).toBeUndefined()
     })
 
     it('marks pages without a native workflow as website links', () => {
