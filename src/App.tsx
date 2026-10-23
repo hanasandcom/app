@@ -1,3 +1,4 @@
+import { caseWebsitePath, monitoredActorsWebsitePath, type WebsiteCaseRef } from './lib/workspace-links'
 import { useEffect, useState } from 'react'
 import { NavigationContainer, DarkTheme, useNavigationContainerRef } from '@react-navigation/native'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
@@ -155,6 +156,14 @@ export default function App() {
         if (!settings) return
         void WebBrowser.openBrowserAsync(`${settings.siteBaseUrl.replace(/\/+$/, '')}${path}`)
             .catch(error => Alert.alert('Unable to open page', String(error)))
+    }
+    function openCase(ref: WebsiteCaseRef) {
+        try { openWebsite(caseWebsitePath(ref)) }
+        catch (error) { Alert.alert('Unable to open case', String(error)) }
+    }
+    function openMonitoredActors(id: string) {
+        try { openWebsite(monitoredActorsWebsitePath(id)) }
+        catch (error) { Alert.alert('Unable to open actors', String(error)) }
     }
     function openPage(item: SiteNavigationItem) {
         if (!navigation.isReady()) return
@@ -428,11 +437,15 @@ export default function App() {
                                 {({ route }) => <WorkspacePageScreen key={`${route.params.path}:${settings.selectedOrganizationId}`} settings={settings} path={route.params.path} title={route.params.title} />}
                             </Tab.Screen>
                             <Tab.Screen name='Tools'>
-                                {({ route }) => <NativeToolsScreen settings={settings} tool={route.params.tool} onManageSshKeys={() => navigation.navigate('Profile', { section: 'SSH keys' })}
+                                {({ route }) => <NativeToolsScreen settings={settings} tool={route.params.tool} initialQuery={route.params.query} onManageSshKeys={() => navigation.navigate('Profile', { section: 'SSH keys' })}
                                     onSelectOrganization={id => void selectWorkspace(id)}
                                     onConfigureDelivery={() => navigation.navigate('Tools', { tool: 'integrations' })}
-                                    onOpenCase={ref => openWebsite(`/cases/${encodeURIComponent(ref.caseId)}?organizationId=${encodeURIComponent(ref.organizationId)}&alertId=${encodeURIComponent(ref.alertId)}&route=delivery_history`)}
-                                    onViewAiLogs={name => openWebsite(`/logs?service=${encodeURIComponent(name)}`)} />}
+                                    onOpenCase={openCase}
+                                    onViewAiLogs={name => openWebsite(`/logs?service=${encodeURIComponent(name)}`)}
+                                    onOpenActor={name => navigation.navigate('Tools', { tool: 'threat-search', query: name })}
+                                    onOpenMonitoredActors={openMonitoredActors}
+                                    onOpenApiJson={() => navigation.navigate('Tools', { tool: 'openapi-json' })}
+                                    onOpenGuide={() => openWebsite('/developers')} />}
                             </Tab.Screen>
                         </Tab.Navigator>
                         {!!settings.impersonatingUserId && (

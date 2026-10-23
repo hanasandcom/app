@@ -35,6 +35,11 @@ Integrations opens a native destination manager for the selected Personal or org
 
 The organization directory supports search, sorting and switching only to freshly verified active memberships. AI Metrics shows the existing HTTP and authenticated socket telemetry, queue, clients and containers, with explicitly reviewed tests targeting one available client. Container logs open the filtered website view. Missing telemetry remains unavailable rather than becoming zero. Other menu destinations without native workflows remain website links.
 
+Findings uses the existing scoped feed, opaque cursor pages, loaded-result search and evidence investigation. Actor links prefill native threat search. Case and monitored-actor links retain their website handoffs; native case actions still need a compatible server authorization path. Threat search cancels reads and polling while hidden and keeps account-saved searches separate by session and workspace.
+
+Rule Tuning uses the fixed Hanasand workspace: review log patterns, edit and preview rules against stored logs, create a rule, and inspect or cancel reprocessing jobs. Starting reprocessing requires confirmation because it can permanently remove eligible matching Low logs and originals. Interrupted changes require refresh and review. API reference and OpenAPI JSON use the website’s public contract; application examples are a pinned copy of the website’s fictional examples. Neither reference screen submits the described API operations.
+
+
 Mobile builds use [EAS Build](https://docs.expo.dev/build/introduction/) and the manual GitHub Actions workflow at **Actions → Mobile EAS build → Run workflow**. It supports iOS, Android, or both, with a `preview` (internal distribution) or `production` (store-signed artifact) profile. The workflow only builds artifacts; it does not submit them to either app store or publish an update. Preview builds are the default.
 
 ### One-time setup

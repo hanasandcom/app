@@ -10,7 +10,11 @@ export function normalizeThreatQuery(query: string) {
     if (clean.length < 2 || clean.length > 200) throw new Error('Enter between 2 and 200 characters.')
     return clean
 }
-export function threatAccountKey(settings: AppSettings) { return JSON.stringify([settings.siteBaseUrl, settings.userId, settings.impersonationToken, settings.selectedOrganizationId]) }
+export function threatAccountKey(settings: AppSettings) { return JSON.stringify([settings.siteBaseUrl, settings.apiBaseUrl, settings.userId, settings.authToken, settings.impersonationToken, settings.impersonatingUserId, settings.selectedOrganizationId]) }
+export function savedSearchMutationOutcome(state: { visible: boolean; generation: number; currentGeneration: number; currentRequest: boolean; aborted: boolean }) {
+    return !state.visible || state.generation !== state.currentGeneration || !state.currentRequest ? 'ignore'
+        : state.aborted ? 'unconfirmed' : 'apply'
+}
 export function safeEvidenceUrl(value: unknown) {
     try { const url = new URL(text(value)); return url.protocol === 'https:' && !url.username && !url.password ? url.toString() : null } catch { return null }
 }
@@ -64,7 +68,7 @@ export async function searchThreatIntel(settings: AppSettings, query: string, si
 export type SavedThreatSearch = { query: string; savedAt: string }
 function savedSearchUrl(settings: AppSettings) {
     if (!settings.authToken || !settings.userId) throw new Error('Sign in to manage saved searches.')
-    if (settings.impersonationToken) throw new Error('Return to your own account to manage saved searches.')
+    if (settings.impersonationToken || settings.impersonatingUserId) throw new Error('Return to your own account to manage saved searches.')
     const website = new URL(settings.siteBaseUrl)
     const base = process.env.EXPO_PUBLIC_TI_SITE_URL || (website.hostname === 'hanasand.com' ? 'https://ti.hanasand.com' : website.origin)
     return new URL('/api/backend/ti/saved-searches', base)

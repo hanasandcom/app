@@ -1,9 +1,12 @@
+import { FindingsScreen } from './FindingsScreen'
+import { RuleTuningScreen } from './RuleTuningScreen'
+import { ApiReferenceScreen } from './ApiReferenceScreen'
 import { SupportDeskScreen } from './SupportDeskScreen'
 import { OrganizationDirectoryScreen } from './OrganizationDirectoryScreen'
 import { DeliveryHistoryScreen } from './DeliveryHistoryScreen'
 import { IntegrationsScreen } from './IntegrationsScreen'
 import { AiMetricsScreen } from './AiMetricsScreen'
-import type { DeliveryCaseRef } from '../lib/delivery-history'
+import type { WebsiteCaseRef } from '../lib/workspace-links'
 import { TrafficMapScreen } from './TrafficMapScreen'
 import { TrafficScreen } from './TrafficScreen'
 import { RateLimitsScreen } from './RateLimitsScreen'
@@ -19,12 +22,18 @@ import { IntelligenceScreen } from './IntelligenceScreen'
 import { RulesScreen } from './RulesScreen'
 import { OrganizationApiKeysScreen } from './OrganizationApiKeysScreen'
 
-export function NativeToolsScreen({ settings, tool, onManageSshKeys, onSelectOrganization, onConfigureDelivery, onOpenCase, onViewAiLogs }: {
+export function NativeToolsScreen({ settings, tool, onManageSshKeys, onSelectOrganization, onConfigureDelivery, onOpenCase, onViewAiLogs, onOpenActor, onOpenMonitoredActors, onOpenApiJson, onOpenGuide, initialQuery }: {
     settings: AppSettings; tool: RootTabParamList['Tools']['tool']; onManageSshKeys: () => void
     onSelectOrganization: (id: string) => void; onConfigureDelivery: () => void
-    onOpenCase: (ref: DeliveryCaseRef) => void; onViewAiLogs: (containerName: string) => void
+    onOpenCase: (ref: WebsiteCaseRef) => void; onViewAiLogs: (containerName: string) => void
+    onOpenActor: (name: string) => void; onOpenMonitoredActors: (organizationId: string) => void
+    onOpenApiJson: () => void; onOpenGuide: () => void; initialQuery?: string
 }) {
     switch (tool) {
+        case 'findings': return <FindingsScreen settings={settings} onOpenCase={ref => onOpenCase({ ...ref, route: 'alert_queue' })} onOpenActor={onOpenActor} onOpenMonitoredActors={onOpenMonitoredActors} />
+        case 'rule-tuning': return <RuleTuningScreen settings={settings} />
+        case 'api-reference': return <ApiReferenceScreen settings={settings} mode='reference' onOpenJson={onOpenApiJson} onOpenGuide={onOpenGuide} />
+        case 'openapi-json': return <ApiReferenceScreen settings={settings} mode='json' onOpenJson={onOpenApiJson} onOpenGuide={onOpenGuide} />
         case 'support-desk': return <SupportDeskScreen settings={settings} />
         case 'organization-directory': return <OrganizationDirectoryScreen settings={settings} onSelectOrganization={onSelectOrganization} />
         case 'delivery-history': return <DeliveryHistoryScreen settings={settings} onConfigure={onConfigureDelivery} onOpenCase={onOpenCase} />
@@ -36,7 +45,7 @@ export function NativeToolsScreen({ settings, tool, onManageSshKeys, onSelectOrg
         case 'rate-limits': return <RateLimitsScreen settings={settings} />
         case 'database': return <DatabaseScreen settings={settings} />
         case 'backups': return <BackupsScreen settings={settings} />
-        case 'threat-search': return <ThreatSearchScreen settings={settings} />
+        case 'threat-search': return <ThreatSearchScreen settings={settings} initialQuery={initialQuery} />
         case 'password-check': return <PasswordCheckScreen settings={settings} />
         case 'subscription': return <SubscriptionScreen settings={settings} />
         case 'host-updates': return <HostUpdatesScreen settings={settings} />

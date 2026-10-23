@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
 import type { AppSettings } from '../types'
 const calls: Array<{ settings: AppSettings; url: string; init: RequestInit }> = []
@@ -72,4 +73,29 @@ describe('native threat search contract', () => {
         await expect(api.searchThreatIntel(settings, 'Example actor', signal())).rejects.toThrow('Access denied')
         for (const url of ['javascript:alert(1)', 'https://user:password@example.test', 'http://example.test', 'not a url']) expect(api.safeEvidenceUrl(url)).toBeNull()
     })
+})
+
+it('native actor handoffs prefill without submitting and hidden searches stop refreshing', () => {
+    const source = readFileSync(new URL('../screens/ThreatSearchScreen.tsx', import.meta.url).pathname, 'utf8')
+    expect(source).toContain('useState(initialQuery)')
+    expect(source).toContain('active.current = focused && foreground')
+    expect(source).toContain('AppState.addEventListener(\'change\'')
+    expect(source).toContain('if (!active.current) return')
+    expect(source).toContain('request.current?.abort(); mutation.current?.abort()')
+    expect(source).toContain('setResult(null); setSaved([])')
+    expect(source).not.toContain('void search(initialQuery)')
+})
+
+it('saved-search feedback reports current timeouts but ignores callbacks from hidden or previous visits', () => {
+    const current = { visible: true, generation: 2, currentGeneration: 2, currentRequest: true, aborted: false }
+    expect(api.savedSearchMutationOutcome(current)).toBe('apply')
+    expect(api.savedSearchMutationOutcome({ ...current, aborted: true })).toBe('unconfirmed')
+    for (const change of [{ visible: false }, { currentGeneration: 3 }, { currentRequest: false }])
+        expect(api.savedSearchMutationOutcome({ ...current, ...change, aborted: true })).toBe('ignore')
+})
+it('actor search scope changes with either impersonation state, session, API or account', async () => {
+    for (const change of [{ siteBaseUrl: 'https://other.invalid' }, { apiBaseUrl: 'https://other.invalid/api' }, { userId: 'other' }, { authToken: 'other' }, { selectedOrganizationId: 'org' }, { impersonationToken: 'imp' }, { impersonatingUserId: 'other' }])
+        expect(api.threatAccountKey({ ...settings, ...change })).not.toBe(api.threatAccountKey(settings))
+    await expect(api.changeSavedThreatSearch({ ...settings, impersonatingUserId: 'other' }, 'Example actor', true, new AbortController().signal)).rejects.toThrow('own account')
+    expect(calls).toHaveLength(0)
 })

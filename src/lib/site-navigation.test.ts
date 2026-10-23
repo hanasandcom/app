@@ -115,3 +115,11 @@ it('keeps delivery history separate from destination configuration and registers
     }
     expect(items.find(item => item.label === 'Integrations')?.path).toBe('/findings/actions')
 })
+
+it('registers Findings investigation, Rule Tuning, API reference and complete JSON as native jobs', () => {
+    const items = leaves(siteNavigation('synthetic-user'))
+    for (const [path, tool] of Object.entries({ '/findings': 'findings', '/rules/tuning': 'rule-tuning', '/api': 'api-reference', '/api/openapi': 'openapi-json' } as const)) {
+        expect(nativeToolForPath(path)).toBe(tool)
+        expect(items.some(item => item.path === path && item.tab === 'Tools' && !item.disabledReason)).toBe(true)
+    }
+})
