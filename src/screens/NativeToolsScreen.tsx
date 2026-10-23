@@ -34,6 +34,8 @@ import { ServiceAccountsScreen } from './ServiceAccountsScreen'
 import { TrafficBlocklistScreen } from './TrafficBlocklistScreen'
 import { TiCollectionRunsScreen } from './TiCollectionRunsScreen'
 import { TiSourcesScreen } from './TiSourcesScreen'
+import { SandboxScreen } from './SandboxScreen'
+import { SecurityScannerScreen } from './SecurityScannerScreen'
 
 export function NativeToolsScreen({ settings, tool, onManageSshKeys, onSelectOrganization, onConfigureDelivery, onOpenCase, onViewAiLogs, onOpenVms, onOpenHealthCheck, onOpenVmCheckout, onOpenIntelligenceCases, onOpenActor, onOpenMonitoredActors, onOpenApiJson, onOpenGuide, initialQuery, initialCaseId }: {
     settings: AppSettings; tool: RootTabParamList['Tools']['tool']; onManageSshKeys: () => void
@@ -86,5 +88,7 @@ export function NativeToolsScreen({ settings, tool, onManageSshKeys, onSelectOrg
         case 'rules-detection': return <RulesScreen settings={settings} category='detection' />
         case 'api-keys': return <OrganizationApiKeysScreen settings={settings} />
         case 'service-accounts': return <ServiceAccountsScreen settings={settings} />
+        case 'sandbox': return <SandboxScreen settings={settings} />
+        case 'security-scanner': return <SecurityScannerScreen settings={settings} />
     }
 }

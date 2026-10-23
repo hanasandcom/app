@@ -1,7 +1,6 @@
 import { nativeToolForPath } from './native-tool-navigation'
 import { describe, expect, it } from 'bun:test'
 import { siteNavigation, toggleNavigationGroup, workspacePageDefinition, type SiteNavigationItem } from '../data/site-navigation'
-import { websitePageUrl } from './workspace-links'
 
 function leaves(items: SiteNavigationItem[]): SiteNavigationItem[] {
     return items.flatMap(item => item.items ? leaves(item.items) : [item])
@@ -119,10 +118,13 @@ describe('native website navigation', () => {
 
     it('marks pages without a native workflow as website links', () => {
         const items = leaves(siteNavigation('account-id'))
-        expect(items.some(item => item.opensWebsite)).toBe(true)
-        expect(items.filter(item => item.opensWebsite).map(item => item.path).sort()).toEqual([
-            '/sandbox', '/scanner',
-        ])
+        expect(items.filter(item => item.opensWebsite).some(item => item.path === '/sandbox' || item.path === '/scanner')).toBe(false)
+        expect(items.find(item => item.path === '/sandbox')?.opensWebsite).toBeUndefined()
+        expect(items.find(item => item.path === '/scanner')?.opensWebsite).toBeUndefined()
+        expect(items.find(item => item.path === '/sandbox')?.tab).toBe('Tools')
+        expect(items.find(item => item.path === '/scanner')?.tab).toBe('Tools')
+        expect(nativeToolForPath('/sandbox')).toBe('sandbox')
+        expect(nativeToolForPath('/scanner')).toBe('security-scanner')
         expect(nativeToolForPath('/findings/actors')).toBe('actors')
         expect(items.find(item => item.path === '/ti/activity')?.tab).toBe('Tools')
         expect(items.find(item => item.path === '/ti/activity')?.opensWebsite).toBeUndefined()
@@ -130,16 +132,9 @@ describe('native website navigation', () => {
             expect(item.opensWebsite).toBe(true)
         }
     })
-    it('opens each website-owned menu route on the owning site page', () => {
+    it('keeps native viewport routes inside the app', () => {
         const items = leaves(siteNavigation('account-id'))
-        const expected: Record<string, string> = {
-            '/sandbox': 'https://hanasand.com/sandbox',
-            '/scanner': 'https://hanasand.com/scanner',
-        }
-        for (const [path, destination] of Object.entries(expected)) {
-            expect(items.find(item => item.path === path)?.opensWebsite).toBe(true)
-            expect(websitePageUrl('https://hanasand.com', path, '')).toBe(destination)
-        }
+        for (const path of ['/sandbox', '/scanner']) expect(items.find(item => item.path === path)?.tab).toBe('Tools')
     })
     it('opens the existing CDN blocklist API in the native traffic workflow', () => {
         const item = leaves(siteNavigation('account-id')).find(row => row.path === '/traffic/blocklist')
