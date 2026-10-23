@@ -59,24 +59,63 @@ export function workspaceRequestUrl(settings: AppSettings, definition: Workspace
     if (cursor && definition.cursorParam) { url.searchParams.delete('page'); url.searchParams.set(definition.cursorParam, cursor) }
     return url.toString()
 }
+
+function retryableWorkspaceReadFailure(error: unknown, definition: WorkspaceSection, signal: AbortSignal) {
+    if (signal.aborted) return false
+    if (error instanceof TypeError) return true
+    if (!(error instanceof WorkspaceResponseError)) return false
+    if (error.status !== 429 && error.status < 500) return false
+    const logSearch = definition.endpoint.split('?')[0].replace(/^\//, '') === 'api/backend/logs/search'
+    return !(logSearch && /database-query-timeout|search took too long|query timed? out/i.test(error.message))
+}
+
+class WorkspaceResponseError extends Error {
+    constructor(message: string, readonly status: number) { super(message) }
+}
+
+function waitForWorkspaceRetry(signal: AbortSignal) {
+    return new Promise<void>((resolve, reject) => {
+        if (signal.aborted) { reject(signal.reason || new Error('Workspace lookup was cancelled.')); return }
+        const timer = setTimeout(() => { signal.removeEventListener('abort', cancel); resolve() }, 300)
+        const cancel = () => { clearTimeout(timer); reject(signal.reason || new Error('Workspace lookup was cancelled.')) }
+        signal.addEventListener('abort', cancel, { once: true })
+    })
+}
+
 export async function fetchWorkspaceSection(settings: AppSettings, definition: WorkspaceSection, signal: AbortSignal, detailId?: string, search?: string, cursor?: string) {
     const url = workspaceRequestUrl(settings, definition, detailId, search, cursor)
-    const response = definition.origin === 'status'
-        ? await fetch(url, { signal, credentials: 'omit', headers: { Accept: 'application/json' } })
-        : await apiFetch(settings, url, {
-            signal,
-            headers: {
-                Authorization: `Bearer ${settings.authToken}`, id: settings.userId,
-                ...(settings.impersonationToken ? { 'x-impersonation-token': settings.impersonationToken } : {}),
-            },
-        })
-    const payload: unknown = await response.json().catch(() => null)
-    if (!response.ok) {
-        const error = workspaceValue(payload, 'error.message|error')
-        throw new Error(typeof error === 'string' ? error : `Unable to load this service (${response.status}).`)
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+            const response = definition.origin === 'status'
+                ? await fetch(url, { signal, credentials: 'omit', headers: { Accept: 'application/json' } })
+                : await apiFetch(settings, url, {
+                    signal,
+                    headers: {
+                        Authorization: `Bearer ${settings.authToken}`, id: settings.userId,
+                        ...(settings.impersonationToken ? { 'x-impersonation-token': settings.impersonationToken } : {}),
+                    },
+                })
+            const payload: unknown = await response.json().catch(() => null)
+            if (!response.ok) {
+                const error = workspaceValue(payload, 'error.message|error')
+                const failure = new WorkspaceResponseError(typeof error === 'string' ? error : `Unable to load this service (${response.status}).`, response.status)
+                if (attempt === 0 && retryableWorkspaceReadFailure(failure, definition, signal)) {
+                    await waitForWorkspaceRetry(signal)
+                    continue
+                }
+                throw failure
+            }
+            if (payload === null) throw new Error('The service returned an invalid response.')
+            return payload
+        } catch (error) {
+            if (attempt === 0 && retryableWorkspaceReadFailure(error, definition, signal)) {
+                await waitForWorkspaceRetry(signal)
+                continue
+            }
+            throw error
+        }
     }
-    if (payload === null) throw new Error('The service returned an invalid response.')
-    return payload
+    throw new Error('Unable to load this service. Retry to continue.')
 }
 export function workspaceRows(payload: unknown, definition: WorkspaceSection): RecordValue[] {
     if (definition.listPath === undefined) {

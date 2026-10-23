@@ -53,6 +53,39 @@ describe('maintained workspace API contracts', () => {
         expect(workspaceSectionNotice({ monitoring: 'live', checks: [] }, definition, now)).toContain('unavailable')
     })
 
+    it('retries one transient idempotent menu read and keeps authorization failures final', async () => {
+        let calls = 0
+        response = () => ++calls === 1
+            ? Response.json({ error: 'Temporarily unavailable.' }, { status: 503 })
+            : Response.json({ items: [{ id: 'recovered' }] })
+        const section: WorkspaceSection = { label: 'Records', endpoint: 'records', listPath: 'items', fields: [] }
+        await expect(fetchWorkspaceSection(settings, section, new AbortController().signal)).resolves.toEqual({ items: [{ id: 'recovered' }] })
+        expect(requests).toHaveLength(2)
+
+        requests.length = 0
+        response = () => Response.json({ error: 'Denied' }, { status: 403 })
+        await expect(fetchWorkspaceSection(settings, section, new AbortController().signal)).rejects.toThrow('Denied')
+        expect(requests).toHaveLength(1)
+    })
+
+    it('does not retry an expensive log query that already timed out', async () => {
+        const section = workspacePageDefinition('/logs')!.sections[0]
+        response = () => Response.json({ error: 'Search took too long. Narrow the time range or add a service filter.' }, { status: 503 })
+        await expect(fetchWorkspaceSection(settings, section, new AbortController().signal)).rejects.toThrow('Search took too long')
+        expect(requests).toHaveLength(1)
+    })
+
+    it('retries one transient network failure for a read-only menu section', async () => {
+        let calls = 0
+        response = () => {
+            if (++calls === 1) throw new TypeError('Network request failed')
+            return Response.json({ items: [] })
+        }
+        const section: WorkspaceSection = { label: 'Records', endpoint: 'records', listPath: 'items', fields: [] }
+        await expect(fetchWorkspaceSection(settings, section, new AbortController().signal)).resolves.toEqual({ items: [] })
+        expect(requests).toHaveLength(2)
+    })
+
     it('loads an incident by its encoded ID and shows only explicit timeline fields', () => {
         const incident = workspacePageDefinition('/status')!.sections.find(section => section.listPath === 'incidents')!
         const url = new URL(workspaceRequestUrl(settings, incident, 'incident/a?b'))
@@ -149,6 +182,7 @@ describe('maintained workspace API contracts', () => {
         expect(url.searchParams.get('organizationId')).toBe('synthetic-org')
         response = () => Response.json({ error: { message: 'Denied' } }, { status: 403 })
         await expect(fetchWorkspaceSection(impersonated, definition, new AbortController().signal)).rejects.toThrow('Denied')
+        expect(requests).toHaveLength(1)
         expect(new Headers(requests[0].init.headers).get('x-impersonation-token')).toBe('synthetic-impersonation')
         expect(() => workspaceRequestUrl({ ...settings, apiBaseUrl: 'http://api.example.test' }, definition)).toThrow('HTTPS')
         expect(() => workspaceRows({ items: {} }, definition)).toThrow('invalid list')
