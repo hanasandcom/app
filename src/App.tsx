@@ -34,7 +34,7 @@ import { loadAiChat, loadSettings, saveAiChat, saveSettings, settingsWriteRevisi
 import { getThemePalette, palette } from './theme/tokens'
 import { AppThemeProvider } from './theme/context'
 import { PendingDeletionError, refreshHanasandSession, startDesktopAgentCoverTraffic, stopDesktopAgentCoverTraffic, stopMobileImpersonation } from './lib/api'
-import { classifyRefreshFailure } from './lib/session'
+import { classifyRefreshFailure, SessionTransition } from './lib/session'
 
 const Tab = createBottomTabNavigator<RootTabParamList>()
 
@@ -64,6 +64,8 @@ export default function App() {
     const [settings, setSettings] = useState<AppSettings | null>(null)
     const currentSettings = useRef(settings)
     currentSettings.current = settings
+    const sessionTransition = useRef(new SessionTransition()).current
+    const [sessionIntentVersion, setSessionIntentVersion] = useState(0)
     const returningToOwnView = useRef<AbortController | null>(null)
     const [returnPending, setReturnPending] = useState(false)
     const [bootstrapError, setBootstrapError] = useState('')
@@ -130,26 +132,31 @@ export default function App() {
 
     useEffect(() => {
         if (!settings?.authToken || !settings.userId) { setOrganizations([]); return }
+        if (!sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)) return
         let active = true
+        const saveRevision = settingsWriteRevision()
         setOrganizationError('')
         void fetchOrganizations(settings).then(async items => {
-            if (!active) return
+            if (!active || !sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)) return
             const available = items.filter(item => !item.lifecycleStatus || item.lifecycleStatus === 'active')
             setOrganizations(available)
+            if (settingsWriteRevision() !== saveRevision) return
             if (!settings.selectedOrganizationId || (settings.selectedOrganizationId !== 'personal' && !available.some(item => item.id === settings.selectedOrganizationId))) {
                 const preferred = available.find(item => item.slug?.toLowerCase() === 'hanasand') || (available.length === 1 ? available[0] : null)
                 const next = { ...settings, selectedOrganizationId: preferred?.id || 'personal' }
-                await saveSettings(next)
-                if (active) setSettings(next)
+                await saveSettings(next, saveRevision)
+                if (active && sessionTransition.current(sessionIntentVersion, settings, currentSettings.current) && settingsWriteRevision() === saveRevision + 1) {
+                    currentSettings.current = next; setSettings(next)
+                }
             }
-        }).catch(error => { if (active) setOrganizationError(error instanceof Error ? error.message : 'Unable to load organizations.') })
+        }).catch(error => { if (active && sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)) setOrganizationError(error instanceof Error ? error.message : 'Unable to load organizations.') })
         return () => { active = false }
-    }, [settings?.apiBaseUrl, settings?.userId, settings?.authToken, organizationRevision])
+    }, [settings?.apiBaseUrl, settings?.userId, settings?.authToken, organizationRevision, sessionIntentVersion])
 
     async function selectWorkspace(id: string) {
         if (!settings) return false
         try {
-            await handleSaveSettings({ ...settings, selectedOrganizationId: id || 'personal' })
+            await handleSaveSettings(settings, id || 'personal')
             setWorkspaceOpen(false)
             return true
         } catch (error) {
@@ -227,9 +234,15 @@ export default function App() {
         }
     }, [settings])
 
-    async function handleSaveSettings(next: AppSettings) {
-        await saveSettings(next)
-        setSettings(next)
+    async function handleSaveSettings(next: AppSettings, workspaceId?: string) {
+        if (!sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)) throw new Error('Your session changed. Open Settings again before saving.')
+        const saveRevision = settingsWriteRevision()
+        // Preferences cannot replace credentials captured by an older drawer.
+        const current = currentSettings.current!
+        const safe = { ...next, selectedOrganizationId: workspaceId ?? current.selectedOrganizationId, authToken: current.authToken, userId: current.userId, impersonationToken: current.impersonationToken, impersonatingUserId: current.impersonatingUserId, impersonatingUserName: current.impersonatingUserName }
+        await saveSettings(safe, saveRevision)
+        if (!sessionTransition.current(sessionIntentVersion, settings, currentSettings.current) || settingsWriteRevision() !== saveRevision + 1) throw new Error('Settings changed before this save could be applied.')
+        currentSettings.current = safe; setSettings(safe)
     }
 
     async function handleSaveAiMessages(next: AiChatMessage[]) {
@@ -238,6 +251,9 @@ export default function App() {
     }
 
     async function handleAuthenticated(session: { id: string; token: string }) {
+        const intent = sessionTransition.begin(sessionIntentVersion, settings, currentSettings.current)
+        if (intent === null) throw new Error('Your session changed. Sign in again.')
+        setSessionIntentVersion(sessionTransition.version)
         const next = {
             ...settings!,
             authToken: session.token,
@@ -246,11 +262,18 @@ export default function App() {
             impersonatingUserId: '',
             impersonatingUserName: '',
         }
-        await saveSettings(next)
-        setSettings(next)
+        try {
+            await saveSettings(next)
+            currentSettings.current = next; setSettings(next)
+        } finally {
+            if (sessionTransition.finish(intent)) setSessionIntentVersion(sessionTransition.version)
+        }
     }
 
     async function clearSession() {
+        const intent = sessionTransition.begin(sessionIntentVersion, settings, currentSettings.current)
+        if (intent === null) throw new Error('Your session changed. Review the current account before logging out.')
+        setSessionIntentVersion(sessionTransition.version)
         const next = {
             ...settings!,
             authToken: '',
@@ -259,13 +282,17 @@ export default function App() {
             impersonatingUserId: '',
             impersonatingUserName: '',
         }
-        await saveSettings(next)
-        setSettings(next)
+        try {
+            await saveSettings(next)
+            currentSettings.current = next; setSettings(next)
+        } finally {
+            if (sessionTransition.finish(intent)) setSessionIntentVersion(sessionTransition.version)
+        }
     }
 
     async function returnToOwnView() {
         const before = currentSettings.current
-        if (!before || (!before.impersonationToken && !before.impersonatingUserId) || returningToOwnView.current) return
+        if (!sessionTransition.current(sessionIntentVersion, settings, before) || !before || (!before.impersonationToken && !before.impersonatingUserId) || returningToOwnView.current) return
         const saveRevision = settingsWriteRevision()
         const controller = new AbortController()
         returningToOwnView.current = controller; setReturnPending(true)
@@ -493,6 +520,7 @@ export default function App() {
                     </NavigationContainer>
                     <WorkspacePicker open={workspaceOpen} organizations={organizations} selectedId={settings.selectedOrganizationId || 'personal'} error={organizationError} onClose={() => setWorkspaceOpen(false)} onSelect={id => void selectWorkspace(id)} onRetry={() => setOrganizationRevision(value => value + 1)} onManage={() => { setWorkspaceOpen(false); navigation.navigate('Organizations', { section: 'Overview' }) }} />
                     <SettingsDrawer
+                        key={JSON.stringify([sessionIntentVersion, settings.apiBaseUrl, settings.siteBaseUrl, settings.userId, settings.authToken, settings.impersonationToken, settings.impersonatingUserId])}
                         open={settingsOpen}
                         settings={settings}
                         onClose={() => setSettingsOpen(false)}
