@@ -49,8 +49,8 @@ globalThis.fetch = Object.assign(async (...[input, init]: Parameters<typeof fetc
         organization: { id: organizationId, name: 'Synthetic workspace', lifecycleStatus: 'active' },
         watchlistItems: items,
         sharedWatchlistContract: {
-            organizationId, capabilities: { authoritativeProjectionSync: true, projectionReceiptSchemaVersion: schema },
-            permissions: { canWrite: true, canArchive: true, canCleanup: true },
+            organizationId, capabilities: { authoritativeProjectionSync: true, projectionReconcile: true, projectionReceiptSchemaVersion: schema },
+            permissions: { canWrite: true, canArchive: true, canCleanup: true, canReconcile: true },
         },
     })
     const body = JSON.parse(String(init?.body || '{}'))
@@ -60,6 +60,11 @@ globalThis.fetch = Object.assign(async (...[input, init]: Parameters<typeof fetc
         return json(saved([item], true), 201)
     }
     const id = url.pathname.slice(prefix.length + 1).split('/')[0]
+    if (id === 'reconcile') {
+        const selected = items.filter(item => body.itemIds.includes(item.id))
+        const { dwmAlertBridge } = saved(selected)
+        return json({ organizationId, itemIds: selected.map(item => item.id), dwmAlertBridge })
+    }
     if (id === 'cleanup') {
         const changed = items.filter(item => body.itemIds.includes(item.id)).map(item => ({ ...item, status: 'archived' }))
         items = items.map(item => changed.find(value => value.id === item.id) || item)

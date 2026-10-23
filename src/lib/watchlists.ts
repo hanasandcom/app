@@ -6,7 +6,7 @@ export type WatchlistKind = typeof watchlistKinds[number]
 export type WatchlistStatus = 'active' | 'paused' | 'archived'
 export type WatchlistItem = { id: string; organizationId: string; kind: WatchlistKind; value: string; notes: string; status: WatchlistStatus; updatedAt: string }
 export type WatchlistDraft = { kind: WatchlistKind; value: string; notes: string }
-export type WatchlistPage = { organizationId: string; name: string; lifecycle: string; items: WatchlistItem[]; projectionSupported: boolean; canWrite: boolean; canArchive: boolean; canCleanup: boolean }
+export type WatchlistPage = { organizationId: string; name: string; lifecycle: string; items: WatchlistItem[]; projectionSupported: boolean; canWrite: boolean; canArchive: boolean; canCleanup: boolean; canReconcile: boolean }
 export type WatchlistAction = 'pause' | 'resume' | 'restore' | 'archive'
 export type WatchlistChange = { type: 'create'; draft: WatchlistDraft } | { type: 'edit'; itemId: string; draft: WatchlistDraft } | { type: WatchlistAction; itemId: string } | { type: 'cleanup'; itemIds: string[] }
 export class WatchlistRequestError extends Error {
@@ -31,7 +31,7 @@ export function normalizeWatchlistPage(value: unknown, organizationId: string): 
     const capabilities = object(contract.capabilities), permissions = object(contract.permissions)
     const items = body.watchlistItems.map(item => normalizeWatchlistItem(item, organizationId))
     if (new Set(items.map(item => item.id)).size !== items.length) throw new Error('The watchlist response contains duplicate items.')
-    return { organizationId, name: text(organization.name), lifecycle: text(organization.lifecycleStatus), items, projectionSupported: capabilities.authoritativeProjectionSync === true && capabilities.projectionReceiptSchemaVersion === schema, canWrite: permissions.canWrite === true, canArchive: permissions.canArchive === true, canCleanup: permissions.canCleanup === true }
+    return { organizationId, name: text(organization.name), lifecycle: text(organization.lifecycleStatus), items, projectionSupported: capabilities.authoritativeProjectionSync === true && capabilities.projectionReconcile === true && capabilities.projectionReceiptSchemaVersion === schema, canWrite: permissions.canWrite === true, canArchive: permissions.canArchive === true, canCleanup: permissions.canCleanup === true, canReconcile: permissions.canReconcile === true }
 }
 export function mayChangeWatchlists(settings: AppSettings, page: WatchlistPage, type: WatchlistChange['type']) {
     if (settings.impersonationToken || !page.projectionSupported || settings.selectedOrganizationId !== page.organizationId || !['active', 'archived'].includes(page.lifecycle)) return false
@@ -51,6 +51,35 @@ export function validateWatchlistDraft(draft: WatchlistDraft): WatchlistDraft {
 export function filterWatchlists(items: WatchlistItem[], query: string, status: WatchlistStatus | '') {
     const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
     return items.filter(item => (!status || item.status === status) && terms.every(term => `${item.kind} ${item.value} ${item.notes}`.toLocaleLowerCase().includes(term)))
+}
+function confirmedMonitoring(receiptValue: unknown, organizationId: string, itemIds: string[]) {
+    const receipt = object(receiptValue), projection = object(receipt.projection), rebuild = object(receipt.alertRebuild)
+    const ids = Array.isArray(receipt.itemIds) ? receipt.itemIds : []
+    return receipt.schemaVersion === schema && receipt.organizationId === organizationId
+        && ids.length === itemIds.length && new Set(ids).size === ids.length && itemIds.every(id => ids.includes(id))
+        && rebuild.status === 'not_requested' && rebuild.reason === 'projection_only'
+        && ['synchronized', 'unchanged'].includes(text(projection.status)) && projection.source === 'identity'
+        && Array.isArray(projection.watchlistIds) && projection.watchlistIds.every(id => itemIds.some(item => id === `org_shared_watchlist:${organizationId}:${item}`))
+        && Array.isArray(projection.unresolvedItemIds) && projection.unresolvedItemIds.length === 0
+        && typeof projection.checkedAt === 'string' && Number.isFinite(Date.parse(projection.checkedAt))
+}
+export function maySyncWatchlists(settings: AppSettings, page: WatchlistPage) {
+    return !settings.impersonationToken && settings.selectedOrganizationId === page.organizationId
+        && page.lifecycle === 'active' && page.projectionSupported && page.canReconcile
+}
+export function watchlistSyncResult(value: unknown, organizationId: string, itemIds: string[]) {
+    const body = object(value)
+    const ids = Array.isArray(body.itemIds) ? body.itemIds : []
+    if (body.organizationId !== organizationId || ids.length !== itemIds.length || new Set(ids).size !== ids.length || !itemIds.every(id => ids.includes(id))) throw new Error('Monitoring sync could not be confirmed. Refresh before trying again.')
+    const confirmed = confirmedMonitoring(body.dwmAlertBridge, organizationId, itemIds)
+    return { message: confirmed ? 'Monitoring synced.' : 'Monitoring sync did not complete.', warning: confirmed ? '' : 'You can try Sync monitoring again. The saved watch term will not be changed.' }
+}
+export async function syncWatchlists(settings: AppSettings, page: WatchlistPage, itemIds: string[], requestId: string) {
+    if (!maySyncWatchlists(settings, page)) throw new Error('Monitoring sync is unavailable for this workspace or service version.')
+    if (!itemIds.length || itemIds.length > 50 || new Set(itemIds).size !== itemIds.length) throw new Error('Select 1–50 different watch terms to sync.')
+    itemIds.forEach(id => { identifier(id); if (!page.items.some(item => item.id === id)) throw new Error('Select watch terms from this organization.') })
+    const body = await request(settings, page.organizationId, '/reconcile', { method: 'POST', body: JSON.stringify({ itemIds, requestId, reason: 'Monitoring sync requested from the native workspace.' }) })
+    return watchlistSyncResult(body, page.organizationId, itemIds)
 }
 async function request(settings: AppSettings, org: string, suffix: string, init: RequestInit, mutation = false) {
     if (!settings.authToken || !settings.userId) throw new Error('Sign in to view watchlists.')
@@ -88,11 +117,11 @@ export function watchlistMutationResult(value: unknown, organizationId: string, 
     const receipt = object(body.dwmAlertBridge), projection = object(receipt.projection), rebuild = object(receipt.alertRebuild)
     const ids = Array.isArray(receipt.itemIds) ? receipt.itemIds : []
     const aligned = !requiresRefresh && receipt.schemaVersion === schema && receipt.organizationId === organizationId && ids.length === items.length && new Set(ids).size === ids.length && items.every(item => ids.includes(item.id)) && rebuild.status === 'not_requested' && rebuild.reason === 'projection_only'
-    const completed = aligned && ['synchronized', 'unchanged'].includes(text(projection.status)) && projection.source === 'identity' && Array.isArray(projection.watchlistIds) && projection.watchlistIds.every(id => items.some(item => id === `org_shared_watchlist:${organizationId}:${item.id}`)) && Array.isArray(projection.unresolvedItemIds) && projection.unresolvedItemIds.length === 0 && typeof projection.checkedAt === 'string' && Number.isFinite(Date.parse(projection.checkedAt))
+    const completed = aligned && confirmedMonitoring(receipt, organizationId, items.map(item => item.id))
     const noChanges = aligned && cleanup && items.length === 0 && projection.status === 'unchanged' && projection.checkedAt === null && projection.reason === 'no_changed_items'
     return {
         saved: true as const, items, requiresRefresh,
-        warning: completed || noChanges ? '' : 'Saved. Monitoring sync is not confirmed. Refresh to review the saved item; do not create a duplicate.',
+        warning: completed || noChanges ? '' : 'Saved. Monitoring sync is not confirmed. Open the term and choose Sync monitoring to try again.',
         message: completed ? 'Saved and monitoring synced. Alert rebuilding was not requested.'
             : noChanges ? 'No items changed. Alert rebuilding was not requested.'
                 : aligned ? 'Saved. Alert rebuilding was not requested.' : 'Saved.',

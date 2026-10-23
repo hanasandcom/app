@@ -4,7 +4,7 @@ import { useIsFocused } from '@react-navigation/native'
 import type { AppSettings } from '../types'
 import { GlassCard, InlineNotice, LabeledInput, PillButton, Screen, SectionTitle } from '../components/ui'
 import { useAppTheme } from '../theme/context'
-import { changeWatchlists, filterWatchlists, loadWatchlists, mayChangeWatchlists, validateWatchlistDraft, watchlistKinds, watchlistScope, WatchlistRequestError, type WatchlistChange, type WatchlistDraft, type WatchlistPage, type WatchlistStatus } from '../lib/watchlists'
+import { changeWatchlists, filterWatchlists, loadWatchlists, mayChangeWatchlists, maySyncWatchlists, syncWatchlists, validateWatchlistDraft, watchlistKinds, watchlistScope, WatchlistRequestError, type WatchlistChange, type WatchlistDraft, type WatchlistPage, type WatchlistStatus } from '../lib/watchlists'
 
 export function WatchlistsScreen({ settings }: { settings: AppSettings }) {
     return <WorkspaceWatchlists key={watchlistScope(settings)} settings={settings} />
@@ -54,6 +54,15 @@ function WorkspaceWatchlists({ settings }: { settings: AppSettings }) {
             if (live.current) { setError(message(cause)); if (cause instanceof WatchlistRequestError && cause.outcomeUnknown) setMustRefresh(true) }
         } finally { saving.current = false; if (live.current) setBusy(false) }
     }
+    async function sync(itemId: string) {
+        if (!page || saving.current || disabled || !maySyncWatchlists(settings, page)) return
+        saving.current = true; setBusy(true); setError(''); setNotice(''); setWarning('')
+        try {
+            const result = await syncWatchlists(settings, page, [itemId], `watchlist-sync-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+            if (live.current) { setNotice(result.message); setWarning(result.warning) }
+        } catch (cause) { if (live.current) setError(message(cause)) }
+        finally { saving.current = false; if (live.current) setBusy(false) }
+    }
     function confirm(change: WatchlistChange, title: string, body: string) {
         Alert.alert(title, body, [{ text: 'Cancel', style: 'cancel' }, { text: 'Confirm', style: 'destructive', onPress: () => void save(change) }])
     }
@@ -92,6 +101,7 @@ function WorkspaceWatchlists({ settings }: { settings: AppSettings }) {
                 {selected === item.id && <>
                     <Text selectable style={text}>Item: {item.id}</Text><Text style={text}>Updated: {item.updatedAt || 'Not reported'}</Text>
                     <View style={row}>
+                        {page?.canReconcile && <PillButton small label='Sync monitoring' disabled={disabled || !maySyncWatchlists(settings, page)} onPress={() => void sync(item.id)} />}
                         {item.status !== 'archived' && <PillButton small label='Edit' disabled={!allowed('edit')} onPress={() => openEditor(item.id, { kind: item.kind, value: item.value, notes: item.notes })} />}
                         {item.status === 'active' && <PillButton small label='Pause' disabled={!allowed('pause')} onPress={() => confirm({ type: 'pause', itemId: item.id }, 'Pause watch term?', item.value)} />}
                         {item.status === 'paused' && <PillButton small label='Resume' disabled={!allowed('resume')} onPress={() => void save({ type: 'resume', itemId: item.id })} />}

@@ -8,7 +8,7 @@ const settings = { apiBaseUrl: 'https://api.hanasand.com/api', userId: 'syntheti
 const org = settings.selectedOrganizationId!
 const item = { id: 'synthetic-item', organizationId: org, kind: 'company' as const, value: 'Synthetic Company', notes: 'Synthetic context', status: 'active' as const, updatedAt: '' }
 const receipt = (status = 'synchronized') => ({ schemaVersion: 'organization.watchlist_projection_receipt.v1', organizationId: org, itemIds: [item.id], projection: { status, source: 'identity', checkedAt: status === 'synchronized' ? '2026-10-23T01:00:00Z' : null, watchlistIds: [`org_shared_watchlist:${org}:${item.id}`], unresolvedItemIds: [] }, alertRebuild: { status: 'not_requested', reason: 'projection_only' } })
-const payload = () => ({ organization: { id: org, name: 'Synthetic organization', lifecycleStatus: 'active' }, watchlistItems: [item], sharedWatchlistContract: { organizationId: org, capabilities: { authoritativeProjectionSync: true, projectionReceiptSchemaVersion: 'organization.watchlist_projection_receipt.v1' }, permissions: { canWrite: true, canArchive: true, canCleanup: true } } })
+const payload = () => ({ organization: { id: org, name: 'Synthetic organization', lifecycleStatus: 'active' }, watchlistItems: [item], sharedWatchlistContract: { organizationId: org, capabilities: { authoritativeProjectionSync: true, projectionReconcile: true, projectionReceiptSchemaVersion: 'organization.watchlist_projection_receipt.v1' }, permissions: { canWrite: true, canArchive: true, canCleanup: true, canReconcile: true } } })
 const page = () => api.normalizeWatchlistPage(payload(), org)
 const draft = { kind: 'domain' as const, value: 'https://www.Example.test/path', notes: ' Synthetic ' }
 beforeEach(() => { calls.length = 0; respond = () => Promise.resolve(Response.json(payload())) })
@@ -22,7 +22,7 @@ describe('native canonical organization watchlists', () => {
         expect(calls[0].init.credentials).toBe('omit')
     })
     it('fails closed for missing/false/unknown projection capability and cross-organization responses', () => {
-        for (const capabilities of [{}, { authoritativeProjectionSync: false }, { authoritativeProjectionSync: true, projectionReceiptSchemaVersion: 'future' }]) {
+        for (const capabilities of [{}, { authoritativeProjectionSync: false }, { authoritativeProjectionSync: true, projectionReconcile: true, projectionReceiptSchemaVersion: 'future' }]) {
             const body = payload(); body.sharedWatchlistContract.capabilities = capabilities as typeof body.sharedWatchlistContract.capabilities
             const result = api.normalizeWatchlistPage(body, org)
             expect(result.items.length).toBe(1)
@@ -102,5 +102,38 @@ describe('native canonical organization watchlists', () => {
         await expect(api.changeWatchlists(settings, page(), { type: 'resume', itemId: item.id }, 'synthetic')).rejects.toThrow('state')
         await expect(api.changeWatchlists(settings, { ...page(), projectionSupported: false }, { type: 'create', draft }, 'synthetic')).rejects.toThrow('unavailable')
         expect(calls).toHaveLength(0)
+    })
+    it('syncs monitoring with a separate explicit command without repeating the source save', async () => {
+        respond = () => Promise.resolve(Response.json({ organizationId: org, itemIds: [item.id], dwmAlertBridge: receipt() }))
+        const result = await api.syncWatchlists(settings, page(), [item.id], 'sync-request')
+        expect(result).toEqual({ message: 'Monitoring synced.', warning: '' })
+        expect(calls).toHaveLength(1)
+        expect(calls[0].url).toEndWith('/watchlists/reconcile')
+        expect(calls[0].init.method).toBe('POST')
+        expect(JSON.parse(calls[0].init.body as string)).toEqual({ itemIds: [item.id], requestId: 'sync-request', reason: 'Monitoring sync requested from the native workspace.' })
+        expect(JSON.stringify(result)).not.toMatch(/saved|rebuild|alertIds/i)
+    })
+    it('allows retry for archived terms within an active organization without restoring them', async () => {
+        respond = () => Promise.resolve(Response.json({ organizationId: org, itemIds: [item.id], dwmAlertBridge: receipt('pending') }))
+        const result = await api.syncWatchlists(settings, { ...page(), items: [{ ...item, status: 'archived' }] }, [item.id], 'sync-request')
+        expect(result.message).toBe('Monitoring sync did not complete.')
+        expect(result.warning).toContain('will not be changed')
+        expect(calls).toHaveLength(1)
+        expect(calls[0].url).toEndWith('/reconcile')
+    })
+    it('requires retry capability, permission, lifecycle and exact scoped selectors before sending', async () => {
+        const missingRetry = payload(); delete (missingRetry.sharedWatchlistContract.capabilities as Partial<typeof missingRetry.sharedWatchlistContract.capabilities>).projectionReconcile
+        expect(api.mayChangeWatchlists(settings, api.normalizeWatchlistPage(missingRetry, org), 'create')).toBe(false)
+        for (const value of [{ ...page(), canReconcile: false }, { ...page(), lifecycle: 'archived' }, { ...page(), projectionSupported: false }]) await expect(api.syncWatchlists(settings, value, [item.id], 'sync')).rejects.toThrow('unavailable')
+        await expect(api.syncWatchlists({ ...settings, impersonationToken: 'synthetic' }, page(), [item.id], 'sync')).rejects.toThrow('unavailable')
+        for (const ids of [[], [item.id, item.id], ['foreign'], Array.from({ length: 51 }, (_, index) => `item-${index}`)]) await expect(api.syncWatchlists(settings, page(), ids, 'sync')).rejects.toThrow()
+        expect(calls).toHaveLength(0)
+    })
+    it('does not accept foreign or malformed sync receipts and never retries a failed command automatically', async () => {
+        expect(() => api.watchlistSyncResult({ organizationId: 'foreign', itemIds: [item.id] }, org, [item.id])).toThrow('confirmed')
+        expect(api.watchlistSyncResult({ organizationId: org, itemIds: [item.id], dwmAlertBridge: {} }, org, [item.id]).warning).toBeTruthy()
+        respond = () => Promise.reject(new Error('synthetic transport failure'))
+        await expect(api.syncWatchlists(settings, page(), [item.id], 'sync')).rejects.toThrow('could not be reached')
+        expect(calls).toHaveLength(1)
     })
 })
