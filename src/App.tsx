@@ -34,9 +34,10 @@ import { loadAiChat, loadSettings, saveAiChat, saveSettings, settingsWriteRevisi
 import { getThemePalette, palette } from './theme/tokens'
 import { AppThemeProvider } from './theme/context'
 import { PendingDeletionError, refreshHanasandSession, startDesktopAgentCoverTraffic, stopDesktopAgentCoverTraffic, stopMobileImpersonation } from './lib/api'
-import { classifyRefreshFailure, SessionTransition } from './lib/session'
+import { classifyRefreshFailure, sameSettingsSession, SessionTransition } from './lib/session'
 
 const Tab = createBottomTabNavigator<RootTabParamList>()
+type PendingDeletionDetails = { id: string; restoreToken: string; deletionScheduledAt: string }
 
 const tabIcons = {
     Home: Bot,
@@ -76,7 +77,7 @@ export default function App() {
     const [organizations, setOrganizations] = useState<Organization[]>([])
     const [organizationError, setOrganizationError] = useState('')
     const [organizationRevision, setOrganizationRevision] = useState(0)
-    const [pendingDeletion, setPendingDeletion] = useState<{ id: string, restoreToken: string, deletionScheduledAt: string } | null>(null)
+    const [pendingDeletion, setPendingDeletion] = useState<PendingDeletionDetails | null>(null)
 
     useEffect(() => {
         let active = true
@@ -271,7 +272,7 @@ export default function App() {
         }
     }
 
-    async function clearSession(deletion: { id: string; restoreToken: string; deletionScheduledAt: string } | null = null) {
+    async function clearSession(deletion: PendingDeletionDetails | null = null) {
         const intent = sessionTransition.begin(sessionIntentVersion, settings, currentSettings.current)
         if (intent === null) throw new Error('Your session changed. Review the current account before logging out.')
         setSessionIntentVersion(sessionTransition.version)
@@ -289,6 +290,14 @@ export default function App() {
             currentSettings.current = next; setSettings(next)
         } finally {
             if (sessionTransition.finish(intent)) setSessionIntentVersion(sessionTransition.version)
+        }
+    }
+
+    async function handlePendingDeletion(deletion: PendingDeletionDetails | null = null) {
+        if (!sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)) return
+        try { await clearSession(deletion) }
+        catch (error) {
+            if (sameSettingsSession(settings, currentSettings.current)) Alert.alert('Unable to update sign-in', error instanceof Error ? error.message : 'Your account settings could not be saved securely.')
         }
     }
 
@@ -356,12 +365,7 @@ export default function App() {
                             restoreToken={pendingDeletion.restoreToken}
                             deletionScheduledAt={pendingDeletion.deletionScheduledAt}
                             onRestored={handleAuthenticated}
-                            onBack={async () => {
-                                try { await clearSession() }
-                                catch (error) {
-                                    if (sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)) Alert.alert('Unable to go back', error instanceof Error ? error.message : 'Your account settings could not be saved.')
-                                }
-                            }}
+                            onBack={handlePendingDeletion}
                         />
                     </AppThemeProvider>
                 </GestureHandlerRootView>
@@ -374,7 +378,7 @@ export default function App() {
                     <LoginScreen
                         settings={settings}
                         onAuthenticated={handleAuthenticated}
-                        onPendingDeletion={clearSession}
+                        onPendingDeletion={handlePendingDeletion}
                     />
                 </AppThemeProvider>
             </GestureHandlerRootView>
