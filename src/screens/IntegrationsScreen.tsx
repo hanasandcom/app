@@ -80,8 +80,9 @@ function WorkspaceIntegrations({ settings }: { settings: AppSettings }) {
         <InlineNotice message={error} /><InlineNotice message={warning} /><InlineNotice message={notice} tone='success' />
         {mustRefresh && <InlineNotice message='Refresh and review the current destinations before trying again. The previous change may have been saved.' />}
         {loading && <Text accessibilityRole='progressbar' style={meta}>Loading destinations…</Text>}
+        {!loading && page?.lifecycleUnavailable && <Text style={meta}>Destinations are shown read-only because workspace lifecycle could not be verified. Refresh to try again.</Text>}
         {!loading && page?.lifecycleBlocked && <Text style={meta}>This workspace lifecycle blocks destination changes.</Text>}
-        {!!page && !page.canManage && !page.lifecycleBlocked && <Text style={meta}>Destination management is unavailable for this account or workspace.</Text>}
+        {!!page && !page.canManage && !page.lifecycleBlocked && !page.lifecycleUnavailable && <Text style={meta}>Destination management is unavailable for this account or workspace.</Text>}
         {draft ? <GlassCard style={{ gap: 12 }}>
             <SectionTitle eyebrow='Destination' title={draft.id ? 'Edit destination' : 'New destination'} body='Leave the URL blank when editing to keep the current URL.' />
             <Input label='Name' value={draft.name} maxLength={120} editable={!readOnly} onChangeText={name => { if (!saving.current && !reviewRequired.current) setDraft(value => value && { ...value, name }) }} />

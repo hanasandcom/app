@@ -8,7 +8,7 @@ const validId = (value: string) => /^[A-Za-z0-9_.:@-]{1,200}$/.test(value) && va
 export type IntegrationKind = 'discord' | 'webhook'
 export type IntegrationDraft = { id?: string; name: string; kind: IntegrationKind; url: string }
 export type Integration = { id: string; orgId: string; name: string; kind: IntegrationKind; status: string; endpointHint: string; lastTestedAt: string; lastTestStatus: string; canEdit: boolean; canRemove: boolean; canTest: boolean; testBlockers: string[] }
-export type IntegrationsPage = { accountKey: string; scope: string; canManage: boolean; lifecycleBlocked: boolean; items: Integration[] }
+export type IntegrationsPage = { accountKey: string; scope: string; canManage: boolean; lifecycleBlocked: boolean; lifecycleUnavailable: boolean; items: Integration[] }
 export class IntegrationError extends Error {
     constructor(message: string, readonly status = 0, readonly uncertain = false) { super(message) }
 }
@@ -55,28 +55,30 @@ export async function loadIntegrations(settings: AppSettings, signal?: AbortSign
     const scope = integrationOrganization(settings)
     const [result, organization] = await Promise.all([
         request(settings, `dwm/webhook-destinations?orgId=${encodeURIComponent(scope)}`, {}, signal),
-        scope === settings.userId ? undefined : request(settings, `organizations/${encodeURIComponent(scope)}`, {}, signal),
+        scope === settings.userId ? undefined : request(settings, `organizations/${encodeURIComponent(scope)}`, {}, signal).catch(() => null),
     ])
     requireSuccess(result.response, result.body)
-    let lifecycleBlocked = false
-    if (organization) {
-        requireSuccess(organization.response, organization.body)
-        const org = object(organization.body.organization), config = object(org.settings)
-        const legacyMetadata = config.auditSafeMetadata && typeof config.auditSafeMetadata === 'object' && !Array.isArray(config.auditSafeMetadata)
-        const privacy = Object.hasOwn(org, 'privacyDeletionInProgress') ? typeof org.privacyDeletionInProgress === 'boolean' ? org.privacyDeletionInProgress : null : legacyMetadata ? Boolean(object(config.auditSafeMetadata).privacyDeletionRunId) : null
-        if (org.id !== scope || !['active', 'archived', 'deleted'].includes(text(org.lifecycleStatus)) || privacy === null) throw new IntegrationError('Workspace lifecycle is unavailable. Refresh to try again.')
-        lifecycleBlocked = org.lifecycleStatus !== 'active' || privacy
+    let lifecycleBlocked = false, lifecycleUnavailable = false
+    if (scope !== settings.userId) {
+        if (!organization?.response.ok) lifecycleUnavailable = true
+        else {
+            const org = object(organization.body.organization), config = object(org.settings)
+            const legacyMetadata = config.auditSafeMetadata && typeof config.auditSafeMetadata === 'object' && !Array.isArray(config.auditSafeMetadata)
+            const privacy = Object.hasOwn(org, 'privacyDeletionInProgress') ? typeof org.privacyDeletionInProgress === 'boolean' ? org.privacyDeletionInProgress : null : legacyMetadata ? Boolean(object(config.auditSafeMetadata).privacyDeletionRunId) : null
+            if (org.id !== scope || !['active', 'archived', 'deleted'].includes(text(org.lifecycleStatus)) || privacy === null) lifecycleUnavailable = true
+            else lifecycleBlocked = org.lifecycleStatus !== 'active' || privacy
+        }
     }
     if (!Array.isArray(result.body.destinations) || typeof object(object(result.body.destinationAdminProof).access).canManage !== 'boolean') throw new IntegrationError('Destination permissions are unavailable. Refresh to try again.')
-    const canManage = object(object(result.body.destinationAdminProof).access).canManage === true && !lifecycleBlocked && !settings.impersonationToken && !settings.impersonatingUserId
+    const canManage = object(object(result.body.destinationAdminProof).access).canManage === true && !lifecycleBlocked && !lifecycleUnavailable && !settings.impersonationToken && !settings.impersonatingUserId
     const lifecycle = rows(result.body.destinationLifecycle), tests = rows(result.body.destinationTests)
     const items = result.body.destinations.map(value => {
         const row = destination(value, scope), access = object(lifecycle.find(item => item.destinationId === row.id)?.access)
         const test = tests.find(item => item.destinationId === row.id), blockers = rows(test?.blockers)
         const rowManage = canManage && access.canManage === true
-        return { ...row, canEdit: rowManage && access.canUpdate === true && row.status !== 'archived', canRemove: rowManage && row.status !== 'archived', canTest: rowManage && access.canTest === true && object(test?.access).canTest === true && !blockers.some(item => item.blocking === true) && row.status === 'active', testBlockers: blockers.filter(item => item.blocking === true).map(item => safeMessage(item.message, 'Test unavailable.')) }
+        return { ...row, canEdit: rowManage && access.canUpdate === true && row.status !== 'archived', canRemove: rowManage && access.canDisable === true && row.status === 'active', canTest: rowManage && access.canTest === true && object(test?.access).canTest === true && !blockers.some(item => item.blocking === true) && row.status === 'active', testBlockers: blockers.filter(item => item.blocking === true).map(item => safeMessage(item.message, 'Test unavailable.')) }
     })
-    return { accountKey: integrationsScope(settings), scope, canManage, lifecycleBlocked, items }
+    return { accountKey: integrationsScope(settings), scope, canManage, lifecycleBlocked, lifecycleUnavailable, items }
 }
 export function filterIntegrations(items: Integration[], query: string, kind = '', status = '') {
     const search = query.trim().toLocaleLowerCase()

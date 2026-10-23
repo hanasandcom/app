@@ -8,7 +8,7 @@ const { IntegrationError, loadIntegrations, integrationOrganization, integration
 const settings = { apiBaseUrl: 'https://api.synthetic.invalid/api', userId: 'synthetic-user', authToken: 'synthetic-session', selectedOrganizationId: 'synthetic-org', impersonationToken: '', impersonatingUserId: '' } as AppSettings
 const id = 'synthetic-destination'
 const destination = (scope = settings.selectedOrganizationId) => ({ id, orgId: scope, name: 'Alerts', kind: 'webhook', status: 'active', endpointHint: 'hooks.example/…', lastTestStatus: null })
-const feed = (scope = settings.selectedOrganizationId, manage = true) => ({ destinations: [destination(scope)], destinationAdminProof: { access: { canManage: manage } }, destinationLifecycle: [{ destinationId: id, access: { canManage: manage, canUpdate: manage, canTest: manage } }], destinationTests: [{ destinationId: id, access: { canTest: manage }, blockers: [] }] })
+const feed = (scope = settings.selectedOrganizationId, manage = true) => ({ destinations: [destination(scope)], destinationAdminProof: { access: { canManage: manage } }, destinationLifecycle: [{ destinationId: id, access: { canManage: manage, canUpdate: manage, canDisable: manage, canTest: manage } }], destinationTests: [{ destinationId: id, access: { canTest: manage }, blockers: [] }] })
 const org = (change: Record<string, unknown> = {}) => ({ organization: { id: settings.selectedOrganizationId, lifecycleStatus: 'active', privacyDeletionInProgress: false, ...change } })
 const draft = { name: 'New alerts', kind: 'webhook' as const, url: 'https://hooks.example/secret-token' }
 beforeEach(() => { calls.length = 0; handle = url => Response.json(url.pathname.includes('/organizations/') ? org() : feed()) })
@@ -46,9 +46,9 @@ test('new authoritative privacy flag wins over legacy metadata and unknown lifec
     handle = url => Response.json(url.pathname.includes('/organizations/') ? org({ settings: { auditSafeMetadata: { privacyDeletionRunId: 'old-stale-marker' } } }) : feed())
     expect((await page()).canManage).toBe(true)
     handle = url => Response.json(url.pathname.includes('/organizations/') ? org({ privacyDeletionInProgress: 'false', settings: { auditSafeMetadata: {} } }) : feed())
-    await expect(page()).rejects.toThrow('lifecycle')
+    expect(await page()).toMatchObject({ lifecycleUnavailable: true, canManage: false })
     handle = url => Response.json(url.pathname.includes('/organizations/') ? org({ privacyDeletionInProgress: undefined }) : feed())
-    await expect(page()).rejects.toThrow('lifecycle')
+    expect(await page()).toMatchObject({ lifecycleUnavailable: true, canManage: false })
 })
 test('old metadata uses exact truthiness, is discarded, and missing/failed organization read disables writes', async () => {
     for (const marker of [null, false, '', 'synthetic-deletion', true]) {
@@ -57,7 +57,7 @@ test('old metadata uses exact truthiness, is discarded, and missing/failed organ
         expect(JSON.stringify(result)).not.toContain('not-returned')
     }
     handle = url => url.pathname.includes('/organizations/') ? Response.json({ error: 'unavailable' }, { status: 503 }) : Response.json(feed())
-    await expect(page()).rejects.toThrow('unavailable')
+    expect(await page()).toMatchObject({ lifecycleUnavailable: true, canManage: false })
 })
 test('server canManage and per-action flags/blockers are required, with both impersonation states read-only', async () => {
     handle = url => Response.json(url.pathname.includes('/organizations/') ? org() : feed(settings.selectedOrganizationId, false))
@@ -151,4 +151,42 @@ test('search/kind/status are local and omit archived records without additional 
     expect(filterIntegrations(current.items, 'ALERT', 'webhook', 'active')).toHaveLength(1)
     expect(filterIntegrations(current.items, '', 'discord')).toHaveLength(0)
     expect(filterIntegrations([{ ...current.items[0], status: 'archived' }], '')).toHaveLength(0)
+})
+
+test('Remove requires explicit server disable permission and active status; denied/missing/paused never fetch', async () => {
+    for (const change of [{ canDisable: false }, { canDisable: undefined }, { paused: true }]) {
+        handle = url => {
+            if (url.pathname.includes('/organizations/')) return Response.json(org())
+            const body = feed()
+            Object.assign(body.destinationLifecycle[0].access, { canDisable: 'paused' in change ? true : change.canDisable })
+            if ('paused' in change) body.destinations[0].status = 'paused'
+            return Response.json(body)
+        }
+        const current = await page()
+        expect(current.items[0].canRemove).toBe(false)
+        calls.length = 0
+        await expect(removeIntegration(settings, current, id)).rejects.toThrow('unavailable')
+        expect(calls).toHaveLength(0)
+    }
+})
+
+test('successful destinations remain read-only for org missing/mismatched/malformed/503/network lifecycle', async () => {
+    for (const organization of [() => Response.json({}), () => Response.json(org({ id: 'foreign-org' })),
+        () => Response.json(org({ lifecycleStatus: 123 })), () => Response.json(org({ privacyDeletionInProgress: 'false' })),
+        () => Response.json({ error: 'private lifecycle detail' }, { status: 503 }),
+        () => { throw new Error('private org network detail') }]) {
+        handle = url => url.pathname.includes('/organizations/') ? organization() : Response.json(feed())
+        const current = await page()
+        expect(current).toMatchObject({ lifecycleUnavailable: true, canManage: false, scope: 'synthetic-org' })
+        expect(current.items).toHaveLength(1)
+        expect(current.items[0]).toMatchObject({ canEdit: false, canRemove: false, canTest: false })
+        expect(JSON.stringify(current)).not.toContain('private')
+        calls.length = 0
+        await expect(saveIntegration(settings, current, draft)).rejects.toThrow('read-only')
+        expect(calls).toHaveLength(0)
+    }
+})
+test('destination network rejection stays fatal even if organization lifecycle succeeded', async () => {
+    handle = url => { if (!url.pathname.includes('/organizations/')) throw new Error('synthetic destination network failure'); return Response.json(org()) }
+    await expect(page()).rejects.toThrow('could not be confirmed')
 })
