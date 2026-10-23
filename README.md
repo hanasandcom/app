@@ -33,14 +33,14 @@ Support in the Menu opens the server-authorized staff queue or your own conversa
 
 Integrations opens a native destination manager for the selected Personal or organization workspace: search, add/edit, archive and explicitly test Discord/webhook destinations. Testing sends an example message to the configured destination after confirmation; dry-run, skipped and failed receipts are shown separately from delivered messages. URLs entered in the editor stay in memory and clear when the screen loses focus or the app backgrounds. Editing with a blank URL keeps the current server URL. Server permissions, action blockers and workspace lifecycle control changes; impersonated views are read-only. The destination manager uses `/findings/actions`. Delivery history at `/findings/delivery` has alert selection, retained attempt details, reviewed Test/Send/Retry actions and durable receipts; linked cases open their exact website route.
 
-## Mobile releases
-
 The organization directory supports search, sorting and switching only to freshly verified active memberships. AI Metrics shows the existing HTTP and authenticated socket telemetry, queue, clients and containers, with explicitly reviewed tests targeting one available client. Container logs open the filtered website view. Missing telemetry remains unavailable rather than becoming zero. Other menu destinations without native workflows remain website links.
 
-Findings uses the existing scoped feed, opaque cursor pages, loaded-result search and evidence investigation. Actor links prefill native threat search. Case and monitored-actor links retain their website handoffs; native case actions still need a compatible server authorization path. Threat search cancels reads and polling while hidden and keeps account-saved searches separate by session and workspace.
+Findings uses the scoped website feed, opaque cursor pages, loaded-result search and evidence investigation. Its website proxy must forward the device-bound proof to the scraper; older proxies that validate the session and then discard its proof cannot serve native sessions. Actor links prefill native threat search. Case and monitored-actor links retain their website handoffs; native case actions still need a compatible server authorization path. Threat search cancels reads and polling while hidden and keeps account-saved searches separate by session and workspace.
 
 Rule Tuning uses the fixed Hanasand workspace: review log patterns, edit and preview rules against stored logs, create a rule, and inspect or cancel reprocessing jobs. Starting reprocessing requires confirmation because it can permanently remove eligible matching Low logs and originals. Interrupted changes require refresh and review. API reference and OpenAPI JSON use the website’s public contract; application examples are a pinned copy of the website’s fictional examples. Neither reference screen submits the described API operations.
 
+
+## Mobile releases
 
 Mobile builds use [EAS Build](https://docs.expo.dev/build/introduction/) and the manual GitHub Actions workflow at **Actions → Mobile EAS build → Run workflow**. It supports iOS, Android, or both, with a `preview` (internal distribution) or `production` (store-signed artifact) profile. The workflow only builds artifacts; it does not submit them to either app store or publish an update. Preview builds are the default.
 
