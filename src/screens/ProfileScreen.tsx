@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useIsFocused } from '@react-navigation/native'
-import { Alert, Platform, ScrollView, Text, View } from 'react-native'
+import { Alert, Platform, Text, View } from 'react-native'
 import type { AppSettings } from '../types'
 import { deleteHanasandAccount, fetchProfileStats, type MobileProfileStats } from '../lib/api'
 import {
@@ -101,9 +101,9 @@ export function ProfileScreen({ settings, onLogout, onDeleted, initialSection }:
     return (
         <Screen title='Profile' subtitle={identity ? `@${identity.username || identity.id}` : settings.userId}
             right={<PillButton small label='Refresh' disabled={loading || busy} onPress={() => setRevision(value => value + 1)} />}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
+            <View style={styles.row}>
                 {sections.map(item => <PillButton key={item} label={item} tone={section === item ? 'accent' : 'default'} disabled={busy} onPress={() => { setSection(item); setNotice(''); setError('') }} />)}
-            </ScrollView>
+            </View>
             <InlineNotice message={error} />
             <InlineNotice message={notice} tone='success' />
             {loading && <Text accessibilityRole='progressbar' style={styles.meta}>Loading {section.toLowerCase()}…</Text>}

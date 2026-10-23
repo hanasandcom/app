@@ -263,15 +263,16 @@ export function WorkspacePageScreen({ settings, path, title }: { settings: AppSe
 
     useEffect(() => () => { pagingRequest.current += 1 }, [])
 
-    function fields(row: RecordValue, definitions: WorkspaceField[], limit?: number) {
+    function fields(row: RecordValue, definitions: WorkspaceField[], limit?: number, compact = false) {
         return definitions.flatMap(field => {
             const value = workspaceFieldValue(row, field)
             return value === null ? [] : [{ label: field[0], value }]
-        }).slice(0, limit).map(field => <View key={field.label} style={{ gap: 3 }}><Text style={styles.label}>{field.label}</Text><Text selectable numberOfLines={limit ? 2 : undefined} style={styles.text}>{field.value}</Text></View>)
+        }).slice(0, limit).map(field => <View key={field.label} style={[{ gap: 3 }, compact && { width: '47%' }]}><Text style={styles.label}>{field.label}</Text><Text selectable numberOfLines={limit ? 2 : undefined} style={styles.text}>{field.value}</Text></View>)
     }
     const section = sections[activeSection]
     const filteredRows = section?.rows.filter(row => !query.trim() || [itemTitle(row, section.definition, ''), ...section.definition.fields.map(field => workspaceFieldValue(row, field) || '')].join(' ').toLowerCase().includes(query.trim().toLowerCase())) || []
     const selectedFields = selected?.section.detailFields || selected?.section.fields || []
+    const compactStatusSummary = path === '/status' && section?.definition.label === 'Overview'
     const unsupported = !definition
     return <Screen key={`${path}:${selected ? 'detail' : 'list'}`} title={path === '/status' ? 'Status' : title} subtitle={path === '/status' ? 'Service monitoring' : selectedOrganization ? 'Organization workspace' : 'Personal workspace'}
         left={selected ? <PillButton label='Back' small onPress={() => setSelected(null)} /> : undefined}
@@ -301,7 +302,7 @@ export function WorkspacePageScreen({ settings, path, title }: { settings: AppSe
                     {!section.error && <Text style={styles.label}>{Math.min(visibleLimit, filteredRows.length)} shown · {filteredRows.length} matching · {section.rows.length} loaded</Text>}
                 </>}
                 {!section.error && !filteredRows.length && <Text style={styles.text}>{query ? 'No matching records.' : 'No records found.'}</Text>}
-                {section.definition.listPath === undefined ? section.rows.map((row, index) => <View key={index} style={styles.card}>{fields(row, section.definition.fields)}</View>) : filteredRows.slice(0, visibleLimit).map((row, index) => {
+                {section.definition.listPath === undefined ? section.rows.map((row, index) => <View key={index} style={[styles.card, compactStatusSummary && { flexDirection: 'row', flexWrap: 'wrap' }]}>{fields(row, section.definition.fields, undefined, compactStatusSummary)}</View>) : filteredRows.slice(0, visibleLimit).map((row, index) => {
                     const rowTitle = itemTitle(row, section.definition, `${section.definition.label} ${index + 1}`)
                     return <Pressable key={`${String(row.id || row.name || row.alias || index)}`} accessibilityRole='button' accessibilityLabel={`View ${rowTitle}`} style={styles.item} onPress={() => setSelected({ section: section.definition, row, title: rowTitle })}>
                         <Text numberOfLines={2} style={styles.heading}>{rowTitle}</Text>
