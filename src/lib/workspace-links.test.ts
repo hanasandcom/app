@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { caseWebsitePath, monitoredActorsWebsitePath, websitePageUrl } from './workspace-links'
+import { caseWebsitePath, monitoringCaseInWorkspace, monitoredActorsWebsitePath, websitePageUrl } from './workspace-links'
 test('case handoffs preserve case, alert, organization and source-route identities', () => {
     const ref = { caseId: 'HA-42', alertId: 'alert:@', organizationId: 'org one' }
     const delivery = new URL(caseWebsitePath(ref), 'https://synthetic.invalid')
@@ -68,4 +68,19 @@ test('menu and contextual website handoffs both use the canonical URL helper', a
     expect(source).toContain('WebBrowser.openBrowserAsync(websitePageUrl(settings.siteBaseUrl, path))')
     expect(source).toContain('if (item.disabledReason && item.path) {\n            openWebsite(item.path)')
     expect(source.match(/WebBrowser\.openBrowserAsync\(/g)?.length).toBe(1)
+})
+
+
+test('case navigation compares explicit scope against the live workspace, including stale A callbacks in B', async () => {
+    const fromA = { caseId: 'HA-42', alertId: 'alert', organizationId: 'A' }
+    expect(monitoringCaseInWorkspace(fromA, 'A')).toBe(true)
+    expect(monitoringCaseInWorkspace(fromA, 'B')).toBe(false)
+    expect(monitoringCaseInWorkspace(fromA, 'personal')).toBe(false)
+    const personal = { caseId: 'HA-42', alertId: 'alert' }
+    for (const id of [undefined, '', 'personal']) expect(monitoringCaseInWorkspace(personal, id)).toBe(true)
+    expect(monitoringCaseInWorkspace(personal, 'B')).toBe(false)
+    expect(monitoringCaseInWorkspace({ ...fromA, caseId: 'TI-42' }, 'A')).toBe(false)
+    expect(caseWebsitePath(fromA)).toContain('organizationId=A')
+    const source = await Bun.file(new URL('../App.tsx', import.meta.url)).text()
+    expect(source).toContain('monitoringCaseInWorkspace(ref, currentSettings.current?.selectedOrganizationId)')
 })

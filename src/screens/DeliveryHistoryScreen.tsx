@@ -161,7 +161,7 @@ function WorkspaceDelivery({ settings, onConfigure, onOpenCase }: Props) {
                     {selected && <View style={row}>
                         <PillButton label='Test delivery' disabled={disabled || !page.canTest} onPress={() => confirm('test')} />
                         <PillButton label='Send finding' disabled={disabled || !page.canSend} onPress={() => confirm('send')} />
-                        {caseRef && <PillButton label='Open case on website' disabled={busy} onPress={() => { if (active.current && !saving.current) onOpenCase(caseRef) }} />}
+                        {caseRef && <PillButton label='Open case' disabled={busy} onPress={() => { if (active.current && !saving.current) onOpenCase(caseRef) }} />}
                     </View>}
                 </GlassCard>
                 {!attempts.length && <Text style={meta}>{selected ? 'No delivery attempt yet for this finding.' : 'No delivery attempts available.'}</Text>}

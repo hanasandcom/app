@@ -51,3 +51,9 @@ export function caseWebsitePath(ref: WebsiteCaseRef) {
 export function monitoredActorsWebsitePath(organizationId: string) {
     return `/findings/actors?${new URLSearchParams({ organizationId: identity(organizationId) })}`
 }
+
+/** A stale callback may retain a different workspace from the currently rendered account. */
+export function monitoringCaseInWorkspace(ref: WebsiteCaseRef, currentOrganizationId?: string) {
+    const scope = (id?: string) => !id || id === 'personal' ? '' : id
+    return /^(HA|MON)-[1-9]\d*$/.test(ref.caseId) && scope(ref.organizationId) === scope(currentOrganizationId)
+}

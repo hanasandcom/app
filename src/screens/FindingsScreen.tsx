@@ -71,7 +71,7 @@ function WorkspaceFindings({ settings, onOpenCase, onOpenActor, onOpenMonitoredA
                 <Text selectable style={{ color: theme.text, lineHeight: 22 }}>{selected.recommendedAction || 'No recommended action was recorded.'}</Text>
                 <View style={row}>
                     {selected.actor && <PillButton label='Search actor' disabled={!available} onPress={() => { if (available && active.current) onOpenActor(selected.actor) }} />}
-                    {caseRef ? <PillButton label='Open case on website' disabled={!available} onPress={() => { if (available && active.current) onOpenCase(caseRef) }} /> : <Text style={meta}>No case yet</Text>}
+                    {caseRef ? <PillButton label='Open case' disabled={!available} onPress={() => { if (available && active.current) onOpenCase(caseRef) }} /> : <Text style={meta}>No case yet</Text>}
                 </View>
             </GlassCard>
             <FindingEvidence key={selected.id} items={selected.evidence} />

@@ -1,4 +1,4 @@
-import { caseWebsitePath, monitoredActorsWebsitePath, websitePageUrl, type WebsiteCaseRef } from './lib/workspace-links'
+import { caseWebsitePath, monitoringCaseInWorkspace, monitoredActorsWebsitePath, websitePageUrl, type WebsiteCaseRef } from './lib/workspace-links'
 import { useEffect, useRef, useState } from 'react'
 import { NavigationContainer, DarkTheme, useNavigationContainerRef } from '@react-navigation/native'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
@@ -188,7 +188,7 @@ export default function App() {
         if (!sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)) return
         try {
             // Preserve explicit foreign-workspace context in the website handoff.
-            if (/^(HA|MON)-[1-9]\d*$/.test(ref.caseId) && (!ref.organizationId || ref.organizationId === settings?.selectedOrganizationId)) {
+            if (monitoringCaseInWorkspace(ref, currentSettings.current?.selectedOrganizationId)) {
                 navigation.navigate('Tools', { tool: 'monitoring-cases', caseId: monitoringCaseId(ref.caseId), handoffId: ++navigationHandoff.current })
             } else openWebsite(caseWebsitePath(ref))
         }
