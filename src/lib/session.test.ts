@@ -79,6 +79,16 @@ describe('session transition authority', () => {
         }
     })
 
+    it('keeps the latest workspace/preferences when a same-session transition is confirmed later', () => {
+        const guard = new SessionTransition(), renderVersion = guard.version
+        const latest = { ...account, selectedOrganizationId: 'current-org', themeMode: 'forest' as const }
+        expect(guard.begin(renderVersion, account, latest)).not.toBeNull()
+        const logout = { ...latest, authToken: '', userId: '' }
+        expect(logout.selectedOrganizationId).toBe('current-org')
+        expect(logout.themeMode).toBe('forest')
+        expect(guard.current(renderVersion, account, latest)).toBe(false)
+    })
+
     it('binds actual App settings, organization discovery, login, logout and Return callbacks', async () => {
         const app = await Bun.file(new URL('../App.tsx', import.meta.url)).text()
         expect(app).toContain('const sessionTransition = useRef(new SessionTransition()).current')
@@ -91,5 +101,9 @@ describe('session transition authority', () => {
         expect(app).toContain('key={JSON.stringify([sessionIntentVersion, settings.apiBaseUrl')
         expect(app).toContain('if (settingsWriteRevision() !== saveRevision) return')
         expect(app).toContain('if (!sessionTransition.current(sessionIntentVersion, settings, before)')
+        expect(app).toContain('onPendingDeletion={clearSession}')
+        expect(app).toContain('onRestored={handleAuthenticated}')
+        expect(app.match(/\.\.\.currentSettings.current!/g)).toHaveLength(3)
+        expect(app).toContain('await saveSettings(next)\n            setPendingDeletion(deletion)')
     })
 })

@@ -255,7 +255,7 @@ export default function App() {
         if (intent === null) throw new Error('Your session changed. Sign in again.')
         setSessionIntentVersion(sessionTransition.version)
         const next = {
-            ...settings!,
+            ...currentSettings.current!,
             authToken: session.token,
             userId: session.id,
             impersonationToken: '',
@@ -264,18 +264,19 @@ export default function App() {
         }
         try {
             await saveSettings(next)
+            setPendingDeletion(null)
             currentSettings.current = next; setSettings(next)
         } finally {
             if (sessionTransition.finish(intent)) setSessionIntentVersion(sessionTransition.version)
         }
     }
 
-    async function clearSession() {
+    async function clearSession(deletion: { id: string; restoreToken: string; deletionScheduledAt: string } | null = null) {
         const intent = sessionTransition.begin(sessionIntentVersion, settings, currentSettings.current)
         if (intent === null) throw new Error('Your session changed. Review the current account before logging out.')
         setSessionIntentVersion(sessionTransition.version)
         const next = {
-            ...settings!,
+            ...currentSettings.current!,
             authToken: '',
             userId: '',
             impersonationToken: '',
@@ -284,6 +285,7 @@ export default function App() {
         }
         try {
             await saveSettings(next)
+            setPendingDeletion(deletion)
             currentSettings.current = next; setSettings(next)
         } finally {
             if (sessionTransition.finish(intent)) setSessionIntentVersion(sessionTransition.version)
@@ -353,13 +355,12 @@ export default function App() {
                             id={pendingDeletion.id}
                             restoreToken={pendingDeletion.restoreToken}
                             deletionScheduledAt={pendingDeletion.deletionScheduledAt}
-                            onRestored={async session => {
-                                setPendingDeletion(null)
-                                await handleAuthenticated(session)
-                            }}
+                            onRestored={handleAuthenticated}
                             onBack={async () => {
-                                setPendingDeletion(null)
-                                await clearSession()
+                                try { await clearSession() }
+                                catch (error) {
+                                    if (sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)) Alert.alert('Unable to go back', error instanceof Error ? error.message : 'Your account settings could not be saved.')
+                                }
                             }}
                         />
                     </AppThemeProvider>
@@ -373,10 +374,7 @@ export default function App() {
                     <LoginScreen
                         settings={settings}
                         onAuthenticated={handleAuthenticated}
-                        onPendingDeletion={async details => {
-                            setPendingDeletion(details)
-                            await clearSession()
-                        }}
+                        onPendingDeletion={clearSession}
                     />
                 </AppThemeProvider>
             </GestureHandlerRootView>
