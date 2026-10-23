@@ -6,16 +6,16 @@ import { GlassCard, InlineNotice, PillButton, Screen } from '../components/ui'
 import type { AppSettings } from '../types'
 import { caseServices, type CaseServices } from '../features/cases/api'
 import { CaseController, caseCallbackAllowed, caseReadComplete, type CaseIntent } from '../features/cases/controller'
-import { CaseError, caseScope, filterCases, intentScope, own, type CaseChange, type CaseItem, type Repository } from '../features/cases/model'
+import { CaseError, caseId, caseWorkspaceKey, filterCases, intentScope, own, type CaseChange, type CaseItem, type Repository } from '../features/cases/model'
 import { Actions, CaseInput, CaseText, Options } from '../features/cases/ui'
 import { CaseDetail, type CasePanel } from '../features/cases/CaseDetail'
 import { Development, type CommitPage, type DevelopmentPage } from '../features/cases/Development'
-export type CasesScreenProps = { settings: AppSettings; onOpenIntelligence?: () => void; onOpenHealth?: (automationId: string) => void; services?: CaseServices }
-export function CasesScreen(props: CasesScreenProps) { return <CasesWorkspace key={caseScope(props.settings)} {...props} /> }
-function CasesWorkspace({ settings, onOpenIntelligence, onOpenHealth, services: injected }: CasesScreenProps) {
+export type CasesScreenProps = { settings: AppSettings; initialCaseId?: string; onOpenIntelligence?: () => void; onOpenHealth?: (automationId: string) => void; services?: CaseServices }
+export function CasesScreen(props: CasesScreenProps) { return <CasesWorkspace key={caseWorkspaceKey(props.settings, props.initialCaseId)} {...props} /> }
+function CasesWorkspace({ settings, initialCaseId, onOpenIntelligence, onOpenHealth, services: injected }: CasesScreenProps) {
     const services = useMemo(() => injected || caseServices(settings), [settings, injected])
     const ops = useRef(new CaseController(intentScope(settings))).current
-    const [items, setItems] = useState<CaseItem[] | null>(null), [selected, setSelected] = useState(''), [detail, setDetail] = useState<CaseItem | null>(null)
+    const [items, setItems] = useState<CaseItem[] | null>(null), [selected, setSelected] = useState(initialCaseId || ''), [detail, setDetail] = useState<CaseItem | null>(null)
     const [eventView, setEventView] = useState<Pick<CaseItem, 'events' | 'eventPage' | 'eventTotal' | 'eventSnapshot'> | null>(null)
     const [panel, setPanel] = useState<CasePanel>('overview'), [repositories, setRepositories] = useState<Repository[] | null>(null), [development, setDevelopment] = useState<DevelopmentPage | null>(null), [canConnect, setCanConnect] = useState(false)
     const [developmentError, setDevelopmentError] = useState(''), [repositoryError, setRepositoryError] = useState('')
@@ -42,6 +42,7 @@ function CasesWorkspace({ settings, onOpenIntelligence, onOpenHealth, services: 
         try {
             const unknown = ops.unknown
             const id = manual && unknown && ['update', 'merge', 'link'].includes(unknown.kind) ? unknown.target : current.current.selected
+            if (id) caseId(id)
             const [listResult, itemResult, reposResult, changesResult, connectionResult] = await Promise.allSettled([
                 services.list(read.controller.signal), id ? services.detail(id, read.controller.signal) : Promise.resolve(null), services.repositories(read.controller.signal),
                 id ? services.development(id, 0, read.controller.signal) : Promise.resolve(null), services.connectionAccess(read.controller.signal),

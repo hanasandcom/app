@@ -3,7 +3,7 @@ import type { AppSettings } from '../../types'
 mock.module('../../lib/api', () => ({ apiFetch: () => { throw new Error('Tests must inject synthetic transport') } }))
 const { caseServices } = await import('./api')
 import { CaseController, CaseIntents, caseCallbackAllowed, caseReadComplete, type CaseIntent } from './controller'
-import { CaseError, caseId, caseScope, changeBody, filterCases, intentScope, mergeIds, own, parseCase, parseRepository, safeUrl } from './model'
+import { CaseError, caseId, caseScope, caseWorkspaceKey, changeBody, filterCases, intentScope, mergeIds, own, parseCase, parseRepository, safeUrl } from './model'
 const settings = { apiBaseUrl: 'https://cases.invalid/api', siteBaseUrl: 'https://site.invalid', authToken: 'synthetic-token', userId: 'synthetic-user', selectedOrganizationId: 'org.1:@', impersonationToken: '', impersonatingUserId: '' } as AppSettings
 const repoId = '12345678-abcd-1234-abcd-123456789abc'
 const snapshot = '2026-10-23T10:00:00.000Z'
@@ -38,6 +38,19 @@ describe('monitoring contracts', () => {
         expect(() => parseCase(fixture('HA-1', { organizationId: 'foreign' }), settings)).toThrow()
         expect(() => parseCase(fixture('HA-1', { occurrences: undefined }), settings)).toThrow()
         const bad = service(() => json({})); await expect(bad.api.list(signal())).rejects.toThrow()
+    })
+    test('initial case identity uses a JSON remount key; invalid monitoring IDs dispatch nothing', async () => {
+        const key = caseWorkspaceKey(settings, 'MON-12')
+        expect(JSON.parse(key)).toEqual([caseScope(settings), 'MON-12'])
+        expect(key).not.toBe(caseWorkspaceKey(settings, 'HA-12'))
+        expect(caseWorkspaceKey(settings)).toBe(caseWorkspaceKey(settings, ''))
+        const { api, calls } = service(() => json({ case: fixture() }))
+        for (const id of ['INT-12', 'HA-0', 'HA-1/other', 'HA-' + '1'.repeat(1000)]) await expect(api.detail(id, signal())).rejects.toThrow('valid monitoring')
+        expect(calls.length).toBe(0)
+        const screen = await Bun.file(new URL('../../screens/CasesScreen.tsx', import.meta.url)).text()
+        expect(screen).toContain('key={caseWorkspaceKey(props.settings, props.initialCaseId)}')
+        expect(screen).toContain('[selected, setSelected] = useState(initialCaseId || \'\')')
+        expect(screen.indexOf('if (id) caseId(id)')).toBeLessThan(screen.indexOf('await Promise.allSettled(['))
     })
     test('detail events preserve stable snapshot and page50, reject changed page/snapshot', async () => {
         const { api, calls } = service(() => json({ case: fixture('HA-1', { eventPage: 1 }) }))
@@ -142,6 +155,13 @@ describe('monitoring contracts', () => {
         await expect(insecure.api.list(signal())).rejects.toThrow('secure')
         expect(insecure.calls.length).toBe(0)
     })
+    test('receipt webhookPath is origin-rooted even when API requests use a custom prefix', async () => {
+        const s = { ...settings, apiBaseUrl: 'https://proxy.invalid/gateway/api', selectedOrganizationId: 'personal' }
+        const { api, calls } = service(() => json({ id: repoId, secret: 'a'.repeat(64), webhookPath: `/api/cases/repository-events/${repoId}` }, 201), s)
+        const receipt = await api.connect('forgejo', 'https://git.invalid/r', signal(), () => true)
+        expect(calls[0].url.pathname).toBe('/gateway/api/cases/repositories')
+        expect(receipt.webhookUrl).toBe(`https://proxy.invalid/api/cases/repository-events/${repoId}`)
+    })
     test('lost/5xx/malformed successful mutation receipts stay uncertain, 409 is definite', async () => {
         for (const result of [() => { throw new Error('lost') }, () => json({}, 502), () => json({ ok: false }), () => new Response('not-json')]) {
             const { api, calls } = service(c => c.init.method === 'PATCH' ? result() : json({ case: fixture() }))
@@ -194,6 +214,20 @@ describe('scoped operation lifecycle and actual callback guards', () => {
         expect(next.unknown).toEqual(value)
         expect(next.beginWrite(next.generation, intent('new'))).toBeNull()
         expect(Object.keys(next.unknown!)).toEqual(['token', 'kind', 'target'])
+    })
+    test('deep-link component remount retains the real module-scoped unknown intent', () => {
+        const s = { ...settings, userId: 'deep-link-synthetic-user' }, original = accessible(new CaseController(intentScope(s))), value = intent('deep-link-write')
+        const write = original.beginWrite(original.generation, value)!
+        expect(write).not.toBeNull()
+        original.hide()
+        expect(caseWorkspaceKey(s, 'HA-1')).not.toBe(caseWorkspaceKey(s, 'HA-2'))
+        const replacement = accessible(new CaseController(intentScope({ ...s, authToken: 'new-synthetic-token' })))
+        expect(replacement.unknown).toEqual(value)
+        expect(replacement.beginWrite(replacement.generation, intent('new'))).toBeNull()
+        expect(original.finishWrite(write.generation, value, true)).toBe(false)
+        const review = replacement.beginRead(replacement.generation, true)!
+        replacement.finishRead(review.ticket, true)
+        expect(replacement.acknowledge(replacement.generation, value.token)).toBe(true)
     })
     test('automatic, failed, denied and older manual reads cannot acknowledge unknown', () => {
         const registry = new CaseIntents(), a = accessible(new CaseController('a', registry)), value = intent()

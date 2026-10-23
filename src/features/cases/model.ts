@@ -18,13 +18,14 @@ export function endpoint(s: AppSettings, path: string) {
     return `${base.href.replace(/\/+$/, '')}/${path}`
 }
 export const caseScope = (s: AppSettings) => JSON.stringify([s.apiBaseUrl, s.siteBaseUrl, s.userId, s.authToken, s.selectedOrganizationId === 'personal' ? '' : s.selectedOrganizationId || '', s.impersonationToken, s.impersonatingUserId])
+export const caseWorkspaceKey = (s: AppSettings, initialCaseId?: string) => JSON.stringify([caseScope(s), initialCaseId || ''])
 export function intentScope(s: AppSettings) {
     let service = 'invalid-service'
     try { service = endpoint(s, '').replace(/\/+$/, '') } catch { /* Invalid configuration never reaches transport. */ }
     return JSON.stringify([service, s.userId, s.selectedOrganizationId === 'personal' ? '' : s.selectedOrganizationId || '', own(s) ? 'own' : 'impersonated'])
 }
 export function caseId(v: unknown) {
-    if (typeof v !== 'string' || !/^(HA|MON)-[1-9]\d*$/.test(v) || BigInt(v.slice(v.indexOf('-') + 1)) > 9223372036854775807n) throw new CaseError('Choose a valid monitoring case.')
+    if (typeof v !== 'string' || v.length > 23 || !/^(HA|MON)-[1-9]\d*$/.test(v) || BigInt(v.slice(v.indexOf('-') + 1)) > 9223372036854775807n) throw new CaseError('Choose a valid monitoring case.')
     return v.replace(/^MON-/, 'HA-')
 }
 export function repositoryId(v: unknown) {
