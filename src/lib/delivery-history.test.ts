@@ -129,7 +129,7 @@ test('screen contains guarded confirmation, focus/background cancellation and ex
     expect(source).toContain('key={deliveryHistoryScope(props.settings)}')
     expect(source).toContain('review.current = true; setMustRefresh(true)')
     expect(source).toContain('onOpenCase(caseRef)')
-    expect(source).toContain('label=\'Open case on website\'')
+    expect(source).toContain('label=\'Open case\'')
     expect(source).not.toContain('setInterval')
 })
 

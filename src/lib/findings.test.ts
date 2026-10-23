@@ -114,7 +114,7 @@ test('screen wires native investigation and explicit scoped handoffs, no invente
     expect(source).toContain('current === epoch.current && active.current')
     expect(source).toContain('controller.abort()')
     expect(source).toContain('label=\'Search actor\'')
-    expect(source).toContain('label=\'Open case on website\'')
+    expect(source).toContain('label=\'Open case\'')
     expect(source).toContain('onOpenMonitoredActors(page.organizationId)')
     expect(source).toContain('filterFindings(page?.items || [], query, reviewOnly)')
     expect(source).not.toContain('setInterval'); expect(source).not.toContain('POST')
