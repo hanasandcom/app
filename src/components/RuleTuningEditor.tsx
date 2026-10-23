@@ -3,7 +3,7 @@ import { Alert, Text, TextInput, View } from 'react-native'
 import type { AppSettings } from '../types'
 import type { OrganizationRule, RuleCondition, RuleDraft } from '../lib/organization-rules'
 import { validateRuleConditions } from '../lib/organization-rules'
-import { createTuningRule, previewTuningRule, tuningSignature, tuningWindow, TuningError, type TuningAccess, type TuningPreview, type TuningRange } from '../lib/rule-tuning'
+import { canEditTuningInput, createTuningRule, previewTuningRule, tuningSignature, tuningWindow, TuningError, type TuningAccess, type TuningPreview, type TuningRange } from '../lib/rule-tuning'
 import { GlassCard, InlineNotice, PillButton, SectionTitle } from './ui'
 import { useAppTheme } from '../theme/context'
 
@@ -63,24 +63,47 @@ export function RuleTuningEditor({ settings, access, initial, signal, disabled, 
     const [range, setRange] = useState<TuningRange>('all'), [preview, setPreview] = useState<TuningPreview | null>(null)
     const [window, setWindow] = useState<ReturnType<typeof tuningWindow> | null>(null)
     const [busy, setBusy] = useState(false), [error, setError] = useState('')
-    const mounted = useRef(true), pending = useRef(false), epoch = useRef(0)
+    const mounted = useRef(true), pending = useRef(false), epoch = useRef(0), inputGeneration = useRef(0)
     const current = useRef({ draft, disabled, json, range }); current.current = { draft, disabled, json, range }
     useEffect(() => {
         mounted.current = true
         return () => { mounted.current = false; epoch.current++ }
     }, [])
     const unavailable = disabled || busy || signal.aborted
+    const renderedGeneration = inputGeneration.current
+    function canEdit() {
+        return canEditTuningInput({ generation: inputGeneration.current, active: mounted.current && !signal.aborted,
+            pending: pending.current, disabled: current.current.disabled || unavailable }, renderedGeneration)
+    }
+    function editJson(value: string | null) {
+        if (!canEdit()) return
+        epoch.current++
+        current.current = { ...current.current, json: value }
+        setJson(value); setPreview(null); setWindow(null)
+    }
+    function changeRange(value: TuningRange) {
+        if (!canEdit()) return
+        epoch.current++
+        current.current = { ...current.current, range: value }
+        setRange(value); setWindow(null); setPreview(null)
+    }
     function change(next: RuleDraft) {
+        if (!canEdit()) return
         epoch.current++; setDraft(next); current.current = { ...current.current, draft: next }
         setPreview(null); setWindow(null); setError('')
     }
+    function changeConditions(conditions: RuleCondition[]) {
+        if (current.current.json !== null) return
+        change({ ...draft, definition: { ...draft.definition, conditions } })
+    }
     function condition(index: number, patch: Partial<RuleCondition>) {
+        if (current.current.json !== null) return
         change({ ...draft, definition: { ...draft.definition, conditions: draft.definition.conditions!.map((item, i) => i === index ? { ...item, ...patch } : item) } })
     }
     async function check(more = false) {
-        if (pending.current || signal.aborted || current.current.disabled || json !== null) return
+        if (!canEdit() || json !== null) return
         const version = ++epoch.current, fixed = more && window ? window : tuningWindow(range)
-        pending.current = true; setBusy(true); onBusy(true); setError('')
+        inputGeneration.current++; pending.current = true; setBusy(true); onBusy(true); setError('')
         try {
             const next = await previewTuningRule(settings, access, draft, fixed, more ? preview?.cursor || null : null, signal)
             if (version !== epoch.current || !mounted.current || signal.aborted) return
@@ -89,22 +112,24 @@ export function RuleTuningEditor({ settings, access, initial, signal, disabled, 
                 events: [...preview.events, ...next.events.filter(row => !preview.events.some(old => old.id === row.id))].slice(-2000) } : next)
         } catch (cause) {
             if (version === epoch.current && mounted.current && !signal.aborted) {
-                setError(message(cause))
+                setError(message(cause)); setPreview(null); setWindow(null)
                 if (cause instanceof TuningError && [401, 403].includes(cause.status)) onDenied()
             }
         }
         finally { pending.current = false; onBusy(false); if (mounted.current) setBusy(false) }
     }
     function review() {
-        if (unavailable || pending.current || json !== null) return
+        if (!canEdit() || json !== null) return
         try { tuningSignature(draft) } catch (cause) { setError(message(cause)); return }
         const snapshot = JSON.stringify(draft), version = epoch.current
         Alert.alert('Create rule in Hanasand?', `${draft.name}\n${draft.definition.stage} · ${draft.definition.action}\n${draft.definition.conditions?.length} conditions\n\nThis changes how future events are handled. Existing logs are unchanged until a separate reprocessing confirmation.`, [
             { text: 'Cancel', style: 'cancel' }, { text: 'Create rule', onPress: () => {
                 if (signal.aborted || !mounted.current || current.current.disabled || current.current.json !== null || pending.current || version !== epoch.current || JSON.stringify(current.current.draft) !== snapshot) return
-                pending.current = true; setBusy(true); onBusy(true); setError('')
+                inputGeneration.current++; pending.current = true; setBusy(true); onBusy(true); setError('')
                 void createTuningRule(settings, access, draft, signal).then(rule => {
-                    if (mounted.current && !signal.aborted && epoch.current === version) onCreated(rule)
+                    if (!mounted.current || signal.aborted) return
+                    if (epoch.current === version) onCreated(rule)
+                    else onUncertain()
                 }).catch(cause => {
                     if (!mounted.current || signal.aborted) return
                     setError(message(cause))
@@ -127,25 +152,28 @@ export function RuleTuningEditor({ settings, access, initial, signal, disabled, 
             <TuningChoices label='Operator' options={['equals', 'contains', 'regex']} value={item.operator} disabled={unavailable || json !== null} onChange={operator => condition(index, { operator })} />
             <TuningInput label={`Condition ${index + 1} value`} value={item.value} disabled={unavailable || json !== null} onChange={value => condition(index, { value })} maxLength={200} />
             <PillButton small label={`Match case: ${item.caseSensitive ? 'yes' : 'no'}`} disabled={unavailable || json !== null} onPress={() => condition(index, { caseSensitive: !item.caseSensitive })} />
-            <PillButton small label={`Remove condition ${index + 1}`} disabled={unavailable || json !== null || draft.definition.conditions!.length <= 1} onPress={() => change({ ...draft, definition: { ...draft.definition, conditions: draft.definition.conditions!.filter((_, i) => i !== index) } })} />
+            <PillButton small label={`Remove condition ${index + 1}`} disabled={unavailable || json !== null || draft.definition.conditions!.length <= 1} onPress={() => changeConditions(draft.definition.conditions!.filter((_, i) => i !== index))} />
         </View>)}
-        <PillButton label='Add condition' disabled={unavailable || json !== null || draft.definition.conditions!.length >= 8} onPress={() => change({ ...draft, definition: { ...draft.definition, conditions: [...draft.definition.conditions!, { path: 'event_type', operator: 'equals', value: '' }] } })} />
-        {json === null ? <PillButton label='Edit conditions as JSON' disabled={unavailable} onPress={() => { epoch.current++; setJson(JSON.stringify(draft.definition.conditions, null, 2)); setPreview(null) }} /> : <>
-            <TuningInput label='Conditions JSON' value={json} onChange={setJson} disabled={unavailable} multiline />
+        <PillButton label='Add condition' disabled={unavailable || json !== null || draft.definition.conditions!.length >= 8} onPress={() => changeConditions([...draft.definition.conditions!, { path: 'event_type', operator: 'equals', value: '' }])} />
+        {json === null ? <PillButton label='Edit conditions as JSON' disabled={unavailable} onPress={() => editJson(JSON.stringify(draft.definition.conditions, null, 2))} /> : <>
+            <TuningInput label='Conditions JSON' value={json} onChange={editJson} disabled={unavailable} multiline />
             <PillButton label='Apply JSON' disabled={unavailable} onPress={() => {
+                if (!canEdit()) return
                 try { const conditions = validateRuleConditions(JSON.parse(json)); change({ ...draft, definition: { ...draft.definition, conditions } }); setJson(null) }
                 catch (cause) { setError(message(cause)) }
             }} />
-            <PillButton label='Cancel JSON edits' disabled={unavailable} onPress={() => { setJson(null); epoch.current++ }} />
+            <PillButton label='Cancel JSON edits' disabled={unavailable} onPress={() => editJson(null)} />
         </>}
-        <TuningChoices label='Preview range · hours or all stored logs' options={tuningRanges} value={range} disabled={unavailable} onChange={value => { epoch.current++; setRange(value); setWindow(null); setPreview(null) }} />
+        <TuningChoices label='Preview range · hours or all stored logs' options={tuningRanges} value={range} disabled={unavailable} onChange={changeRange} />
         <PillButton label='Check matches' disabled={unavailable || json !== null} onPress={() => void check()} />
         {preview && <>
             <TuningPreviewResults preview={preview} conditions={draft.definition.conditions || []} />
             <PillButton label='Check more events' disabled={unavailable || !preview.cursor} onPress={() => void check(true)} />
         </>}
         <PillButton label={busy ? 'Working…' : 'Review and create rule'} disabled={unavailable || json !== null} onPress={review} />
-        <PillButton label='Close editor' disabled={busy} onPress={onClose} />
+        <PillButton label='Close editor' disabled={busy} onPress={() => {
+            if (mounted.current && !signal.aborted && !pending.current && inputGeneration.current === renderedGeneration) onClose()
+        }} />
     </GlassCard>
 }
 function message(cause: unknown) { return cause instanceof Error ? cause.message : 'The rule operation failed. Refresh and review before continuing.' }

@@ -118,7 +118,7 @@ function TuningWorkspace({ settings }: { settings: AppSettings }) {
             <GlassCard style={{ gap: 10 }}>
                 <SectionTitle title='Saved rule' eyebrow={`Version ${rule.version}`} body={rule.name} />
                 <TuningText>{rule.definition.stage} · {rule.definition.action} · {rule.enabled ? 'Enabled' : 'Disabled'}</TuningText>
-                <PillButton label='Close saved rule' disabled={busy} onPress={() => setRule(null)} />
+                <PillButton label='Close saved rule' disabled={busy} onPress={() => { if (active.current && !pending.current) setRule(null) }} />
             </GlassCard>
             {rule.enabled && rule.definition.stage === 'analyze' && rule.definition.action === 'drop' && <RuleReprocessPanel key={`${rule.id}:${rule.version}`} settings={settings} access={access} rule={rule} signal={sessionSignal} disabled={disabled} onBusy={value => { pending.current = value; setBusy(value) }} onDenied={denied} onUncertain={uncertain} onComplete={complete} />}
         </>}
@@ -133,7 +133,7 @@ function TuningWorkspace({ settings }: { settings: AppSettings }) {
                 <TuningText>{currentPage * 10 + index + 1}. {row.message}</TuningText>
                 <TuningText>IP: {row.ip || 'Not recorded'}{'\n'}User agent: {row.user_agent || 'Not recorded'}{'\n'}Estimated count: {row.event_count} · 24h: {row.last_24h_count}{'\n'}Last seen in sample: {row.last_triggered ? new Date(row.last_triggered).toLocaleString() : 'Not recorded'}{'\n'}Estimated row bytes: {row.storage_bytes}</TuningText>
                 <PillButton label='Tune this pattern' disabled={disabled || !tunable(row)} onPress={() => {
-                    if (disabled || !active.current) return
+                    if (disabled || pending.current || !active.current || controller.current?.signal.aborted) return
                     try { setInitial(tuningPreset(row)); setEditorKey(value => value + 1); setRule(null); scroll.current?.scrollTo({ y: 0, animated: false }) }
                     catch (cause) { setError(message(cause)) }
                 }} />

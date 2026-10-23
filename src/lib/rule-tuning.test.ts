@@ -175,7 +175,7 @@ test('UI source guards lifecycle, confirmation epochs, manual unknown-write reco
     expect(editor).toContain('JSON.stringify(current.current.draft) !== snapshot')
     expect(editor).toContain('current.current.json !== null')
     const reprocess = await Bun.file(new URL('../components/RuleReprocessPanel.tsx', import.meta.url)).text()
-    for (const required of ['current !== epoch.current', 'latest.current.range !== selectedRange', 'permanently deleted', 'Store rules and security findings are preserved', 'setPreview(null); setAcknowledged(false)']) expect(reprocess).toContain(required)
+    for (const required of ['current !== epoch.current', 'canConfirmReprocessing(reviewState(), reviewed, cancel)', 'permanently deleted', 'Store rules and security findings are preserved', 'setPreview(null); setAcknowledged(false)']) expect(reprocess).toContain(required)
     for (const source of [screen, editor, reprocess]) { expect(source).not.toContain('AsyncStorage'); expect(source).not.toContain('localStorage') }
 })
 
@@ -227,4 +227,72 @@ test('automatic summary re-read never grants manual reconciliation after an unce
     expect(refresh).not.toContain('manual.current = true')
     expect(refresh).toContain('setRevision(value => value + 1)')
     expect(source).toContain('onDenied={denied}')
+})
+
+test('captured destructive confirmation performs zeroPOST after a failed status read locks the live review', async () => {
+    const window = api.tuningWindow('all')
+    handle = () => Response.json(preview())
+    const checked = await api.previewTuningRule(settings, access(), draft(), window, null, signal(), '1')
+    let current = { epoch: 4, active: true, disabled: false, pending: false, locked: false, range: 'all' as const, version: '1', acknowledged: true, previewKey: checked.key, jobId: null as string | null }
+    const reviewed = { ...current }
+    const capturedConfirm = async () => {
+        if (!api.canConfirmReprocessing(current, reviewed, false)) return
+        await api.startRuleReprocessing(settings, access(), rule(), window, checked, signal())
+    }
+    expect(api.canConfirmReprocessing(current, reviewed, false)).toBe(true)
+    calls.length = 0; handle = () => Response.json({}, { status: 503 })
+    try { await api.loadRuleReprocessing(settings, access(), rule(), signal()) }
+    catch { current = api.lockReprocessReview(current) as typeof current }
+    await capturedConfirm()
+    expect(current.locked).toBe(true)
+    expect(current.acknowledged).toBe(false)
+    expect(current.previewKey).toBeNull()
+    expect(calls.filter(call => call.init.method === 'POST')).toHaveLength(0)
+    const source = await Bun.file(new URL('../components/RuleReprocessPanel.tsx', import.meta.url)).text()
+    expect(source).toContain('lockReprocessReview(reviewState())')
+    expect(source).toContain('epoch.current = invalidated.epoch')
+    expect(source).toContain('canConfirmReprocessing(reviewState(), reviewed, cancel)')
+})
+test('queued pre-submit input cannot invalidate or discard an accepted create201 receipt', async () => {
+    let state = { generation: 1, active: true, pending: false, disabled: false }, localDraft = draft(), epoch = 5
+    const renderedGeneration = state.generation
+    const capturedInput = () => {
+        if (!api.canEditTuningInput(state, renderedGeneration)) return
+        state.generation++; epoch++; localDraft = { ...localDraft, name: 'Late queued input' }
+    }
+    let resolve: (response: Response) => void = () => { throw new Error('Expected transport first') }
+    handle = () => new Promise<Response>(done => { resolve = done })
+    const reviewedEpoch = epoch
+    state = { ...state, generation: state.generation + 1, pending: true }
+    let ownedReceipt: OrganizationRule | null = null, uncertain = false
+    const save = api.createTuningRule(settings, access(), localDraft, signal()).then(receipt => {
+        if (epoch === reviewedEpoch) ownedReceipt = receipt
+        else uncertain = true
+    })
+    capturedInput()
+    resolve(Response.json({ rule: rule() }, { status: 201 }))
+    await save
+    expect(epoch).toBe(reviewedEpoch)
+    expect(localDraft.name).toBe(draft().name)
+    expect(ownedReceipt).toMatchObject({ id: rule().id, version: '1' })
+    expect(uncertain).toBe(false)
+    expect(calls).toHaveLength(1)
+    state.pending = false
+    capturedInput()
+    expect(localDraft.name).toBe(draft().name)
+    const source = await Bun.file(new URL('../components/RuleTuningEditor.tsx', import.meta.url)).text()
+    expect(source).toContain('canEditTuningInput(')
+    expect(source).toContain('inputGeneration.current++; pending.current = true')
+    expect(source).toContain('else onUncertain()')
+    expect(source).toContain('function editJson(')
+    expect(source).toContain('function changeRange(')
+})
+test('reprocess confirmation and input guards reject changed job, acknowledgement, range, preview or lifecycle', () => {
+    const reviewed = { epoch: 1, active: true, disabled: false, pending: false, locked: false, range: 'all' as const, version: '1', acknowledged: true, previewKey: 'preview', jobId: null }
+    for (const changed of [{ active: false }, { disabled: true }, { pending: true }, { locked: true }, { epoch: 2 }, { range: '24' as const }, { version: '2' }, { acknowledged: false }, { previewKey: 'different' }, { jobId: 'active-job' }]) expect(api.canConfirmReprocessing({ ...reviewed, ...changed }, reviewed, false)).toBe(false)
+    expect(api.canConfirmReprocessing({ ...reviewed, jobId: 'active-job' }, { ...reviewed, jobId: 'active-job' }, true)).toBe(true)
+    expect(api.canConfirmReprocessing({ ...reviewed, jobId: 'new-job' }, { ...reviewed, jobId: 'old-job' }, true)).toBe(false)
+    const input = { generation: 1, active: true, pending: false, disabled: false }
+    expect(api.canEditTuningInput(input, 1)).toBe(true)
+    for (const changed of [{ generation: 2 }, { active: false }, { pending: true }, { disabled: true }]) expect(api.canEditTuningInput({ ...input, ...changed }, 1)).toBe(false)
 })

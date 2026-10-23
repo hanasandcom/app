@@ -18,6 +18,23 @@ export type ReprocessState = { jobs: ReprocessJob[]; existing: { count: number; 
 export class TuningError extends Error {
     constructor(message: string, readonly status = 0, readonly uncertain = false) { super(message) }
 }
+export type TuningInputState = { generation: number; active: boolean; pending: boolean; disabled: boolean }
+export function canEditTuningInput(current: TuningInputState, capturedGeneration: number) {
+    return current.active && !current.pending && !current.disabled && current.generation === capturedGeneration
+}
+export type ReprocessReviewState = {
+    epoch: number; active: boolean; disabled: boolean; pending: boolean; locked: boolean
+    range: TuningRange; version: string; acknowledged: boolean; previewKey: string | null; jobId: string | null
+}
+export function canConfirmReprocessing(current: ReprocessReviewState, reviewed: ReprocessReviewState, cancel: boolean) {
+    if (!current.active || current.disabled || current.pending || current.locked || current.epoch !== reviewed.epoch
+        || current.range !== reviewed.range || current.version !== reviewed.version) return false
+    return cancel ? !!current.jobId && current.jobId === reviewed.jobId
+        : !current.jobId && current.acknowledged && reviewed.acknowledged && !!current.previewKey && current.previewKey === reviewed.previewKey
+}
+export function lockReprocessReview(current: ReprocessReviewState): ReprocessReviewState {
+    return { ...current, epoch: current.epoch + 1, locked: true, acknowledged: false, previewKey: null }
+}
 const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 const text = (value: unknown) => typeof value === 'string' ? value : ''
 const validId = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9_.:@-]{1,200}$/.test(value) && !['.', '..'].includes(value)
