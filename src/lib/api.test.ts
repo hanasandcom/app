@@ -148,6 +148,34 @@ describe('secure API transport', () => {
     })
 })
 
+describe('desktop agent discovery retry', () => {
+    it('does not cache an HTTP failure as an empty presence result', async () => {
+        let discoveryRequests = 0
+        mockFetch(async input => {
+            if (String(input).endsWith('/desktop-agent/presence')) {
+                discoveryRequests += 1
+                if (discoveryRequests === 1) return new Response('{"error":"temporarily unavailable"}', { status: 503 })
+                return Response.json({ agents: [] })
+            }
+            throw new Error(`Unexpected request: ${String(input)}`)
+        })
+
+        const requestSettings = { ...settings, authToken: 'desktop-discovery-retry-token' }
+        await expect(fetchDesktopAgentStatus(requestSettings)).rejects.toThrow('HTTP 503')
+        await expect(fetchDesktopAgentStatus(requestSettings)).rejects.toThrow('No HTTPS desktop agent')
+        expect(discoveryRequests).toBe(2)
+    })
+
+    it('times out a stalled presence request and exposes a retryable error', async () => {
+        mockFetch(async (_input, init) => new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+        }))
+
+        await expect(fetchDesktopAgentStatus({ ...settings, authToken: 'desktop-discovery-timeout-token' }))
+            .rejects.toThrow('Desktop agent discovery timed out. Check your connection and retry.')
+    }, 15_000)
+})
+
 describe('browser sign-in routing', () => {
     const challenge = 'a'.repeat(43)
 

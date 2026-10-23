@@ -85,7 +85,7 @@ export function HomeScreen({
 
     useEffect(() => { saveAiMessagesRef.current = onSaveAiMessages }, [onSaveAiMessages])
     useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; runControllerRef.current?.abort() } }, [])
-    useEffect(() => { void refreshDesktopStatus(false) }, [settings.desktopAgentBaseUrl])
+    useEffect(() => { void refreshDesktopStatus(true) }, [settings.desktopAgentBaseUrl])
     useEffect(() => {
         const controller = new AbortController()
         setMembership({ scope: accountScope, status: 'loading' })

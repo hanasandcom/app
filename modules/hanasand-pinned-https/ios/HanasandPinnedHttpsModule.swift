@@ -14,7 +14,7 @@ public class HanasandPinnedHttpsModule: Module {
         throw PinnedHttpsError.invalidRequest
       }
 
-      var request = URLRequest(url: target, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
+      var request = URLRequest(url: target, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 8)
       request.httpMethod = method
       request.httpBody = body?.data(using: .utf8)
       headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }

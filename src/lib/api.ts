@@ -11,6 +11,7 @@ const desktopAgentRequestBodyBytes = 64 * 1024
 const defaultMailApiBaseUrl = process.env.EXPO_PUBLIC_MAIL_API_BASE_URL || 'https://mail.hanasand.com/api'
 const desktopAgentCoverTrafficIntervalMs = 1_000
 const desktopAgentPresenceCacheMs = 15_000
+const desktopAgentDiscoveryTimeoutMs = 12_000
 const desktopAgentMaximumQueuedRequests = 32
 const desktopAgentMaximumInFlightRequests = 4
 
@@ -144,9 +145,22 @@ async function fetchDesktopAgentPresence(settings: AppSettings) {
     }
     cachedDesktopAgentPresence = cache
     cache.pending = (async () => {
-        const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'desktop-agent/presence'), {
-            headers: headers(settings),
-        })
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), desktopAgentDiscoveryTimeoutMs)
+        let response: Response
+        try {
+            response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'desktop-agent/presence'), {
+                headers: headers(settings),
+                signal: controller.signal,
+            })
+        } catch (error) {
+            if (controller.signal.aborted) {
+                throw new Error('Desktop agent discovery timed out. Check your connection and retry.', { cause: error })
+            }
+            throw error
+        } finally {
+            clearTimeout(timeout)
+        }
         if (!response.ok) {
             throw new Error(`Desktop agent discovery failed with HTTP ${response.status}.`)
         }
@@ -156,6 +170,11 @@ async function fetchDesktopAgentPresence(settings: AppSettings) {
     })()
     try {
         return await cache.pending
+    } catch (error) {
+        // A failed discovery is not an empty presence result. Drop only this
+        // request's cache entry so a later screen refresh can retry immediately.
+        if (cachedDesktopAgentPresence === cache) cachedDesktopAgentPresence = null
+        throw error
     } finally {
         cache.pending = undefined
     }
