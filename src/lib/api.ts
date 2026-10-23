@@ -1378,37 +1378,44 @@ export async function fetchDashboardUserRoles(settings: AppSettings, userId: str
     return Array.isArray(body) ? body.map(normalizeUserRoleAssignment).filter(Boolean) as DashboardUserRoleAssignment[] : []
 }
 
-export async function startMobileImpersonation(settings: AppSettings, userId: string) {
-    requireAppAuth(settings, 'impersonate users')
-    if (userId === settings.userId) {
-        throw new Error('You are already viewing your own account.')
-    }
-
-    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'impersonation/start'), {
-        method: 'POST',
-        headers: headers({ ...settings, impersonationToken: '', impersonatingUserId: '', impersonatingUserName: '' }),
-        body: JSON.stringify({ target_id: userId }),
-    })
-    const body = await readJsonObject(response, {})
-    if (!response.ok) {
-        throw new Error(String(asRecord(body).error || 'Unable to start impersonation.'))
-    }
-    const record = asRecord(body)
-    const session = asRecord(record.session)
-    const target = asRecord(session.target)
-    return {
-        token: String(record.token || ''),
-        targetId: String(target.id || userId),
-        targetName: String(target.name || userId),
-    }
+async function impersonationRequest(settings: AppSettings, action: 'start' | 'stop', body: unknown, signal?: AbortSignal) {
+    const controller = new AbortController(), abort = () => controller.abort()
+    if (signal?.aborted) abort(); else signal?.addEventListener('abort', abort, { once: true })
+    const timeout = setTimeout(abort, 15000)
+    try {
+        if (controller.signal.aborted) throw new Error('Impersonation request cancelled.')
+        const response = await apiFetch(settings, joinUrl(organizationListBase(settings), `impersonation/${action}`), {
+            method: 'POST', headers: headers(settings), credentials: 'omit', signal: controller.signal,
+            ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        })
+        const payload = await response.json().catch(() => null)
+        if (controller.signal.aborted) throw new Error('Impersonation request cancelled.')
+        if (!response.ok) throw Object.assign(new Error(`Unable to ${action} impersonation (${response.status}).`), { status: response.status })
+        return asRecord(payload)
+    } finally { clearTimeout(timeout); signal?.removeEventListener('abort', abort) }
 }
 
-export async function stopMobileImpersonation(settings: AppSettings) {
-    if (!settings.impersonationToken || !settings.authToken || !settings.userId) return
-    await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'impersonation'), {
-        method: 'DELETE',
-        headers: headers(settings),
-    }).catch(() => {})
+/** Identity receipt only; consumers must also establish compatibility with their destination services. */
+export async function startMobileImpersonation(settings: AppSettings, userId: string, signal?: AbortSignal) {
+    requireAppAuth(settings, 'impersonate users')
+    if (settings.impersonationToken || settings.impersonatingUserId) throw new Error('Return to your own account before impersonating another user.')
+    if (!userId || userId.trim() !== userId || userId.length > 200 || Array.from(userId).some(char => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)) throw new Error('Choose a valid user to impersonate.')
+    if (userId === settings.userId) throw new Error('You are already viewing your own account.')
+    const record = await impersonationRequest(settings, 'start', { targetId: userId }, signal)
+    const target = asRecord(record.target)
+    if (typeof record.token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(record.token)
+        || target.id !== userId || typeof target.name !== 'string' || !target.name.trim()
+        || typeof record.expiresAt !== 'string' || !Number.isFinite(Date.parse(record.expiresAt)) || Date.parse(record.expiresAt) <= Date.now()) {
+        throw new Error('Impersonation may have started, but its receipt could not be verified. Do not retry automatically.')
+    }
+    return { token: record.token, targetId: userId, targetName: target.name, expiresAt: record.expiresAt }
+}
+
+export async function stopMobileImpersonation(settings: AppSettings, signal?: AbortSignal) {
+    if (!settings.impersonationToken) return
+    requireAppAuth(settings, 'stop impersonation')
+    const receipt = await impersonationRequest(settings, 'stop', undefined, signal)
+    if (receipt.ok !== true) throw new Error('The impersonation revocation could not be verified.')
 }
 
 export async function setDashboardUserActive(settings: AppSettings, userId: string, active: boolean) {

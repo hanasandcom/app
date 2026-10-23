@@ -1,5 +1,5 @@
 import { caseWebsitePath, monitoredActorsWebsitePath, type WebsiteCaseRef } from './lib/workspace-links'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { NavigationContainer, DarkTheme, useNavigationContainerRef } from '@react-navigation/native'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
@@ -62,6 +62,10 @@ async function safeLoad<T>(loader: () => Promise<T>, fallback: T) {
 export default function App() {
     const navigation = useNavigationContainerRef<RootTabParamList>()
     const [settings, setSettings] = useState<AppSettings | null>(null)
+    const currentSettings = useRef(settings)
+    currentSettings.current = settings
+    const returningToOwnView = useRef<AbortController | null>(null)
+    const [returnPending, setReturnPending] = useState(false)
     const [bootstrapError, setBootstrapError] = useState('')
     const [bootstrapAttempt, setBootstrapAttempt] = useState(0)
     const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([])
@@ -247,15 +251,29 @@ export default function App() {
     }
 
     async function returnToOwnView() {
-        await stopMobileImpersonation(settings!)
-        const next = {
-            ...settings!,
-            impersonationToken: '',
-            impersonatingUserId: '',
-            impersonatingUserName: '',
+        const before = currentSettings.current
+        if (!before?.impersonationToken || returningToOwnView.current) return
+        const controller = new AbortController()
+        returningToOwnView.current = controller; setReturnPending(true)
+        const sameSession = () => {
+            const current = currentSettings.current
+            return current?.apiBaseUrl === before.apiBaseUrl && current.userId === before.userId
+                && current.authToken === before.authToken && current.impersonationToken === before.impersonationToken
         }
-        await saveSettings(next)
-        setSettings(next)
+        try {
+            let revoked = true
+            try { await stopMobileImpersonation(before, controller.signal) } catch { revoked = false }
+            if (!sameSession()) return
+            const next = { ...currentSettings.current!, impersonationToken: '', impersonatingUserId: '', impersonatingUserName: '' }
+            await saveSettings(next)
+            if (!sameSession()) return
+            currentSettings.current = next; setSettings(next)
+            if (!revoked) Alert.alert('Returned to your account', 'The delegated token was removed from this device. The server could not confirm its revocation.')
+        } catch {
+            if (sameSession()) Alert.alert('Unable to return to your account', 'Your account settings could not be saved securely. Try again.')
+        } finally {
+            if (returningToOwnView.current === controller) { returningToOwnView.current = null; setReturnPending(false) }
+        }
     }
 
     if (!settings && bootstrapError) {
@@ -450,9 +468,9 @@ export default function App() {
                         </Tab.Navigator>
                         {!!settings.impersonatingUserId && (
                             <View style={{ position: 'absolute', left: 14, right: 14, bottom: Platform.OS === 'ios' ? 100 : 86, borderRadius: 18, borderWidth: 1, borderColor: activePalette.surfaceBorder, backgroundColor: activePalette.backgroundAlt, paddingHorizontal: 14, paddingVertical: 10 }}>
-                                <Pressable onPress={() => void returnToOwnView()} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                                <Pressable disabled={returnPending} accessibilityState={{ busy: returnPending }} onPress={() => void returnToOwnView()} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                                     <Text style={{ color: activePalette.text, fontWeight: '700', flex: 1 }} numberOfLines={2}>Impersonating {settings.impersonatingUserName || settings.impersonatingUserId}</Text>
-                                    <Text style={{ color: activePalette.accent, fontWeight: '800' }}>Return to own view</Text>
+                                    <Text style={{ color: activePalette.accent, fontWeight: '800' }}>{returnPending ? 'Returning…' : 'Return to own view'}</Text>
                                 </Pressable>
                             </View>
                         )}

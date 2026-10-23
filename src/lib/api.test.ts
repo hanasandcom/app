@@ -55,7 +55,7 @@ mock.module('expo-crypto', () => ({
     },
 }))
 
-const { isHanasandOrganizationMember, apiFetch, fetchAiModels, createHanasandBrowserSignInUrl, fetchNotes, AuthenticationError, exchangeHanasandMobileSsoCode, fetchDesktopAgentStatus, isHanasandGoogleSignInConfigured, loginToHanasand, loginWithHanasandPasskey, refreshHanasandSession, runDesktopAgentCommand } = await import('./api')
+const { startMobileImpersonation, stopMobileImpersonation, isHanasandOrganizationMember, apiFetch, fetchAiModels, createHanasandBrowserSignInUrl, fetchNotes, AuthenticationError, exchangeHanasandMobileSsoCode, fetchDesktopAgentStatus, isHanasandGoogleSignInConfigured, loginToHanasand, loginWithHanasandPasskey, refreshHanasandSession, runDesktopAgentCommand } = await import('./api')
 
 const settings: AppSettings = {
     themeMode: 'obsidian',
@@ -463,4 +463,67 @@ it('model discovery rejects malformed envelopes without replacing them with zero
     }
     mockFetch(async () => Response.json({ connected: [] }))
     await expect(fetchAiModels(settings)).resolves.toEqual([])
+})
+
+describe('Identity impersonation contracts', () => {
+    const own = { ...settings, apiBaseUrl: 'https://api.hanasand.com/api' }
+    const token = 'a'.repeat(43)
+    const receipt = () => ({ token, target: { id: 'target-user', name: 'Synthetic target' }, expiresAt: new Date(Date.now() + 3600000).toISOString() })
+    it('signs direct Identity start and parses the top-level target without changing the actor session', async () => {
+        const original = JSON.stringify(own)
+        mockFetch(async (input, init) => {
+            expect(String(input)).toBe('https://identity.hanasand.com/api/impersonation/start')
+            expect(init?.method).toBe('POST')
+            expect(init?.credentials).toBe('omit')
+            expect(JSON.parse(String(init?.body))).toEqual({ targetId: 'target-user' })
+            const sent = new Headers(init?.headers)
+            expect(sent.get('authorization')).toBe('Bearer test-token')
+            expect(sent.get('x-impersonation-token')).toBeNull()
+            expect(sent.get('x-device-proof-url')).toBe(String(input))
+            return Response.json(receipt())
+        })
+        expect(await startMobileImpersonation(own, 'target-user')).toMatchObject({ token, targetId: 'target-user', targetName: 'Synthetic target' })
+        expect(JSON.stringify(own)).toBe(original)
+    })
+    it('rejects either impersonated mode, self and invalid targets before transport', async () => {
+        let calls = 0; mockFetch(async () => { calls++; return Response.json(receipt()) })
+        for (const changed of [{ impersonationToken: token }, { impersonatingUserId: 'other' }]) await expect(startMobileImpersonation({ ...own, ...changed }, 'target-user')).rejects.toThrow('own account')
+        for (const id of [own.userId, '', ' target-user', 'a\nb', 'a'.repeat(201)]) await expect(startMobileImpersonation(own, id)).rejects.toThrow()
+        expect(calls).toBe(0)
+    })
+    it('rejects wrong, missing, expired and nested receipts without automatic retries', async () => {
+        for (const value of [{ ...receipt(), token: '' }, { ...receipt(), target: { id: 'foreign', name: 'Other' } }, { token, session: { target: receipt().target }, expiresAt: receipt().expiresAt }, { ...receipt(), expiresAt: '2000-01-01T00:00:00Z' }, {}]) {
+            let calls = 0; mockFetch(async () => { calls++; return Response.json(value) })
+            await expect(startMobileImpersonation(own, 'target-user')).rejects.toThrow('receipt could not be verified')
+            expect(calls).toBe(1)
+        }
+    })
+    it('revokes with POST stop and the original actor plus delegated token', async () => {
+        mockFetch(async (input, init) => {
+            expect(String(input)).toBe('https://identity.hanasand.com/api/impersonation/stop')
+            expect(init?.method).toBe('POST'); expect(init?.body).toBeUndefined()
+            const sent = new Headers(init?.headers)
+            expect(sent.get('authorization')).toBe('Bearer test-token')
+            expect(sent.get('id')).toBe(own.userId)
+            expect(sent.get('x-impersonation-token')).toBe(token)
+            expect(sent.get('dpop')).toBe('test-dpop')
+            return Response.json({ ok: true })
+        })
+        await stopMobileImpersonation({ ...own, impersonationToken: token })
+    })
+    it('does not silently acknowledge failed or malformed revocation', async () => {
+        for (const response of [() => Response.json({ error: 'synthetic failure' }, { status: 503 }), () => Response.json({}), () => { throw new Error('synthetic offline') }]) {
+            let calls = 0; mockFetch(async () => { calls++; return response() })
+            await expect(stopMobileImpersonation({ ...own, impersonationToken: token })).rejects.toThrow()
+            expect(calls).toBe(1)
+        }
+    })
+    it('makes no request without a delegated token or after pre-abort', async () => {
+        let calls = 0; mockFetch(async () => { calls++; return Response.json(receipt()) })
+        await stopMobileImpersonation(own)
+        const abort = new AbortController(); abort.abort()
+        await expect(startMobileImpersonation(own, 'target-user', abort.signal)).rejects.toThrow('cancelled')
+        await expect(stopMobileImpersonation({ ...own, impersonationToken: token }, abort.signal)).rejects.toThrow('cancelled')
+        expect(calls).toBe(0)
+    })
 })
