@@ -17,7 +17,7 @@ function secureWebsite(value: string) {
 
 /** Core redirects legacy TI paths, but TI administration lives under /dashboard/ti. */
 export function websitePageUrl(siteBaseUrl: string, path: string, tiSiteUrl = process.env.EXPO_PUBLIC_TI_SITE_URL) {
-    if (!path.startsWith('/') || path.startsWith('//') || /[\\\u0000-\u0020\u007f]/.test(path)) throw new Error('The linked page address is invalid.')
+    if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\') || Array.from(path).some(character => character.charCodeAt(0) <= 32 || character.charCodeAt(0) === 127)) throw new Error('The linked page address is invalid.')
     const website = secureWebsite(siteBaseUrl)
     const relative = new URL(path, website.origin)
     const administrationPath = tiAdministrationPaths[relative.pathname]
