@@ -39,6 +39,11 @@ describe('native website navigation', () => {
             expect(nativeToolForPath(`/rules/${category}`)).toBe(`rules-${category}`)
             expect(leaves(siteNavigation('synthetic-user')).find(item => item.path === `/rules/${category}`)?.tab).toBe('Tools')
         }
+        expect(nativeToolForPath('/traffic')).toBe('traffic-overview')
+        expect(nativeToolForPath('/traffic/recent')).toBe('traffic-recent')
+        expect(nativeToolForPath('/system/rates')).toBe('rate-limits')
+        expect(nativeToolForPath('/db')).toBe('database')
+        expect(nativeToolForPath('/db/backups')).toBe('backups')
         expect(nativeToolForPath('/unknown')).toBeUndefined()
         const items = leaves(siteNavigation('synthetic-user'))
         for (const path of ['/ti/profiles', '/ti/timeliness', '/organizations/api-keys']) {

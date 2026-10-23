@@ -1,3 +1,7 @@
+import { TrafficScreen } from './TrafficScreen'
+import { RateLimitsScreen } from './RateLimitsScreen'
+import { DatabaseScreen } from './DatabaseScreen'
+import { BackupsScreen } from './BackupsScreen'
 import type { AppSettings, RootTabParamList } from '../types'
 import { ThreatSearchScreen } from './ThreatSearchScreen'
 import { PasswordCheckScreen } from './PasswordCheckScreen'
@@ -10,6 +14,11 @@ import { OrganizationApiKeysScreen } from './OrganizationApiKeysScreen'
 
 export function NativeToolsScreen({ settings, tool, onManageSshKeys }: { settings: AppSettings; tool: RootTabParamList['Tools']['tool']; onManageSshKeys: () => void }) {
     switch (tool) {
+        case 'traffic-overview': return <TrafficScreen settings={settings} mode='overview' />
+        case 'traffic-recent': return <TrafficScreen settings={settings} mode='recent' />
+        case 'rate-limits': return <RateLimitsScreen settings={settings} />
+        case 'database': return <DatabaseScreen settings={settings} />
+        case 'backups': return <BackupsScreen settings={settings} />
         case 'threat-search': return <ThreatSearchScreen settings={settings} />
         case 'password-check': return <PasswordCheckScreen settings={settings} />
         case 'subscription': return <SubscriptionScreen settings={settings} />
