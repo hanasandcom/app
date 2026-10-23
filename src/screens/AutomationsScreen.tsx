@@ -252,7 +252,13 @@ function AccountAutomations({ settings, section, initialAutomationId }: { settin
                             <PillButton label='Edit' disabled={!!busy} onPress={() => void selectAutomation(automation)} small />
                         </GlassCard>
                     ))}
-                    {!automations.length && (
+                    {!automations.length && busy === 'load' && (
+                        <GlassCard style={styles.emptyCard}>
+                            <Text style={styles.cardTitle}>{section === 'health' ? 'Loading health checks…' : 'Loading jobs…'}</Text>
+                            <Text style={styles.cardBody}>Checking the latest data from Hanasand.</Text>
+                        </GlassCard>
+                    )}
+                    {!automations.length && busy !== 'load' && !automationError && (
                         <GlassCard style={styles.emptyCard}>
                             <Text style={styles.cardTitle}>{section === 'health' ? 'No health checks yet' : 'No jobs yet'}</Text>
                             <Text style={styles.cardBody}>Create one and the server will run it even if this app is closed.</Text>
