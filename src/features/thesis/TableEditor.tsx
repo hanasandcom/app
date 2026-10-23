@@ -6,7 +6,7 @@ import { cellValue, columnName, reshape, type TableData } from './workspace'
 import { Actions, ThesisField, ThesisText } from './ui'
 import { thesisActionKey } from './policy'
 
-export function TableEditor({ data, onChange, enabled, host, guard }: { data: TableData; onChange: (value: TableData, structural?: boolean) => void; enabled: boolean; host: number; guard: () => boolean }) {
+export function TableEditor({ data, onChange, enabled, host, guard, readGuard }: { data: TableData; onChange: (value: TableData, structural?: boolean) => void; enabled: boolean; host: number; guard: () => boolean; readGuard: () => boolean }) {
     const theme = useAppTheme()
     const [selected, select] = useState({ row: 0, col: 0 })
     const [range, setRange] = useState('A1:B2')
@@ -27,6 +27,7 @@ export function TableEditor({ data, onChange, enabled, host, guard }: { data: Ta
         onChange(reshape(data, axis, at, remove), true)
     }
     function shareRange() {
+        if (!readGuard() || current.current.context !== context) return
         const match = /^([A-Z]+)([1-9]\d*):([A-Z]+)([1-9]\d*)$/i.exec(range.trim())
         if (!match) return
         const column = (value: string) => [...value.toUpperCase()].reduce((sum, c) => sum * 26 + c.charCodeAt(0) - 64, 0) - 1
@@ -114,7 +115,7 @@ export function TableEditor({ data, onChange, enabled, host, guard }: { data: Ta
 
             <ThesisField label='Cell range to share' value={range} onChange={setRange} />
 
-            <PillButton label='Share selected cells' onPress={shareRange} />
+            <PillButton key={`share:${context}`} label='Share selected cells' onPress={shareRange} />
         </View>
     )
 }

@@ -10,6 +10,7 @@ export function MarkdownView({ source }: { source: string }) {
     const theme = useAppTheme()
     const tree = markdownTree(source)
     const parsedTables = tables(source)
+    const definitions = new Map(tree.children.filter(node => node.type === 'definition').map(node => [node.identifier.toLowerCase(), node.url]))
     function inline(node: PhrasingContent, index: number): ReactNode {
         if (node.type === 'text') return node.value
         if (node.type === 'inlineCode') return <Text key={index} style={{ fontFamily: 'Courier', backgroundColor: theme.surfaceStrong }}>{node.value}</Text>
@@ -27,6 +28,15 @@ export function MarkdownView({ source }: { source: string }) {
                 onPress={url ? () => void Linking.openURL(url) : undefined}
                 style={{ color: theme.accentAlt, textDecorationLine: 'underline' }}
             >{node.children.map(inline)}</Text>
+        }
+        if (node.type === 'linkReference') {
+            const target = definitions.get(node.identifier.toLowerCase())
+            const url = target ? safeLink(target) : null
+            return <Text key={index} accessibilityRole='link' onPress={url ? () => void Linking.openURL(url) : undefined} style={{ color: theme.accentAlt, textDecorationLine: 'underline' }}>{node.children.map(inline)}</Text>
+        }
+        if (node.type === 'imageReference') {
+            const target = definitions.get(node.identifier.toLowerCase())
+            return <Text key={index}>{node.alt || 'Image'}{target && safeLink(target) ? ` (${target})` : ''}</Text>
         }
         if ('children' in node) return <Text
             key={index}
@@ -70,7 +80,7 @@ export function MarkdownView({ source }: { source: string }) {
                     key={c}
                     selectable
                     style={{ color: theme.text, width: 180, padding: 10, borderWidth: 1, borderColor: theme.surfaceBorder, fontWeight: r === 0 ? '700' : '400' }}
-                >{data ? cellValue(data.cells, r, c) : cell.children.map(inline)}</Text>)}</View>)}</View>
+                >{data && /^=SUMMARIZE\b/i.test(data.cells[r][c].trim()) ? cellValue(data.cells, r, c) : cell.children.map(inline)}</Text>)}</View>)}</View>
             </ScrollView>
         }
         if (node.type === 'thematicBreak') return <View key={index} style={{ height: 1, backgroundColor: theme.surfaceBorder }} />

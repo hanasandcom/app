@@ -13,7 +13,8 @@ export function timetableHtml(title: string, model: ReturnType<typeof timetable>
         + '<h2>Daily totals</h2>' + table(['Date', 'Hours'], [...daily.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, hours]) => [date, String(hours / 100)]))
         + model.notes.map(note => '<p>' + htmlEscape(note) + '</p>').join('') + '</body></html>'
 }
-export async function exportTimetable(title: string, model: ReturnType<typeof timetable>, log: ActivityLog) {
+export async function exportTimetable(title: string, model: ReturnType<typeof timetable>, log: ActivityLog, isCurrent: () => boolean = () => true) {
+    if (!isCurrent()) return
     const Print = await import('expo-print')
     const Sharing = await import('expo-sharing')
     const { File, Paths } = await import('expo-file-system')
@@ -21,9 +22,11 @@ export async function exportTimetable(title: string, model: ReturnType<typeof ti
     const temporary = new File(result.uri)
     const destination = new File(Paths.cache, `thesis-timetable-${new Date().toISOString().slice(0, 10)}.pdf`)
     try {
+        if (!isCurrent()) return
         if (destination.exists) destination.delete()
         temporary.move(destination)
         if (!await Sharing.isAvailableAsync()) throw new Error('File sharing is unavailable on this device.')
+        if (!isCurrent()) return
         await Sharing.shareAsync(destination.uri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf', dialogTitle: 'Timetable PDF' })
     } finally { if (temporary.exists) temporary.delete(); if (destination.exists) destination.delete() }
 }

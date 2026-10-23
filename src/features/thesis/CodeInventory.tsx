@@ -6,6 +6,7 @@ import { ThesisError, type Inventory, type ReviewEvent, type SourceNode, type Th
 import { Actions, ThesisField, ThesisText } from './ui'
 import { DependencyGraph } from './DependencyGraph'
 import { useAppTheme } from '../../theme/context'
+import { canReadThesis, sourceReviewMatches } from './policy'
 
 export const reviewStatus = (item: SourceNode) => !item.review ? 'unreviewed' : item.review.review_hash !== item.reviewHash ? 'changed' : item.review.approved ? 'approved' : 'unreviewed'
 export function reviewPriority(item: SourceNode, now = Date.now()) {
@@ -13,7 +14,7 @@ export function reviewPriority(item: SourceNode, now = Date.now()) {
     return item.review?.approved && reviewStatus(item) === 'changed' && now - Date.parse(item.review.reviewed_at) < 14 * 86400000 ? 1 : 0
 }
 type PendingReview = { item: SourceNode; approved: boolean; eventId: string }
-export function CodeInventory({ api, canReview, guard, host }: { api: ThesisApi; canReview: boolean; guard: () => boolean; host: number }) {
+export function CodeInventory({ api, canReview, guard, readGuard, host }: { api: ThesisApi; canReview: boolean; guard: () => boolean; readGuard: () => boolean; host: number }) {
     const theme = useAppTheme()
     const [inventory, setInventory] = useState<Inventory | null>(null)
     const [detail, setDetail] = useState<{ item: SourceNode; history: ReviewEvent[] } | null>(null)
@@ -22,6 +23,13 @@ export function CodeInventory({ api, canReview, guard, host }: { api: ThesisApi;
     const [error, setError] = useState(''), [message, setMessage] = useState(''), [busy, setBusy] = useState(false), [denied, setDenied] = useState(false)
     const [pending, setPending] = useState<PendingReview | null>(null), [manualChecked, setManualChecked] = useState(false)
     const [moreHistory, setMoreHistory] = useState(false)
+    const [showList, setShowList] = useState(true)
+    const [sourceLines, setSourceLines] = useState(300)
+    const sourcePending = useRef(false), readBlocked = useRef(false)
+    const reviewGeneration = useRef(0)
+    const [reviewHost, setReviewHost] = useState(0)
+    const capturedGeneration = reviewGeneration.current
+    const renewReview = () => { reviewGeneration.current++; setReviewHost(reviewGeneration.current) }
     const mounted = useRef(true), epoch = useRef(0), reading = useRef(false), writing = useRef(false), requests = useRef(new Set<AbortController>())
     const latest = useRef({ inventory, detail, selected, canReview, guard, pending, manualChecked, denied })
     latest.current = { inventory, detail, selected, canReview, guard, pending, manualChecked, denied }
@@ -30,26 +38,29 @@ export function CodeInventory({ api, canReview, guard, host }: { api: ThesisApi;
     function failure(cause: unknown) {
         if (!mounted.current) return
         setError((cause as Error).message)
+        readBlocked.current = true
         if (cause instanceof ThesisError && [401, 403].includes(cause.status)) { latest.current.denied = true; setDenied(true) }
     }
     async function load(manual = false) {
-        if (reading.current || writing.current || !mounted.current || latest.current.denied && !manual) return
+        if (reading.current || writing.current || !mounted.current || latest.current.denied && !manual) return false
         reading.current = true
         const request = begin(), captured = epoch.current
         try {
             const old = latest.current.inventory
             const result = await api.inventory(request.signal, manual || !old ? undefined : `${old.hash}:${old.revision || ''}`)
-            if (request.signal.aborted || !mounted.current || captured !== epoch.current) return
+            if (request.signal.aborted || !mounted.current || captured !== epoch.current) return false
             if (result) setInventory(result)
             setError(''); if (manual) setDenied(false)
-        } catch (cause) { if (!request.signal.aborted) failure(cause) }
+            return true
+        } catch (cause) { if (!request.signal.aborted) failure(cause); return false }
         finally { requests.current.delete(request); reading.current = false }
     }
     useEffect(() => { void load(); const timer = setInterval(() => void load(), 3000); return () => clearInterval(timer) }, [api])
     async function source(id: string, older = false, manual = false) {
         if (writing.current || !mounted.current) return
         const captured = ++epoch.current, request = begin()
-        if (!older) { select(id); setDetail(null) }
+        sourcePending.current = true
+        if (!older) { select(id); setDetail(null); setShowList(false); setSourceLines(300) }
         setBusy(true)
         try {
             const result = await api.source(id, request.signal, older ? latest.current.detail?.history.at(-1)?.event_id : undefined)
@@ -57,6 +68,7 @@ export function CodeInventory({ api, canReview, guard, host }: { api: ThesisApi;
             setDetail(older && latest.current.detail?.item.id === id ? { item: result.item, history: [...latest.current.detail.history, ...result.history] } : result)
             setMoreHistory(result.history.length === 50); setError('')
             if (manual) {
+                readBlocked.current = false
                 setManualChecked(true)
                 const action = latest.current.pending
                 if (action && result.history.some(event => event.event_id === action.eventId && event.item_id === action.item.id && event.review_hash === action.item.reviewHash && event.content_hash === action.item.sha256 && event.approved === action.approved)) {
@@ -64,13 +76,13 @@ export function CodeInventory({ api, canReview, guard, host }: { api: ThesisApi;
                 }
             }
         } catch (cause) { if (!request.signal.aborted && captured === epoch.current) failure(cause) }
-        finally { requests.current.delete(request); if (mounted.current && captured === epoch.current) setBusy(false) }
+        finally { requests.current.delete(request); if (captured === epoch.current) { sourcePending.current = false; if (mounted.current) setBusy(false) } }
     }
     function eligible(action: PendingReview) {
         const value = latest.current
         const current = value.inventory?.nodes.find(node => node.id === action.item.id)
-        return mounted.current && !writing.current && value.canReview && value.guard() && !value.denied
-            && value.selected === action.item.id && current?.reviewHash === action.item.reviewHash && current.sha256 === action.item.sha256
+        return mounted.current && !writing.current && !reading.current && !sourcePending.current && !readBlocked.current && value.canReview && value.guard() && !value.denied
+            && value.selected === action.item.id && sourceReviewMatches(action.item, current, value.detail?.item)
             && (!value.inventory?.sync || value.inventory.sync.phase === 'ready' && !value.inventory.sync.error)
             && (!value.pending || value.pending.eventId === action.eventId && value.manualChecked)
     }
@@ -85,16 +97,19 @@ export function CodeInventory({ api, canReview, guard, host }: { api: ThesisApi;
             { text: retry ? 'Retry same review' : 'Record review', onPress: () => {
                 if (captured !== epoch.current || !eligible(action)) return
                 writing.current = true; setBusy(true); setManualChecked(false)
+                renewReview()
                 const request = begin()
+                let accepted = false
                 void api.review(action.item, action.approved, action.eventId, request.signal).then(receipt => {
                     if (!mounted.current) return
+                    accepted = true
                     setPending(null); setMessage(`Review recorded at ${receipt.reviewed_at}.`); setError('')
                 }).catch(cause => {
                     if (!mounted.current) return
                     setPending(action); failure(cause); setMessage('The review outcome is uncertain. Refresh this source before retrying the same review.')
                 }).finally(() => {
                     requests.current.delete(request); writing.current = false
-                    if (mounted.current) { setBusy(false); void source(action.item.id); void load() }
+                    if (mounted.current) { renewReview(); setBusy(false); if (accepted) { void source(action.item.id); void load() } }
                 })
             } },
         ])
@@ -117,42 +132,49 @@ export function CodeInventory({ api, canReview, guard, host }: { api: ThesisApi;
             {inventory?.sync && <ThesisText muted>{[inventory.sync.phase, inventory.sync.checkedAt, inventory.sync.warning, inventory.sync.error].filter(Boolean).join(' · ')}</ThesisText>}
 
             <PillButton
+                key={`refresh:${host}:${reviewHost}`}
                 label='Refresh inventory and selected source'
                 disabled={busy}
-                onPress={() => { void load(true).then(() => { if (selected) return source(selected, false, true) }) }}
+                onPress={() => {
+                    if (!readGuard() || !canReadThesis({ alive: mounted.current, generation: capturedGeneration, currentGeneration: reviewGeneration.current, reading: reading.current || sourcePending.current, saving: writing.current })) return
+                    void load(true).then(ok => { if (!ok) return; if (selected) return source(selected, false, true); readBlocked.current = false })
+                }}
             />
 
-            <ThesisField label='Find source files' value={query} onChange={setQuery} host={host} />
+            <PillButton label={showList ? 'Hide source list' : 'Choose another source'} onPress={() => setShowList(!showList)} />
+            {showList && <View style={{ gap: 10 }}>
+                <ThesisField label='Find source files' value={query} onChange={setQuery} host={host} />
 
-            <Actions>{['all', 'frontend', 'api', 'database', 'source'].map(value => <PillButton
-                key={value}
-                label={`${kind === value ? '✓ ' : ''}${value}`}
-                onPress={() => { setKind(value); setLimit(100) }}
-            />)}</Actions>
-
-            <Actions>
-                {['all', 'unreviewed', 'changed', 'approved'].map(value => <PillButton
+                <Actions>{['all', 'frontend', 'api', 'database', 'source'].map(value => <PillButton
                     key={value}
-                    label={`${filter === value ? '✓ ' : ''}${value}`}
-                    onPress={() => { setFilter(value); setLimit(100) }}
+                    label={`${kind === value ? '✓ ' : ''}${value}`}
+                    onPress={() => { setKind(value); setLimit(100) }}
+                />)}</Actions>
+
+                <Actions>
+                    {['all', 'unreviewed', 'changed', 'approved'].map(value => <PillButton
+                        key={value}
+                        label={`${filter === value ? '✓ ' : ''}${value}`}
+                        onPress={() => { setFilter(value); setLimit(100) }}
+                    />)}
+                    <PillButton
+                        label={priority ? 'Sort alphabetically' : 'Sort by review priority'}
+                        onPress={() => setPriority(!priority)}
+                    />
+                </Actions>
+
+                <ThesisText>{nodes.length} matching items</ThesisText>
+
+                {nodes.slice(0, limit).map(item => <PillButton
+                    key={item.id}
+                    label={`${reviewStatus(item)} · ${item.title} · ${item.file}`}
+                    onPress={() => void source(item.id)}
+                    disabled={busy}
                 />)}
-                <PillButton
-                    label={priority ? 'Sort alphabetically' : 'Sort by review priority'}
-                    onPress={() => setPriority(!priority)}
-                />
-            </Actions>
 
-            <ThesisText>{nodes.length} matching items</ThesisText>
+                {nodes.length > limit && <PillButton label='Load 100 more items' onPress={() => setLimit(v => v + 100)} />}
 
-            {nodes.slice(0, limit).map(item => <PillButton
-                key={item.id}
-                label={`${reviewStatus(item)} · ${item.title} · ${item.file}`}
-                onPress={() => void source(item.id)}
-                disabled={busy}
-            />)}
-
-            {nodes.length > limit && <PillButton label='Load 100 more items' onPress={() => setLimit(v => v + 100)} />}
-
+            </View>}
             {node && <GlassCard>
                 <View style={{ gap: 10 }}>
 
@@ -165,9 +187,10 @@ export function CodeInventory({ api, canReview, guard, host }: { api: ThesisApi;
                     {stale && <InlineNotice message='This source changed. Reload it before reviewing.' tone='info' />}
 
                     <ScrollView horizontal>
-                        <Text selectable style={{ color: theme.text, fontFamily: 'Courier', fontSize: 12 }}>{node.content}</Text>
+                        <Text selectable style={{ color: theme.text, fontFamily: 'Courier', fontSize: 12 }}>{node.content?.split('\n').slice(0, sourceLines).join('\n')}</Text>
                     </ScrollView>
 
+                    {(node.content?.split('\n').length || 0) > sourceLines && <PillButton label='Show 300 more source lines' onPress={() => setSourceLines(v => v + 300)} />}
                     <ThesisText heading>Dependencies</ThesisText>
 
                     <Actions>{node.dependencies.map(id => <PillButton
@@ -179,7 +202,7 @@ export function CodeInventory({ api, canReview, guard, host }: { api: ThesisApi;
 
                     {node.unresolved.length > 0 && <ThesisText muted>Inspect manually: {node.unresolved.join(' · ')}</ThesisText>}
 
-                    <Actions key={`${host}:${node.id}:${node.reviewHash}`}>
+                    <Actions key={`${host}:${reviewHost}:${node.id}:${node.reviewHash}`}>
 
                         <PillButton
                             label='Approve source'

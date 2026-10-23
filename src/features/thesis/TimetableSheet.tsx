@@ -1,13 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as Crypto from 'expo-crypto'
 import { View } from 'react-native'
 import { GlassCard, InlineNotice, PillButton } from '../../components/ui'
-import { activityError, initialTimetableYear, isTimetable, isoWeek, timetable, type Activity } from './timetableData'
+import { activityError, initialTimetableYear, isTimetable, isoWeek, timetable, validDate, type Activity } from './timetableData'
 import { replaceTableAt, tables, type Sheet } from './workspace'
 import { Actions, ThesisField, ThesisText } from './ui'
 import { exportTimetable } from './pdf'
 
-export function TimetableSheet({ sheet, enabled, host, guard, onChange }: { sheet: Sheet; enabled: boolean; host: number; guard: () => boolean; onChange: (value: Sheet, structural?: boolean) => void }) {
+export function TimetableSheet({ sheet, enabled, host, guard, readGuard, onChange }: { sheet: Sheet; enabled: boolean; host: number; guard: () => boolean; readGuard: () => boolean; onChange: (value: Sheet, structural?: boolean) => void }) {
     const parsed = tables(sheet.body), target = parsed.find(table => isTimetable(table.data))
     const log = sheet.activityLog || { startYear: initialTimetableYear, activities: [] }
     const model = target ? timetable(target.data, log) : null
@@ -17,6 +17,8 @@ export function TimetableSheet({ sheet, enabled, host, guard, onChange }: { shee
     const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
     const [year, setYear] = useState(String(log.startYear))
     const [pdfBusy, setPdfBusy] = useState(false)
+    const exporting = useRef(false), mounted = useRef(true)
+    useEffect(() => () => { mounted.current = false }, [])
     function open(existing?: Activity) {
         if (!enabled || !guard()) return
         setForm(existing ? { ...existing, hours: String(existing.hours), existing: true } : { id: Crypto.randomUUID(), date, hours: '', category: model?.categories[0] || 'Research', description: '', existing: false })
@@ -37,7 +39,7 @@ export function TimetableSheet({ sheet, enabled, host, guard, onChange }: { shee
         const existing = model.weeks.find(week => week.key === key)
         if (existing?.sourceRow !== undefined) cells.splice(existing.sourceRow, 1)
         else {
-            if (!/^\d{4}-\d{2}-\d{2}$/.test(chosenDate) || !Number.isFinite(Date.parse(chosenDate))) { setMessage('Enter a valid date for the week.'); return }
+            if (!validDate(chosenDate)) { setMessage('Enter a valid date for the week.'); return }
             const chosen = isoWeek(chosenDate)
             if (model.weeks.some(week => week.key === chosen.key && week.sourceRow !== undefined)) { setMessage('That week is already planned.'); return }
             cells.push([chosen.key, ...cells[0].slice(1).map(() => '')])
@@ -51,7 +53,7 @@ export function TimetableSheet({ sheet, enabled, host, guard, onChange }: { shee
         <PillButton
             label='Create timetable'
             disabled={!enabled}
-            onPress={() => { if (guard()) onChange({ ...sheet, body: sheet.body + '\n\n| Week | Research | Total |\n| --- | --- | --- |\n| 43 | | |\n' }, true) }}
+            onPress={() => { if (guard()) onChange({ ...sheet, body: sheet.body + '\n\n| Week | Research | Total |\n| --- | --- | --- |\n| ' + isoWeek(new Date().toISOString().slice(0, 10)).key + ' | | |\n' }, true) }}
         />
     </View>
     return (
@@ -72,7 +74,13 @@ export function TimetableSheet({ sheet, enabled, host, guard, onChange }: { shee
                 <PillButton
                     label={pdfBusy ? 'Creating PDF…' : 'Export timetable PDF'}
                     disabled={pdfBusy}
-                    onPress={() => { setPdfBusy(true); void exportTimetable(sheet.title, model, log).catch(() => setMessage('The PDF could not be created.')).finally(() => setPdfBusy(false)) }}
+                    onPress={() => {
+                        if (exporting.current || !readGuard()) return
+                        exporting.current = true; setPdfBusy(true)
+                        void exportTimetable(sheet.title, model, log, readGuard)
+                            .catch(() => { if (readGuard()) setMessage('The PDF could not be created.') })
+                            .finally(() => { exporting.current = false; if (mounted.current) setPdfBusy(false) })
+                    }}
                 />
             </Actions>
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { AppSettings } from '../../types'
-import { createThesisApi, ThesisError } from './api'
+import { createThesisApi, parseInventory, ThesisError } from './api'
 import { createThesisLive, type ThesisSocket } from './live'
 import { createRecovery, initializeRecovery, recoveryController, type RecoveryAdapter, type ThesisRecovery } from './recovery'
 
@@ -135,5 +135,21 @@ describe('Thesis transport and encrypted recovery', () => {
         const waiting = api.load(external.signal); external.abort()
         await expect(waiting).rejects.toThrow()
         expect(inner!.aborted).toBe(true)
+    })
+    test('settled requests remove the deadline and external abort listener', async () => {
+        let inner: AbortSignal | null = null
+        const api = createThesisApi(settings, async (_, __, init) => { inner = init.signal as AbortSignal; return Response.json(draft) }, 2)
+        const external = new AbortController()
+        await api.load(external.signal)
+        external.abort()
+        await new Promise(resolve => setTimeout(resolve, 5))
+        expect(inner!.aborted).toBe(false)
+    })
+    test('malformed inventory and mismatched review receipt cannot grant write authority', async () => {
+        expect(() => parseInventory({ nodes: [{ id: 'x', dependencies: [1] }], hash: 'x', release: 'synthetic' })).toThrow()
+        const node = { id: 'one', title: 'One', file: 'one.ts', kind: 'source' as const, sha256: 'a'.repeat(64), reviewHash: 'b'.repeat(64), dependencies: [], dependencyCount: 0, unresolved: [] }
+        const eventId = '11111111-1111-4111-8111-111111111111'
+        const api = createThesisApi(settings, async () => Response.json({ event_id: eventId, item_id: 'other', content_hash: node.sha256, review_hash: node.reviewHash, approved: true, reviewer: 'synthetic', reviewed_at: '2026-10-23T00:00:00Z' }))
+        await expect(api.review(node, true, eventId, new AbortController().signal)).rejects.toThrow('did not match')
     })
 })

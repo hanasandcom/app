@@ -5,6 +5,7 @@ import type { ThesisDocument } from './document'
 import { identifiedSheets } from './workspace'
 import { MarkdownView } from './MarkdownView'
 import { Actions, ThesisText } from './ui'
+import { SheetMetadata } from './SheetMetadata'
 
 export function ConflictPanel({ draft, remote, disabled, onResolve }: { draft: ThesisDocument; remote: ThesisDocument; disabled: boolean; onResolve: (useLocal: boolean) => void }) {
     const [showRemote, setShowRemote] = useState(true)
@@ -23,6 +24,7 @@ export function ConflictPanel({ draft, remote, disabled, onResolve }: { draft: T
                     <View key={sheet.id} style={{ gap: 8 }}>
                         <ThesisText heading>{sheet.name}</ThesisText>
                         <MarkdownView source={sheet.title + '\n\n' + sheet.body} />
+                        <SheetMetadata sheet={sheet} />
                     </View>
                 ))}
                 <Actions>

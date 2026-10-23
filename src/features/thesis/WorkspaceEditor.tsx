@@ -10,7 +10,7 @@ import { TableEditor } from './TableEditor'
 import { TimetableSheet } from './TimetableSheet'
 import { PlanSheet } from './PlanSheet'
 
-export function WorkspaceEditor({ value, enabled, host, guard, onChange, onContext, onHistory, onCode }: { value: ThesisDocument; enabled: boolean; host: number; guard: () => boolean; onChange: (value: ThesisDocument, group?: string, structural?: boolean) => void; onContext: () => void; onHistory: () => void; onCode: () => void }) {
+export function WorkspaceEditor({ value, enabled, host, guard, readGuard, onChange, onContext, onHistory, onCode }: { value: ThesisDocument; enabled: boolean; host: number; guard: () => boolean; readGuard: () => boolean; onChange: (value: ThesisDocument, group?: string, structural?: boolean) => void; onContext: () => void; onHistory: () => void; onCode: () => void }) {
     const sheets = identifiedSheets(value.title, value.body)
     const [selection, setSelection] = useState('Overview')
     const [source, setSource] = useState(false)
@@ -34,7 +34,7 @@ export function WorkspaceEditor({ value, enabled, host, guard, onChange, onConte
     function update(next: Sheet, structural = false, group = '') {
         updateSheets(sheets.map((old, index) => index === active ? next : old), `${sheet.id}:${group}`, structural)
     }
-    function choose(id: string) { onContext(); setSelection(id); setDeleteName(''); setTable(0); setError('') }
+    function choose(id: string) { if (!readGuard()) return; onContext(); setSelection(id); setDeleteName(''); setTable(0); setError('') }
     function create() {
         if (!enabled || !guard()) return
         const name = newName.trim()
@@ -82,7 +82,7 @@ export function WorkspaceEditor({ value, enabled, host, guard, onChange, onConte
 
                         <PillButton
                             label={source ? 'Preview Markdown' : 'Edit Markdown'}
-                            onPress={() => { onContext(); setSource(!source) }}
+                            onPress={() => { if (readGuard()) { onContext(); setSource(!source) } }}
                         />
 
                         {sheet.settings?.history !== false && <PillButton label='Version history' onPress={onHistory} />}
@@ -101,7 +101,7 @@ export function WorkspaceEditor({ value, enabled, host, guard, onChange, onConte
                 </View>
             </GlassCard>
 
-            {timetable && <TimetableSheet sheet={sheet} host={host} enabled={enabled} guard={guard} onChange={update} />}
+            {timetable && <TimetableSheet sheet={sheet} host={host} enabled={enabled} guard={guard} readGuard={readGuard} onChange={update} />}
 
             {plan && parsed.length > 0 && <PlanSheet
                 data={parsed[0].data}
@@ -116,7 +116,7 @@ export function WorkspaceEditor({ value, enabled, host, guard, onChange, onConte
 
                     <ThesisText heading>Table editor</ThesisText>
 
-                    <Actions>{parsed.map((_, index) => <PillButton key={index} label={`Table ${index + 1}`} onPress={() => { onContext(); setTable(index) }} />)}</Actions>
+                    <Actions>{parsed.map((_, index) => <PillButton key={index} label={`Table ${index + 1}`} onPress={() => { if (readGuard()) { onContext(); setTable(index) } }} />)}</Actions>
 
                     <TableEditor
                         key={`${sheet.id}:${tableIndex}`}
@@ -124,6 +124,7 @@ export function WorkspaceEditor({ value, enabled, host, guard, onChange, onConte
                         enabled={enabled}
                         host={host}
                         guard={guard}
+                        readGuard={readGuard}
                         onChange={(data, structural) => update({ ...sheet, body: replaceTableAt(sheet.body, parsed[tableIndex], data) }, structural, `table:${tableIndex}`)}
                     />
 

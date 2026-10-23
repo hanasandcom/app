@@ -9,6 +9,7 @@ import { CodeInventory } from '../features/thesis/CodeInventory'
 import { ConflictPanel } from '../features/thesis/ConflictPanel'
 import { Actions, ThesisText } from '../features/thesis/ui'
 import type { ThesisDocument } from '../features/thesis/document'
+import { canRestoreThesisAfterFlush } from '../features/thesis/policy'
 
 export default function ThesisScreen({ settings, services }: { settings: AppSettings; services?: ThesisServices }) {
     const thesis = useThesis(settings, services)
@@ -24,9 +25,14 @@ export default function ThesisScreen({ settings, services }: { settings: AppSett
     async function restore(value: ThesisDocument) {
         if (!guard('history') || thesis.state?.pending) return false
         const epoch = thesis.epoch.current
+        const model = thesis.state
+        const contentVersion = model?.contentVersion ?? -1
         if (thesis.state?.dirty && !await thesis.save()) return false
         const latest = current.current.thesis
-        if (!latest.visible || latest.epoch.current !== epoch || !latest.canEdit || !latest.state || latest.state.dirty || latest.state.pending || latest.state.unknown || latest.state.conflict) return false
+        if (!latest.state || current.current.panel !== 'history' || !canRestoreThesisAfterFlush({ epoch, contentVersion }, {
+            epoch: latest.epoch.current, contentVersion: latest.state.contentVersion, visible: latest.visible, sameModel: latest.state === model, canEdit: latest.canEdit,
+            dirty: latest.state.dirty, pending: latest.state.pending, unknown: latest.state.unknown, conflict: !!latest.state.conflict,
+        })) return false
         latest.edit({ ...value, revision: latest.state.base.revision }, latest.generation.current, '', true)
         // save() reads the owned model; explicit restore remains one reviewed PUT.
         return latest.save()
@@ -108,6 +114,7 @@ export default function ThesisScreen({ settings, services }: { settings: AppSett
                             host={thesis.host}
                             enabled={thesis.canEdit && !model.unknown && !model.conflict && !thesis.recovered}
                             guard={() => guard('workspace')}
+                            readGuard={() => current.current.thesis.visible && current.current.panel === 'workspace' && current.current.thesis.generation.current === generation}
                             onContext={thesis.renew}
                             onChange={(value, group, structural) => thesis.edit(value, generation, group, structural)}
                             onHistory={() => navigate('history')}
@@ -127,6 +134,7 @@ export default function ThesisScreen({ settings, services }: { settings: AppSett
                         api={thesis.api}
                         canReview={thesis.canEdit && !model.pending && !model.unknown && !model.conflict}
                         guard={() => guard('code')}
+                        readGuard={() => current.current.thesis.visible && current.current.panel === 'code' && current.current.thesis.generation.current === generation}
                         host={thesis.host}
                     />}
                 </>}

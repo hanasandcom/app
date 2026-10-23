@@ -6,6 +6,7 @@ import type { ThesisDocument } from './document'
 import { Actions, ThesisText } from './ui'
 import { MarkdownView } from './MarkdownView'
 import { identifiedSheets } from './workspace'
+import { SheetMetadata } from './SheetMetadata'
 
 export function HistoryPanel({ api, enabled, guard, reviewVersion, onRestore }: { api: ThesisApi; enabled: boolean; guard: () => boolean; reviewVersion: () => number; onRestore: (value: ThesisDocument) => Promise<boolean> }) {
     const [items, setItems] = useState<HistoryEntry[] | null>(null)
@@ -80,6 +81,7 @@ export function HistoryPanel({ api, enabled, guard, reviewVersion, onRestore }: 
                 {identifiedSheets(preview.title, preview.body).map(sheet => <View key={sheet.id} style={{ gap: 8 }}>
                     <ThesisText heading>{sheet.name}</ThesisText>
                     <MarkdownView source={sheet.title + '\n\n' + sheet.body} />
+                    <SheetMetadata sheet={sheet} />
                 </View>)}
 
                 <Actions>

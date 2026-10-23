@@ -10,3 +10,10 @@ export function canReadThesis(value: { alive: boolean; generation: number; curre
 }
 export function thesisActionKey(host: number, row: number, col: number) { return `${host}:${row}:${col}` }
 export function thesisGoalKey(host: number, row: number, index: number, text: string) { return `${host}:${row}:${index}:${text}` }
+export function sourceReviewMatches(action: { id: string; sha256: string; reviewHash: string }, current?: { id: string; sha256: string; reviewHash: string }, detail?: { id: string; sha256: string; reviewHash: string }) {
+    return !!current && !!detail && [current, detail].every(item => item.id === action.id && item.sha256 === action.sha256 && item.reviewHash === action.reviewHash)
+}
+export function canRestoreThesisAfterFlush(review: { epoch: number; contentVersion: number }, current: { epoch: number; contentVersion: number; visible: boolean; sameModel: boolean; canEdit: boolean; dirty: boolean; pending: boolean; unknown: boolean; conflict: boolean }) {
+    return current.visible && current.sameModel && current.canEdit && review.epoch === current.epoch && review.contentVersion === current.contentVersion
+        && !current.dirty && !current.pending && !current.unknown && !current.conflict
+}

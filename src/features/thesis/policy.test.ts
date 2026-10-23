@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { canApplyThesisRead, canEditThesisInput, canReadThesis, thesisActionKey, thesisGoalKey, thesisInputKey } from './policy'
+import { canApplyThesisRead, canEditThesisInput, canReadThesis, canRestoreThesisAfterFlush, sourceReviewMatches, thesisActionKey, thesisGoalKey, thesisInputKey } from './policy'
 import { ThesisState } from './document'
 
 const base = { title: 'Synthetic', body: 'Initial', revision: 1 }
@@ -40,4 +40,23 @@ test('ordinary draft edits keep targets stable while context and write boundarie
     expect(canEditThesisInput({ ...value, currentGeneration: 2 })).toBe(false)
     expect(canEditThesisInput({ ...value, unknown: true })).toBe(false)
     expect(canEditThesisInput({ ...value, alive: false })).toBe(false)
+})
+test('review requires the currently inspected source and current inventory hashes', () => {
+    const action = { id: 'one', sha256: 'a', reviewHash: 'b' }
+    expect(sourceReviewMatches(action, action, action)).toBe(true)
+    expect(sourceReviewMatches(action, action, undefined)).toBe(false)
+    expect(sourceReviewMatches(action, { ...action, reviewHash: 'changed' }, action)).toBe(false)
+    expect(sourceReviewMatches(action, action, { ...action, id: 'different' })).toBe(false)
+})
+test('historical restore cannot overwrite an unseen newer remote after prerequisite save echo and delayed receipt', () => {
+    const state = new ThesisState(base)
+    state.edit({ ...base, body: 'My current draft' })
+    const review = { epoch: 1, contentVersion: state.contentVersion }
+    const sent = state.beginSave()
+    state.receive({ ...sent, revision: 2 }) // own live echo, same reviewed content
+    state.receive({ ...base, body: 'Unseen remote version', revision: 3 })
+    state.saved(sent, { ...sent, revision: 2 }) // delayed prerequisite receipt
+    expect(state.draft.body).toBe('Unseen remote version')
+    expect(canRestoreThesisAfterFlush(review, { epoch: 1, contentVersion: state.contentVersion, visible: true, sameModel: true, canEdit: true, dirty: state.dirty, pending: state.pending, unknown: state.unknown, conflict: !!state.conflict })).toBe(false)
+    expect(canRestoreThesisAfterFlush({ epoch: 1, contentVersion: state.contentVersion }, { epoch: 1, contentVersion: state.contentVersion, visible: true, sameModel: true, canEdit: true, dirty: false, pending: false, unknown: false, conflict: false })).toBe(true)
 })
