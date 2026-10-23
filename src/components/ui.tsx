@@ -39,6 +39,7 @@ export function Screen({
     contentStyle,
     scrollViewRef,
     appearance = 'quiet',
+    compactHeader = false,
 }: {
     title: string
     subtitle?: string
@@ -49,6 +50,7 @@ export function Screen({
     contentStyle?: object
     scrollViewRef?: Ref<ScrollView>
     appearance?: 'ambient' | 'quiet'
+    compactHeader?: boolean
 }) {
     const settingsDrawer = useContext(SettingsDrawerContext)
     const theme = useAppTheme()
@@ -89,11 +91,11 @@ export function Screen({
                 </View>
             </View>}
             <View style={styles.rootEdges}>
-                <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
+                <View style={[styles.header, compactHeader && styles.compactHeader, { paddingTop: insets.top + spacing.sm }]}>
                     {settingsDrawer?.openMenu && <Pressable accessibilityRole='button' accessibilityLabel='Open navigation menu' onPress={settingsDrawer.openMenu} style={styles.settingsButton}><Menu color={theme.textMuted} size={20} /></Pressable>}
                     {left ? <View style={styles.headerLeft}>{left}</View> : null}
                     <View style={{ flex: 1 }}>
-                        <Text style={styles.title}>{title}</Text>
+                        <Text style={[styles.title, compactHeader && styles.compactTitle]}>{title}</Text>
                         {!!subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
                         {settingsDrawer?.openWorkspace && <Pressable accessibilityRole='button' accessibilityLabel={`Switch workspace, ${settingsDrawer.workspaceName || 'Personal'}`} onPress={settingsDrawer.openWorkspace} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingTop: 5 }}><Text numberOfLines={1} style={{ color: theme.textMuted, fontSize: 12 }}>{settingsDrawer.workspaceName || 'Personal'}</Text><ChevronDown size={12} color={theme.textMuted} /></Pressable>}
                     </View>
@@ -484,12 +486,14 @@ function createStyles(theme: ThemePalette) {
             opacity: 0.36,
         },
         header: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: 6, flexDirection: 'row', alignItems: 'flex-start' },
+        compactHeader: { paddingBottom: spacing.xs, alignItems: 'center' },
         headerLeft: { marginRight: spacing.xs },
         headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
         content: { paddingHorizontal: spacing.lg, paddingBottom: 168, gap: spacing.md },
         staticContent: { flex: 1 },
         eyebrow: { color: theme.textSoft, fontSize: 12, textTransform: 'uppercase', letterSpacing: 2 },
         title: { color: theme.text, fontSize: 24, lineHeight: 29, fontWeight: '700' },
+        compactTitle: { fontSize: 19, lineHeight: 23 },
         subtitle: { color: theme.textMuted, fontSize: 14, lineHeight: 20, marginTop: 2 },
         sectionTitle: { color: theme.text, fontSize: 21, fontWeight: '700' },
         body: { color: theme.textMuted, fontSize: 14, lineHeight: 20 },
