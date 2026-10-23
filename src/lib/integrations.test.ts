@@ -14,13 +14,13 @@ const draft = { name: 'New alerts', kind: 'webhook' as const, url: 'https://hook
 beforeEach(() => { calls.length = 0; handle = url => Response.json(url.pathname.includes('/organizations/') ? org() : feed()) })
 const page = () => loadIntegrations(settings)
 
-test('Integrations alone opens native WorkspacePage dispatch; Delivery queue remains its own workflow', () => {
+test('Integrations and Delivery open separate native Tools jobs', () => {
     const leaves = (items: SiteNavigationItem[]): SiteNavigationItem[] => items.flatMap(item => item.items ? leaves(item.items) : [item])
     const items = leaves(siteNavigation('synthetic-user'))
-    expect(items.find(item => item.path === '/findings/delivery')?.tab).toBe('WorkspacePage')
+    expect(items.find(item => item.path === '/findings/delivery')?.tab).toBe('Tools')
     expect(items.find(item => item.path === '/findings/delivery')?.disabledReason).toBeUndefined()
-    expect(items.find(item => item.path === '/findings/actions')?.tab).toBeUndefined()
-    expect(items.find(item => item.path === '/findings/actions')?.disabledReason).toBeTruthy()
+    expect(items.find(item => item.path === '/findings/actions')?.tab).toBe('Tools')
+    expect(items.find(item => item.path === '/findings/actions')?.disabledReason).toBeUndefined()
 })
 test('loads selected Core organization and exact destination envelope with managed account transport', async () => {
     const result = await page()
