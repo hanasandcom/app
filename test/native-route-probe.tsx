@@ -13,6 +13,7 @@ import { loadActorProfiles, loadDeliveryHealth } from '../src/lib/intelligence'
 import { workspaceRequestTimeoutMs } from '../src/lib/workspace-timeout'
 import { loadGalleryAlbumImage } from '../src/lib/gallery-albums'
 import { loadWatchlists } from '../src/lib/watchlists'
+import { loadIntegrations } from '../src/lib/integrations'
 import { siteNavigation, workspacePageDefinition, type SiteNavigationItem } from '../src/data/site-navigation'
 import { fetchWorkspaceSection, workspaceRequestUrl, workspaceRows } from '../src/screens/WorkspacePageScreen'
 
@@ -62,6 +63,7 @@ void (async () => {
                 const jobs: Array<[string, () => Promise<unknown>]> = [
                     ['organizations', () => fetchOrganizations(settings).then(rows => ({ count: rows.length }))],
                     ['watchlists', () => loadWatchlists(settings, signal()).then(page => ({ count: page.items.length, editingAvailable: page.projectionSupported }))],
+                    ['integrations', () => loadIntegrations(settings, signal(16_000)).then(page => ({ count: page.items.length, editingAvailable: page.canManage, lifecycleAvailable: !page.lifecycleUnavailable }))],
                     ['ai-workspace', () => fetchAiWorkspace(settings).then(rows => ({ count: rows.length }))],
                     ['desktop-presence', async () => {
                         const section = { label: 'Desktop agents', endpoint: 'desktop-agent/presence', listPath: 'agents', fields: [] }
