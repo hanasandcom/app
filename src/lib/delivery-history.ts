@@ -16,7 +16,7 @@ export type DeliveryAttempt = {
 }
 export type DeliveryHistoryPage = {
     accountKey: string; organizationId: string; alerts: DeliveryAlert[]; attempts: DeliveryAttempt[]
-    canTest: boolean; canSend: boolean; notice: string; liveDeliveryEnabled: boolean
+    canTest: boolean; canSend: boolean; canRetry: boolean; notice: string; liveDeliveryEnabled: boolean
 }
 export type DeliveryOutcome = { attempts: DeliveryAttempt[]; failed: boolean; uncertain: boolean; message: string }
 export class DeliveryHistoryError extends Error {
@@ -107,7 +107,7 @@ export async function loadDeliveryHistory(settings: AppSettings, signal?: AbortS
             : integrations.lifecycleUnavailable ? 'Workspace lifecycle could not be verified. History is read-only.'
                 : integrations.lifecycleBlocked ? 'Workspace lifecycle blocks delivery actions.'
                     : !canManage ? 'Delivery actions are unavailable for this account or membership.' : !liveDeliveryEnabled ? 'Live delivery is disabled. Dry-run tests remain available.' : ''
-    return { accountKey: deliveryHistoryScope(settings), organizationId, alerts, attempts: orderDeliveryAttempts(attempts), canTest: canManage && findingsValid, canSend: canManage && findingsValid && liveDeliveryEnabled, notice, liveDeliveryEnabled }
+    return { accountKey: deliveryHistoryScope(settings), organizationId, alerts, attempts: orderDeliveryAttempts(attempts), canTest: canManage && findingsValid, canSend: canManage && findingsValid && liveDeliveryEnabled, canRetry: canManage && object(retry.access).canRetry === true && liveDeliveryEnabled, notice, liveDeliveryEnabled }
 }
 export function filterDeliveryAlerts(alerts: DeliveryAlert[], query: string, reviewOnly: boolean) {
     const q = query.trim().toLowerCase()
@@ -120,16 +120,22 @@ export function deliveryCaseRef(page: DeliveryHistoryPage, alertId: string): Del
     const alert = page.alerts.find(row => row.id === alertId)
     return alert?.caseId ? { caseId: alert.caseId, organizationId: page.organizationId, alertId: alert.id } : undefined
 }
+export function deliveryRetryTarget(page: DeliveryHistoryPage, deliveryId?: string) {
+    const receipt = page.attempts.find(row => row.id === deliveryId)
+    if (!page.canRetry || !receipt?.canRetry || receipt.organizationId !== page.organizationId
+        || receipt.status !== 'failed' || receipt.dryRun || !validId(receipt.id) || !validId(receipt.alertId)) return undefined
+    return { deliveryId: receipt.id, alertId: receipt.alertId }
+}
 export async function performDeliveryAction(settings: AppSettings, page: DeliveryHistoryPage, action: DeliveryAction, alertId: string, deliveryId?: string, signal?: AbortSignal): Promise<DeliveryOutcome> {
     const scope = deliveryOrganization(settings)
     if (page.accountKey !== deliveryHistoryScope(settings) || page.organizationId !== scope || settings.impersonationToken || settings.impersonatingUserId) throw new DeliveryHistoryError('The account or workspace changed. Refresh before continuing.')
-    const selected = page.alerts.find(row => row.id === alertId)
-    if (!selected || selected.organizationId !== scope || (action === 'test' ? !page.canTest : !page.canSend)) throw new DeliveryHistoryError('This delivery action is unavailable. Refresh to review its permissions.')
     let payload: Record<string, unknown>
     if (action === 'retry') {
-        if (!page.attempts.some(row => row.id === deliveryId && row.alertId === alertId && row.canRetry)) throw new DeliveryHistoryError('This attempt is not eligible for retry.')
+        if (deliveryRetryTarget(page, deliveryId)?.alertId !== alertId) throw new DeliveryHistoryError('This attempt is not eligible for retry.')
         payload = { orgId: scope, organizationId: scope, tenantId: scope, deliveryId }
     } else {
+        const selected = page.alerts.find(row => row.id === alertId)
+        if (!selected || selected.organizationId !== scope || (action === 'test' ? !page.canTest : !page.canSend)) throw new DeliveryHistoryError('This delivery action is unavailable. Refresh to review its permissions.')
         // Keep the complete authoritative finding; do not reconstruct an alert from display fields.
         if (alert(selected.full, scope).id !== alertId) throw new DeliveryHistoryError('The selected finding changed. Refresh before continuing.')
         payload = { orgId: scope, organizationId: scope, tenantId: scope, alertId, alert: selected.full, dryRun: action === 'test', live: action === 'send' }

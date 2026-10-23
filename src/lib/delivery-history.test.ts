@@ -5,7 +5,7 @@ let handle: (url: URL, init: RequestInit) => Response | Promise<Response>
 mock.module('./api', () => ({ apiFetch: async (settings: AppSettings, input: string, init: RequestInit) => {
     const url = new URL(input); calls.push({ url, init, settings }); return handle(url, init)
 } }))
-const { loadDeliveryHistory, performDeliveryAction, deliveryCaseRef, deliveryHistoryScope, filterDeliveryAlerts, selectedDeliveryAttempts, DeliveryHistoryError } = await import('./delivery-history')
+const { loadDeliveryHistory, performDeliveryAction, deliveryCaseRef, deliveryRetryTarget, deliveryHistoryScope, filterDeliveryAlerts, selectedDeliveryAttempts, DeliveryHistoryError } = await import('./delivery-history')
 const settings = { apiBaseUrl: 'https://api.synthetic.invalid/api', userId: 'user', authToken: 'synthetic-token', selectedOrganizationId: 'org', impersonationToken: '', impersonatingUserId: '' } as AppSettings
 const sourceAlert = (change = {}) => ({ id: 'alert', organizationId: 'org', tenantId: 'org', company: 'Example', actor: 'Actor', matchedTerm: { value: 'example.test' }, reviewState: 'new', deliveryState: 'pending', evidence: [{ id: 'capture', provenance: { retained: true } }], workflowContext: { caseId: 'case', organizationId: 'org' }, ...change })
 const receipt = (change = {}) => ({ id: 'attempt', alertId: 'alert', orgId: 'org', status: 'failed', attemptedAt: '2026-10-23T02:00:00Z', dryRun: false, responseStatus: 503, auditEventId: 'audit', idempotencyKey: 'dedup', error: 'Service unavailable', ...change })
@@ -124,11 +124,12 @@ test('local filters, selected attempts and exact case linkage preserve website s
 })
 test('screen contains guarded confirmation, focus/background cancellation and explicit manual reconciliation', async () => {
     const source = await Bun.file(new URL('../screens/DeliveryHistoryScreen.tsx', import.meta.url)).text()
-    expect(source).toContain('current === epoch.current && selection.current === alertId && active.current')
+    expect(source).toContain('current === epoch.current && selection.current === selectedAtConfirmation && active.current')
     expect(source).toContain('controller.abort(); write.current?.abort()')
     expect(source).toContain('key={deliveryHistoryScope(props.settings)}')
     expect(source).toContain('review.current = true; setMustRefresh(true)')
     expect(source).toContain('onOpenCase(caseRef)')
+    expect(source).toContain('label=\'Open case on website\'')
     expect(source).not.toContain('setInterval')
 })
 
@@ -172,4 +173,53 @@ test('pre-cancelled writes never reach transport; altered full-alert identity ca
     expect(calls).toHaveLength(0)
     await expect(performDeliveryAction(settings, { ...page, alerts: page.alerts.map(row => ({ ...row, full: { ...row.full, id: 'other' } })) }, 'send', 'alert')).rejects.toThrow('changed')
     expect(calls).toHaveLength(0)
+})
+
+test('persisted receipt retry remains available when Findings is unavailable or no longer lists the alert', async () => {
+    for (const unavailable of [true, false]) {
+        handle = url => url.pathname.endsWith('/findings/alerts')
+            ? Response.json(unavailable ? {} : { alerts: [] }, { status: unavailable ? 503 : 200 }) : defaults(url)
+        const page = await loadDeliveryHistory(settings)
+        expect(page.alerts).toEqual([])
+        expect(page.canRetry).toBe(true)
+        expect(deliveryRetryTarget(page, 'attempt')).toEqual({ deliveryId: 'attempt', alertId: 'alert' })
+        if (unavailable) expect(page.canSend).toBe(false)
+        calls.length = 0
+        handle = () => Response.json({ deliveries: [receipt({ id: 'retry-result', status: 'delivered', error: null })] }, { status: 202 })
+        const result = await performDeliveryAction(settings, page, 'retry', 'alert', 'attempt')
+        expect(result.uncertain).toBe(false)
+        expect(calls).toHaveLength(1)
+        expect(JSON.parse(String(calls[0].init.body))).toEqual({ orgId: 'org', organizationId: 'org', tenantId: 'org', deliveryId: 'attempt' })
+        calls.length = 0
+        await expect(performDeliveryAction(settings, page, 'send', 'alert')).rejects.toThrow()
+        await expect(performDeliveryAction(settings, page, 'test', 'alert')).rejects.toThrow()
+        expect(calls).toHaveLength(0)
+    }
+})
+test('receipt retry still requires global authority and exact org/alert/delivery proof', async () => {
+    const loaded = await loadDeliveryHistory(settings)
+    const page = { ...loaded, alerts: [], canSend: false, canTest: false }
+    for (const changed of [
+        { ...page, canRetry: false },
+        { ...page, attempts: page.attempts.map(row => ({ ...row, organizationId: 'other' })) },
+        { ...page, attempts: page.attempts.map(row => ({ ...row, alertId: 'other' })) },
+        { ...page, attempts: page.attempts.map(row => ({ ...row, dryRun: true })) },
+        { ...page, attempts: page.attempts.map(row => ({ ...row, status: 'delivered' })) },
+        { ...page, attempts: page.attempts.map(row => ({ ...row, canRetry: false })) },
+    ]) {
+        calls.length = 0
+        await expect(performDeliveryAction(settings, changed, 'retry', 'alert', 'attempt')).rejects.toThrow('not eligible')
+        expect(calls).toHaveLength(0)
+    }
+    for (const change of [{ impersonationToken: 'imp' }, { impersonatingUserId: 'other' }, { authToken: 'changed' }, { selectedOrganizationId: 'other' }]) {
+        calls.length = 0
+        await expect(performDeliveryAction({ ...settings, ...change }, page, 'retry', 'alert', 'attempt')).rejects.toThrow()
+        expect(calls).toHaveLength(0)
+    }
+})
+test('retry UI resolves target from the receipt, and does not use new-send availability', async () => {
+    const source = await Bun.file(new URL('../screens/DeliveryHistoryScreen.tsx', import.meta.url)).text()
+    expect(source).toContain('action === \'retry\' ? deliveryRetryTarget(page, deliveryId)?.alertId : selected?.id')
+    expect(source).toContain('attempt={attempt} disabled={disabled || !page.canRetry}')
+    expect(source).not.toContain('attempt={attempt} disabled={disabled || !page.canSend}')
 })

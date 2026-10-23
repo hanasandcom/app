@@ -6,7 +6,7 @@ import { GlassCard, InlineNotice, PillButton, Screen, SectionTitle } from '../co
 import { DeliveryAttempt } from '../components/DeliveryAttempt'
 import { useAppTheme } from '../theme/context'
 import {
-    deliveryCaseRef, deliveryHistoryScope, DeliveryHistoryError, filterDeliveryAlerts,
+    deliveryCaseRef, deliveryHistoryScope, deliveryRetryTarget, DeliveryHistoryError, filterDeliveryAlerts,
     loadDeliveryHistory, orderDeliveryAttempts, performDeliveryAction, selectedDeliveryAttempts,
     type DeliveryAction, type DeliveryCaseRef, type DeliveryHistoryPage,
 } from '../lib/delivery-history'
@@ -79,12 +79,14 @@ function WorkspaceDelivery({ settings, onConfigure, onOpenCase }: Props) {
         epoch.current++; request.current?.abort(); setRevision(value => value + 1)
     }
     async function perform(action: DeliveryAction, deliveryId?: string) {
-        if (!page || !selected || saving.current || review.current || disabled || !active.current) return
+        if (!page || saving.current || review.current || disabled || !active.current) return
+        const alertId = action === 'retry' ? deliveryRetryTarget(page, deliveryId)?.alertId : selected?.id
+        if (!alertId) return
         saving.current = true; allowReconcile.current = false; setBusy(true); setError(''); setNotice('')
         const current = epoch.current, controller = new AbortController()
         write.current = controller
         try {
-            const result = await performDeliveryAction(settings, page, action, selected.id, deliveryId, controller.signal)
+            const result = await performDeliveryAction(settings, page, action, alertId, deliveryId, controller.signal)
             if (current !== epoch.current || !mounted.current || !active.current) return
             setNotice(result.message)
             setPage(value => value && { ...value, attempts: orderDeliveryAttempts([...result.attempts, ...value.attempts.filter(row => !result.attempts.some(receipt => receipt.id === row.id))]) })
@@ -102,15 +104,17 @@ function WorkspaceDelivery({ settings, onConfigure, onOpenCase }: Props) {
         }
     }
     function confirm(action: DeliveryAction, deliveryId?: string) {
-        if (disabled || review.current || saving.current || !selected || !active.current) return
-        const current = epoch.current, alertId = selected.id
+        if (disabled || review.current || saving.current || !page || !active.current) return
+        const target = action === 'retry' ? deliveryRetryTarget(page, deliveryId) : selected
+        if (!target) return
+        const current = epoch.current, selectedAtConfirmation = selection.current
         const copy = action === 'test' ? 'This records a dry-run delivery test without sending to an external destination.'
             : action === 'retry' ? 'This retries the selected attempt and may send its message to a configured destination.'
                 : 'This sends the selected finding to its configured destinations.'
         Alert.alert(action === 'test' ? 'Test delivery?' : action === 'retry' ? 'Retry delivery?' : 'Send finding?', copy, [
             { text: 'Cancel', style: 'cancel' },
             { text: action === 'test' ? 'Run dry-run test' : action === 'retry' ? 'Retry delivery' : 'Send finding', onPress: () => {
-                if (current === epoch.current && selection.current === alertId && active.current) void perform(action, deliveryId)
+                if (current === epoch.current && selection.current === selectedAtConfirmation && active.current) void perform(action, deliveryId)
             } },
         ])
     }
@@ -153,11 +157,11 @@ function WorkspaceDelivery({ settings, onConfigure, onOpenCase }: Props) {
                     <View style={row}>
                         <PillButton label='Test delivery' disabled={disabled || !page.canTest} onPress={() => confirm('test')} />
                         <PillButton label='Send finding' disabled={disabled || !page.canSend} onPress={() => confirm('send')} />
-                        {caseRef && <PillButton label='Open case trail' disabled={busy} onPress={() => { if (active.current && !saving.current) onOpenCase(caseRef) }} />}
+                        {caseRef && <PillButton label='Open case on website' disabled={busy} onPress={() => { if (active.current && !saving.current) onOpenCase(caseRef) }} />}
                     </View>
                 </GlassCard>}
                 {!attempts.length && <Text style={meta}>{selected ? 'No delivery attempt yet for this finding.' : 'No delivery attempts available.'}</Text>}
-                {attempts.slice(currentHistoryPage * 10, (currentHistoryPage + 1) * 10).map(attempt => <DeliveryAttempt key={attempt.id} attempt={attempt} disabled={disabled || !page.canSend} onRetry={() => confirm('retry', attempt.id)} />)}
+                {attempts.slice(currentHistoryPage * 10, (currentHistoryPage + 1) * 10).map(attempt => <DeliveryAttempt key={attempt.id} attempt={attempt} disabled={disabled || !page.canRetry} onRetry={() => confirm('retry', attempt.id)} />)}
                 <Pages page={currentHistoryPage} total={attempts.length} size={10} disabled={busy} onChange={setHistoryPage} />
             </>}
         </>}
