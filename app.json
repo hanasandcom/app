@@ -16,6 +16,9 @@
       "icon": "./assets/icon.png",
       "bundleIdentifier": "com.hanasand.app",
       "associatedDomains": ["webcredentials:hanasand.com"],
+      "entitlements": {
+        "keychain-access-groups": ["$(AppIdentifierPrefix)$(CFBundleIdentifier)"]
+      },
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": false,
