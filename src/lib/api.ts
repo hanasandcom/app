@@ -1047,12 +1047,13 @@ export async function fetchAiModels(settings: AppSettings, signal?: AbortSignal)
     const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'ai/models'), {
         headers: headers(settings), signal,
     })
-    const body = await response.json().catch(() => ({} as Record<string, unknown>))
+    const body = asRecord(await response.json().catch(() => null))
     if (!response.ok) {
         throw Object.assign(new Error(String(body.error || 'Unable to load model status.')), { status: response.status })
     }
+    if (!Array.isArray(body.connected)) throw new Error('Model status returned an invalid response.')
 
-    const connected = Array.isArray(body.connected) ? body.connected.map(normalizeGptClient).filter(Boolean) as GptClient[] : []
+    const connected = body.connected.map(normalizeGptClient).filter(Boolean) as GptClient[]
     return connected
 }
 

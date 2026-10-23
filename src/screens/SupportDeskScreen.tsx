@@ -10,7 +10,7 @@ import { SupportDeskFilters, SupportDeskInput } from '../components/SupportDeskF
 import { GlassCard, InlineNotice, PillButton, Screen, SectionTitle } from '../components/ui'
 import { useAppTheme } from '../theme/context'
 import {
-    changeDeskAccount, deskFilterQuery, emptyDeskFilters, loadDeskMessages, loadSupportDesk,
+    canEditDeskInput, changeDeskAccount, deskFilterQuery, emptyDeskFilters, loadDeskMessages, loadSupportDesk,
     replyToDeskTicket, setDeskTicketStatus, supportDeskScope, validateSupportAccountChange,
     visibleDeskTickets, type DeskFilters, type DeskTicket, type SupportDesk
 } from '../lib/support-desk'
@@ -33,11 +33,16 @@ function SupportDeskWorkspace({ settings, liveAdapter }: { settings: AppSettings
     const reading = useRef<AbortController | null>(null), writing = useRef<AbortController | null>(null), queued = useRef(false)
     const selectedId = useRef(''), applied = useRef<DeskFilters>({ ...emptyDeskFilters })
     const drafts = useRef<Record<string, string>>({}), requestId = useRef<{ ticket: string; body: string; id: string } | null>(null)
-    const sync = useRef<() => void>(() => {})
+    const sync = useRef<() => void>(() => {}), inputAllowed = useRef(false)
     visible.current = focused && foreground
     const ticket = desk?.tickets.find(row => row.id === selected)
     const writable = verified && desk?.isSupport === true && !settings.impersonationToken
         && !settings.impersonatingUserId && !busy && !loading && !uncertain && visible.current
+    inputAllowed.current = writable
+    function editAllowed(id: string) {
+        return canEditDeskInput({ alive: live.current, visible: visible.current, allowed: inputAllowed.current,
+            reading: !!reading.current, writing: !!writing.current, locked: locked.current, ticket: id, selected: selectedId.current })
+    }
     const meta = { color: theme.textMuted, fontSize: 13, lineHeight: 20 }
     const row = { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: 8 }
     function hide() {
@@ -201,6 +206,7 @@ function SupportDeskWorkspace({ settings, liveAdapter }: { settings: AppSettings
                 {!messages.length && !loading && <Text style={meta}>No messages returned.</Text>}
                 <SupportDeskInput label='Reply to customer' value={draft} multiline maxLength={10000}
                     editable={writable && ticket.status !== 'closed'} onChangeText={value => {
+                        if (!editAllowed(ticket.id) || ticket.status === 'closed') return
                         review.current++; drafts.current[ticket.id] = value; setDraft(value)
                     }} />
                 <PillButton label='Review and send reply' tone='accent' disabled={!writable || ticket.status === 'closed' || !draft.trim()} onPress={reply} />
@@ -208,7 +214,10 @@ function SupportDeskWorkspace({ settings, liveAdapter }: { settings: AppSettings
                     onPress={() => { review.current++; setAccountOpen(value => !value) }} />}
             </GlassCard>}
             {accountOpen && ticket?.user_id && <SupportAccountEditor key={ticket.id} active={visible.current}
-                disabled={!writable} clearRevision={accountClear} onDirty={() => { review.current++ }} onReview={account} />}
+                disabled={!writable} clearRevision={accountClear} onDirty={() => {
+                    if (!editAllowed(ticket.id)) return false
+                    review.current++; return true
+                }} onReview={account} />}
             {!ticket && visibleDeskTickets(desk.tickets, applied.current.status).map(item => <GlassCard key={item.id} style={{ gap: 8 }}>
                 <Text style={{ color: theme.text, fontWeight: '700' }}>{item.subject}</Text>
                 <Text style={meta}>{item.user_name || item.user_id || 'Visitor'} · {item.status} · {date(item.updated_at)}</Text>

@@ -455,3 +455,12 @@ it('membership discovery distinguishes verified empty membership from unavailabl
     mockFetch(async () => { throw new Error('Synthetic offline') })
     await expect(isHanasandOrganizationMember(settings)).rejects.toThrow('Synthetic offline')
 })
+
+it('model discovery rejects malformed envelopes without replacing them with zero clients', async () => {
+    for (const body of ['{', 'null', '{}', '{"error":"unavailable"}', '{"connected":{}}', '{"connected":null}']) {
+        mockFetch(async () => new Response(body))
+        await expect(fetchAiModels(settings)).rejects.toThrow('invalid response')
+    }
+    mockFetch(async () => Response.json({ connected: [] }))
+    await expect(fetchAiModels(settings)).resolves.toEqual([])
+})

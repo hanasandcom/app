@@ -111,3 +111,16 @@ test('native screen retains explicit-only uncertainty reconciliation and scoped 
     expect(source).toContain('if (explicit) { locked.current = false')
     expect(source).toContain('key={supportDeskScope(settings)}')
 })
+
+test('late native input callbacks preserve submitted drafts and cleared account fields', () => {
+    const state = { alive: true, visible: true, allowed: true, reading: false, writing: false, locked: false, ticket: id, selected: id }
+    let draft = 'submitted reply', password = ''
+    const lateInput = () => { if (api.canEditDeskInput(state)) { draft = 'queued edit'; password = 'queued secret' } }
+    for (const blocked of [ { writing: true }, { reading: true }, { locked: true }, { visible: false }, { alive: false }, { allowed: false }, { selected: messageId } ]) {
+        const previous = { ...state }; Object.assign(state, blocked); lateInput()
+        expect(draft).toBe('submitted reply'); expect(password).toBe('')
+        Object.assign(state, previous)
+    }
+    expect(api.canEditDeskInput(state)).toBe(true)
+    lateInput(); expect(draft).toBe('queued edit')
+})

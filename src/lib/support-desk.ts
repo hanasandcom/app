@@ -9,6 +9,13 @@ export const supportDeskScope = (settings: AppSettings) => JSON.stringify([
     supportBase(), settings.siteBaseUrl, settings.userId, settings.authToken,
     settings.impersonationToken, settings.impersonatingUserId, settings.selectedOrganizationId
 ])
+export function canEditDeskInput(state: {
+    alive: boolean; visible: boolean; allowed: boolean; reading: boolean; writing: boolean; locked: boolean
+    ticket: string; selected: string
+}) {
+    return state.alive && state.visible && state.allowed && !state.reading && !state.writing && !state.locked
+        && !!state.ticket && state.ticket === state.selected
+}
 export class SupportDeskError extends Error {
     constructor(message: string, readonly uncertain = false, readonly status = 0) { super(message) }
 }
