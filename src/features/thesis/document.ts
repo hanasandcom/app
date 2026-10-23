@@ -23,6 +23,7 @@ export class ThesisState {
     private redoStack: ThesisDocument[] = []
     private lastEdit = 0
     private group = ''
+    private sent: ThesisDocument | null = null
 
     constructor(initial: ThesisDocument) { this.base = document(initial); this.draft = { ...this.base } }
     get dirty() { return !sameContent(this.base, this.draft) }
@@ -30,7 +31,7 @@ export class ThesisState {
     get canRedo() { return !this.conflict && this.redoStack.length > 0 }
 
     edit(next: ThesisDocument, group = '', now = Date.now()) {
-        document(next)
+        if (typeof next.title !== 'string' || next.title.length > 500 || /[\r\n]/.test(next.title) || typeof next.body !== 'string' || next.body.length > BODY_LIMIT) throw new Error('The draft exceeded its limits.')
         if (sameContent(this.draft, next)) return
         if (!group || group !== this.group || now - this.lastEdit > 750) {
             this.undoStack.push({ ...this.draft })
@@ -54,6 +55,10 @@ export class ThesisState {
         const remote = document(value)
         if (remote.revision < this.base.revision) return
         if (manual) this.unknown = false
+        if (this.pending && this.sent && sameContent(remote, this.sent)) {
+            this.base = remote; this.draft = { ...this.draft, revision: remote.revision }
+            return
+        }
         if (sameContent(remote, this.draft)) {
             this.base = remote; this.draft = { ...remote }; this.conflict = null
         } else if (!this.dirty) {
@@ -64,22 +69,25 @@ export class ThesisState {
 
     beginSave() {
         if (this.pending || this.unknown || this.conflict || !this.dirty) throw new Error('Refresh and resolve this draft before saving.')
+        document(this.draft)
         this.pending = true; this.operation++
-        return { ...this.draft, revision: this.base.revision }
+        this.sent = { ...this.draft, revision: this.base.revision }
+        return this.sent
     }
 
     saved(sent: ThesisDocument, value: ThesisDocument) {
         const saved = document(value)
         if (!sameContent(sent, saved)) throw new Error('The saved response does not match this draft.')
-        this.pending = false; this.unknown = false
+        this.pending = false; this.unknown = false; this.sent = null
+        if (saved.revision < this.base.revision) return
         this.base = saved
         // An accepted save must not erase text typed while it was in flight.
         this.draft = { ...this.draft, revision: saved.revision }
-        this.conflict = null
+        if (!this.conflict || this.conflict.revision <= saved.revision) this.conflict = null
     }
 
     failed(remote?: ThesisDocument) {
-        this.pending = false
+        this.pending = false; this.sent = null
         if (remote) this.conflict = document(remote)
         else this.unknown = true
     }
