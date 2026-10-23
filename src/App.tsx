@@ -25,6 +25,7 @@ import { OrganizationsScreen } from './screens/OrganizationsScreen'
 import { WorkspacePageScreen } from './screens/WorkspacePageScreen'
 import { NativeToolsScreen } from './screens/NativeToolsScreen'
 import { nativeToolForPath } from './lib/native-tool-navigation'
+import { organizationSectionForPath } from './lib/organization-navigation'
 import { fetchOrganizations, type Organization } from './lib/profile-api'
 import type { SiteNavigationItem } from './data/site-navigation'
 import { loadAiChat, loadSettings, saveAiChat, saveSettings } from './lib/storage'
@@ -165,7 +166,7 @@ export default function App() {
             case 'Mail': navigation.navigate('Mail'); break
             case 'Notes': navigation.navigate('Notes'); break
             case 'Images': navigation.navigate('Images'); break
-            case 'Organizations': navigation.navigate('Organizations'); break
+            case 'Organizations': navigation.navigate('Organizations', { section: organizationSectionForPath(item.path) }); break
             case 'Automations': navigation.navigate('Automations', { section: item.path === '/automation/health' ? 'health' : 'cron' }); break
             case 'Tools': {
                 const tool = nativeToolForPath(item.path)
@@ -410,7 +411,7 @@ export default function App() {
                                 {() => <ExploreScreen settings={settings} access={navigationAccess} onOpen={openPage} />}
                             </Tab.Screen>
                             <Tab.Screen name='Organizations'>
-                                {() => <OrganizationsScreen settings={settings} selectedOrganizationId={activeOrganization?.id} onSelectOrganization={id => void selectWorkspace(id)} />}
+                                {({ route }) => <OrganizationsScreen initialSection={route.params?.section} settings={settings} selectedOrganizationId={activeOrganization?.id} onSelectOrganization={id => void selectWorkspace(id)} />}
                             </Tab.Screen>
                             <Tab.Screen name='WorkspacePage'>
                                 {({ route }) => <WorkspacePageScreen key={`${route.params.path}:${settings.selectedOrganizationId}`} settings={settings} path={route.params.path} title={route.params.title} />}
@@ -428,7 +429,7 @@ export default function App() {
                             </View>
                         )}
                     </NavigationContainer>
-                    <WorkspacePicker open={workspaceOpen} organizations={organizations} selectedId={settings.selectedOrganizationId || 'personal'} error={organizationError} onClose={() => setWorkspaceOpen(false)} onSelect={id => void selectWorkspace(id)} onRetry={() => setOrganizationRevision(value => value + 1)} onManage={() => { setWorkspaceOpen(false); navigation.navigate('Organizations') }} />
+                    <WorkspacePicker open={workspaceOpen} organizations={organizations} selectedId={settings.selectedOrganizationId || 'personal'} error={organizationError} onClose={() => setWorkspaceOpen(false)} onSelect={id => void selectWorkspace(id)} onRetry={() => setOrganizationRevision(value => value + 1)} onManage={() => { setWorkspaceOpen(false); navigation.navigate('Organizations', { section: 'Overview' }) }} />
                     <SettingsDrawer
                         open={settingsOpen}
                         settings={settings}

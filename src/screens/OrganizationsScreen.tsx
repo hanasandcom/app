@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useIsFocused } from '@react-navigation/native'
 import { Alert, Text, View } from 'react-native'
-import type { AppSettings } from '../types'
+import type { AppSettings, OrganizationSection } from '../types'
 import {
     accountRequest, fetchOrganizations, fetchOrganizationMembers, fetchOrganizationInvites,
     fetchOrganizationSettings, organizationPath, type Organization, type OrganizationInvite,
@@ -12,8 +13,8 @@ import { getThemePalette, spacing } from '../theme/tokens'
 export type { Organization } from '../lib/profile-api'
 const roles = ['owner', 'admin', 'editor', 'reader'] as const
 
-export function OrganizationsScreen({ settings, selectedOrganizationId, onSelectOrganization }: {
-    settings: AppSettings; selectedOrganizationId?: string; onSelectOrganization?: (id: string) => void
+export function OrganizationsScreen({ settings, selectedOrganizationId, onSelectOrganization, initialSection }: {
+    settings: AppSettings; selectedOrganizationId?: string; onSelectOrganization?: (id: string) => void; initialSection?: OrganizationSection
 }) {
     const theme = getThemePalette(settings.themeMode)
     const styles = useMemo(() => ({
@@ -24,7 +25,9 @@ export function OrganizationsScreen({ settings, selectedOrganizationId, onSelect
     }), [theme])
     const [organizations, setOrganizations] = useState<Organization[]>([])
     const [selectedId, setSelectedId] = useState(selectedOrganizationId || '')
-    const [tab, setTab] = useState<'Overview' | 'Team' | 'Settings'>('Overview')
+    const [tab, setTab] = useState<OrganizationSection>(initialSection || 'Overview')
+    const focused = useIsFocused()
+    useEffect(() => { if (focused) setTab(initialSection || 'Overview') }, [focused, initialSection])
     const [members, setMembers] = useState<OrganizationMember[]>([])
     const [invites, setInvites] = useState<OrganizationInvite[]>([])
     const [draft, setDraft] = useState<OrganizationSettings>({})

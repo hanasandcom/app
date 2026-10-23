@@ -5,6 +5,8 @@ export type RouteShortcut = {
     category: string
 }
 
+export type OrganizationSection = 'Overview' | 'Team' | 'Settings'
+
 export type RootTabParamList = {
     Home: undefined
     Profile: { section?: 'Profile' | 'Security' | 'Sessions' | 'SSH keys' | 'Support' } | undefined
@@ -14,7 +16,7 @@ export type RootTabParamList = {
     Images: undefined
     Automations: { section?: 'health' | 'cron' } | undefined
     Explore: undefined
-    Organizations: undefined
+    Organizations: { section?: OrganizationSection } | undefined
     WorkspacePage: { path: string; title: string }
     Tools: { tool: 'threat-search' | 'password-check' | 'subscription' | 'host-updates' | 'hosts' | 'intel-profiles' | 'delivery-health' | 'api-keys' | 'rules-match' | 'rules-analysis' | 'rules-detection' }
 }
