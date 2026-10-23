@@ -1,10 +1,13 @@
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it, spyOn } from 'bun:test'
+import { AbortController as NativeAbortController } from 'abort-controller/dist/abort-controller'
 import { readFileSync } from 'node:fs'
 import { applicationEndpoints, documentationSource, responseExamples } from '../data/api-reference-data'
 import type { AppSettings } from '../types'
 import { documentLimit, jsonChunks, loadOpenApi, openApiUrl, operationMatches, operations, parseOpenApi, referenceScope, ReferenceRequests, referencedSchemas, resolveReference, securityLabel } from './api-reference'
 
 const originalFetch = globalThis.fetch
+const originalAbortController = globalThis.AbortController
+const originalSetTimeout = globalThis.setTimeout
 const contract = () => ({ openapi: '3.1.0', info: { title: 'Synthetic public API', version: '1.0' },
     servers: [{ url: 'https://never-execute.example/api/v1' }], security: [{ apiKey: ['read'] }],
     paths: { '/actors': { parameters: [], get: { summary: 'List actors', operationId: 'getActors', responses: { '200': { $ref: '#/components/responses/Actors' } } } },
@@ -12,7 +15,7 @@ const contract = () => ({ openapi: '3.1.0', info: { title: 'Synthetic public API
     components: { responses: { Actors: { description: 'Actors page', content: { 'application/json': { schema: { $ref: '#/components/schemas/Actor' } } } } },
         schemas: { Actor: { type: 'object', properties: { id: { type: 'string' } } }, 'A/B~C': { type: 'string' } } } })
 const document = () => parseOpenApi(JSON.stringify(contract()))
-afterEach(() => { globalThis.fetch = originalFetch })
+afterEach(() => { globalThis.fetch = originalFetch; globalThis.AbortController = originalAbortController })
 
 describe('public API reference transport and validation', () => {
     it('uses canonical public TI for production and only the configured custom website route', () => {
@@ -33,6 +36,34 @@ describe('public API reference transport and validation', () => {
         expect(calls).toHaveLength(1)
         expect(calls[0].url).toBe('https://ti.hanasand.com/api/openapi/ti')
         expect(calls[0].init).toEqual({ method: 'GET', credentials: 'omit', redirect: 'error', cache: 'no-store', signal: expect.any(AbortSignal), headers: { Accept: 'application/json' } })
+    })
+    it('loads with the installed native AbortController without throwIfAborted', async () => {
+        globalThis.AbortController = NativeAbortController as unknown as typeof AbortController
+        const controller = new AbortController()
+        expect('throwIfAborted' in controller.signal).toBe(false)
+        globalThis.fetch = (async () => Response.json(contract())) as unknown as typeof fetch
+        expect((await loadOpenApi('https://hanasand.com', controller.signal)).info.title).toBe('Synthetic public API')
+    })
+    it('rejects late native body completion after cancellation without requiring signal methods', async () => {
+        globalThis.AbortController = NativeAbortController as unknown as typeof AbortController
+        const controller = new AbortController()
+        globalThis.fetch = (async () => {
+            const response = Response.json(contract())
+            Object.defineProperty(response, 'body', { value: null })
+            response.text = async () => { controller.abort(); return JSON.stringify(contract()) }
+            return response
+        }) as unknown as typeof fetch
+        await expect(loadOpenApi('https://hanasand.com', controller.signal)).rejects.toThrow('cancelled')
+    })
+    it('preserves the timeout error with the installed native AbortController', async () => {
+        globalThis.AbortController = NativeAbortController as unknown as typeof AbortController
+        const immediateTimeout = ((callback: () => void) => originalSetTimeout(callback, 0)) as unknown as typeof setTimeout
+        const timer = spyOn(globalThis, 'setTimeout').mockImplementationOnce(immediateTimeout)
+        globalThis.fetch = ((_url: unknown, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(new Error('Synthetic request aborted')), { once: true })
+        })) as unknown as typeof fetch
+        try { await expect(loadOpenApi('https://hanasand.com', new AbortController().signal)).rejects.toThrow('timed out') }
+        finally { timer.mockRestore() }
     })
     it('does not replace HTTP, malformed JSON, wrong-envelope or oversized failures with an empty contract', async () => {
         for (const response of [new Response('unavailable', { status: 503 }), Response.json({ error: 'unavailable' }), new Response('<html>failure</html>'), new Response('{}', { headers: { 'content-length': String(documentLimit + 1) } })]) {

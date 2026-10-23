@@ -107,7 +107,7 @@ export async function loadOpenApi(siteBaseUrl: string, signal: AbortSignal): Pro
         const length = response.headers.get('content-length')
         if (length && Number(length) > documentLimit) throw new Error('The API contract exceeds the 2 MB display limit.')
         const raw = await readDocument(response)
-        controller.signal.throwIfAborted()
+        if (controller.signal.aborted) throw new Error('API documentation request cancelled.')
         return parseOpenApi(raw)
     } catch (cause) {
         if (expired) throw new Error('API documentation timed out. Refresh to retry.', { cause })
