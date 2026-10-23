@@ -8,13 +8,13 @@ import { useAppTheme } from '../theme/context'
 import { loadPrivacy, performPrivacyAction, type PrivacyTransport } from '../features/privacy/api'
 import { PrivacyController } from '../features/privacy/controller'
 import { sharePrivacyExport } from '../features/privacy/export'
-import { canUsePrivacyAction, privacyScope, text, type PrivacyAction, type PrivacyExport, type PrivacyRow, type PrivacyState, PrivacyError } from '../features/privacy/model'
+import { canUsePrivacyAction, privacyIntentScope, privacyScope, text, type PrivacyAction, type PrivacyExport, type PrivacyRow, type PrivacyState, PrivacyError } from '../features/privacy/model'
 import { countLabel, PrivacyHistory, PrivacyRecordDetail, PrivacyText } from '../features/privacy/PrivacyHistory'
 
 type Props = { settings: AppSettings; transport?: PrivacyTransport; exportFile?: typeof sharePrivacyExport }
 export function OrganizationPrivacyScreen(props: Props) { return <PrivacyWorkspace key={privacyScope(props.settings)} {...props} /> }
 function PrivacyWorkspace({ settings, transport, exportFile = sharePrivacyExport }: Props) {
-    const theme = useAppTheme(), controller = useRef(new PrivacyController())
+    const theme = useAppTheme(), controller = useRef(new PrivacyController(privacyIntentScope(settings)))
     const [snapshot, setSnapshot] = useState<PrivacyState | null>(null), [error, setError] = useState(''), [notice, setNotice] = useState('')
     const [tab, setTab] = useState<'summary' | 'runs' | 'requests' | 'items'>('summary'), [detail, setDetail] = useState<PrivacyRow | null>(null)
     const [confirmation, setConfirmation] = useState(''), [password, setPassword] = useState(''), [exported, setExported] = useState<PrivacyExport | null>(null)
@@ -82,7 +82,12 @@ function PrivacyWorkspace({ settings, transport, exportFile = sharePrivacyExport
         if (!canUsePrivacyAction(settings, state, action)) return
         const requestId = Crypto.randomUUID(), deletion = action === 'delete' ? { confirmation: draft.current.confirmation, currentPassword: draft.current.password } : undefined
         const write = ops.beginWrite(generation, { action, requestId })
-        if (!write) return
+        if (!write) {
+            clearPassword()
+            if (ops.blockedReason) setError(ops.blockedReason)
+            publish()
+            return
+        }
         clearPassword(); setError(''); setNotice(''); setExported(null); publish()
         try {
             const receipt = await performPrivacyAction(settings, state, action, requestId, write.controller.signal, deletion, { transport })

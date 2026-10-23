@@ -11,7 +11,7 @@ mock.module('../../lib/api', () => ({ apiFetch: async (settings: AppSettings, ur
     calls.push({ settings, url, init }); return handle(url, init)
 } }))
 mock.module('expo-crypto', () => ({ CryptoDigestAlgorithm: { SHA256: 'SHA-256' }, digestStringAsync: async (_algorithm: string, value: string) => createHash('sha256').update(value, 'utf8').digest('hex') }))
-const api = await import('./api'), model = await import('./model'), { PrivacyController } = await import('./controller'), files = await import('./export')
+const api = await import('./api'), model = await import('./model'), { PrivacyController, PrivacyIntentRegistry } = await import('./controller'), files = await import('./export')
 const settings = { apiBaseUrl: 'https://api.hanasand.com/api', siteBaseUrl: 'https://hanasand.com', userId: 'actor', authToken: 'synthetic-token', selectedOrganizationId: 'org.one:@', impersonationToken: '', impersonatingUserId: '' } as AppSettings
 const orgId = settings.selectedOrganizationId!
 const signal = () => new AbortController().signal
@@ -230,4 +230,88 @@ test('temporary export is removed on sharing failure, stale scope or completion,
     let current = true
     await files.sharePrivacyExport(exported(), () => current, { ...adapter, write: async (...args) => { const file = await adapter.write(...args); current = false; return file } })
     expect(events.some(value => value === 'share')).toBe(false); expect(events.at(-1)).toBe('remove')
+})
+test('replacement controllers restore unresolved intent across A to B to A and credential refresh; automatic/absent history cannot unlock', () => {
+    const registry = new PrivacyIntentRegistry(), scopeA = model.privacyIntentScope(settings)
+    const firstA = new PrivacyController(scopeA, registry); firstA.visible = true
+    const write = firstA.beginWrite(firstA.generation, { action: 'export', requestId: 'intent-one' })!
+    expect(registry.get(scopeA)).toEqual({ action: 'export', requestId: 'intent-one' })
+    firstA.hide()
+    const otherSettings = { ...settings, userId: 'different-account', selectedOrganizationId: 'different-org' }
+    const accountB = new PrivacyController(model.privacyIntentScope(otherSettings), registry)
+    expect(accountB.locked).toBe(false); expect(accountB.unknown).toBeUndefined()
+    const tokenA = { ...settings, authToken: 'new-synthetic-token' }
+    expect(model.privacyIntentScope(tokenA)).toBe(scopeA)
+    expect(model.privacyScope(tokenA)).not.toBe(model.privacyScope(settings))
+    const replacedA = new PrivacyController(model.privacyIntentScope(tokenA), registry); replacedA.visible = true
+    expect(replacedA.locked).toBe(true)
+    expect(replacedA.beginWrite(replacedA.generation, { action: 'export', requestId: 'forbidden-new-uuid' })).toBeNull()
+    const automatic = replacedA.beginRead(replacedA.generation, false)!
+    replacedA.finishRead(automatic.ticket, state({ requests: [requestRow()] }))
+    expect(replacedA.locked).toBe(true)
+    const absent = replacedA.beginRead(replacedA.generation, true)!
+    replacedA.finishRead(absent.ticket, state())
+    expect(replacedA.locked).toBe(true)
+    // A late old-token receipt after unmount cannot remove the retained intent.
+    expect(firstA.finishWrite(write.generation, true)).toBe(false)
+    expect(registry.get(scopeA)?.requestId).toBe('intent-one')
+    const manual = replacedA.beginRead(replacedA.generation, true)!
+    replacedA.finishRead(manual.ticket, state({ requests: [requestRow()] }))
+    expect(replacedA.locked).toBe(false); expect(registry.size).toBe(0)
+    const source = readFileSync(new NodeURL('../../screens/OrganizationPrivacyScreen.tsx', import.meta.url), 'utf8')
+    expect(source).toContain('new PrivacyController(privacyIntentScope(settings))')
+    expect(source.indexOf('ops.beginWrite(generation, { action, requestId })')).toBeLessThan(source.indexOf('await performPrivacyAction('))
+})
+test('stable service/account/organization isolation never stores or reveals auth tokens, passwords or exports', () => {
+    const registry = new PrivacyIntentRegistry(), scope = model.privacyIntentScope(settings)
+    const intent = { action: 'delete' as const, requestId: 'intent-one', currentPassword: 'synthetic-password', export: exported() }
+    expect(registry.claim(scope, intent)).toBe(true)
+    expect(registry.get(scope)).toEqual({ action: 'delete', requestId: 'intent-one' })
+    expect(scope).not.toContain(settings.authToken)
+    expect(model.privacyIntentScope({ ...settings, apiBaseUrl: 'https://API.HANASAND.COM/api/' })).toBe(scope)
+    for (const change of [{ selectedOrganizationId: 'another-org' }, { userId: 'another-user' }, { apiBaseUrl: 'https://another.invalid/api' }, { impersonationToken: 'synthetic-impersonation-token' }, { impersonatingUserId: 'other-user' }]) {
+        const otherScope = model.privacyIntentScope({ ...settings, ...change })
+        expect(otherScope).not.toBe(scope)
+        expect(new PrivacyController(otherScope, registry).unknown).toBeUndefined()
+    }
+    expect(model.privacyIntentScope({ ...settings, apiBaseUrl: 'https://user:synthetic-password@invalid.example/api' })).not.toContain('synthetic-password')
+})
+test('registry compare-and-swap prevents old controller receipt/read clearing a newer intent in the same scope', () => {
+    const registry = new PrivacyIntentRegistry(), scope = model.privacyIntentScope(settings)
+    const old = new PrivacyController(scope, registry); old.visible = true
+    const first = old.beginWrite(old.generation, { action: 'export', requestId: 'intent-one' })!
+    const current = new PrivacyController(scope, registry); current.visible = true
+    const read = current.beginRead(current.generation, true)!
+    current.finishRead(read.ticket, state({ requests: [requestRow()] }))
+    current.beginWrite(current.generation, { action: 'export', requestId: 'newer-intent' })!
+    // Even a still-visible old controller can only clear its own receipt, not the new one.
+    expect(old.finishWrite(first.generation, true)).toBe(true)
+    expect(registry.get(scope)?.requestId).toBe('newer-intent')
+    expect(old.locked).toBe(true)
+    expect(registry.clear(scope, { action: 'export', requestId: 'intent-one' })).toBe(false)
+    expect(registry.size).toBe(1)
+})
+test('manual read ticket captures its exact unresolved intent; a newer registry entry remains locked', () => {
+    const registry = new PrivacyIntentRegistry(), scope = model.privacyIntentScope(settings)
+    registry.claim(scope, { action: 'export', requestId: 'intent-one' })
+    const controller = new PrivacyController(scope, registry); controller.visible = true
+    const oldRead = controller.beginRead(controller.generation, true)!
+    registry.clear(scope, { action: 'export', requestId: 'intent-one' })
+    registry.claim(scope, { action: 'export', requestId: 'newer-intent' })
+    controller.finishRead(oldRead.ticket, state({ requests: [requestRow({ request_id: 'newer-intent' })] }))
+    expect(controller.locked).toBe(true); expect(registry.get(scope)?.requestId).toBe('newer-intent')
+})
+test('bounded registry refuses dispatch without evicting unresolved entries; exact known receipt frees capacity', () => {
+    const registry = new PrivacyIntentRegistry(1), scope = model.privacyIntentScope(settings)
+    expect(registry.claim(scope, { action: 'export', requestId: 'intent-one' })).toBe(true)
+    const other = new PrivacyController('another-scope', registry); other.visible = true
+    expect(other.beginWrite(other.generation, { action: 'export', requestId: 'intent-two' })).toBeNull()
+    expect(other.blockedReason).toContain('limit')
+    expect(registry.size).toBe(1); expect(registry.get(scope)?.requestId).toBe('intent-one')
+    expect(registry.clear(scope, { action: 'delete', requestId: 'intent-one' })).toBe(false)
+    expect(registry.clear(scope, { action: 'export', requestId: 'intent-one' })).toBe(true)
+    const write = other.beginWrite(other.generation, { action: 'export', requestId: 'intent-two' })!
+    expect(write).not.toBeNull()
+    other.finishWrite(write.generation, true)
+    expect(registry.size).toBe(0)
 })

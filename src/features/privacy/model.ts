@@ -45,6 +45,15 @@ export function privacyId(value: unknown): string {
     return value
 }
 export const privacyScope = (settings: AppSettings) => JSON.stringify([settings.apiBaseUrl, settings.siteBaseUrl, settings.userId, settings.authToken, settings.selectedOrganizationId, settings.impersonationToken, settings.impersonatingUserId])
+// Stable intent identity excludes rotating credentials; this metadata lives only in the current JS runtime.
+export function privacyIntentScope(settings: AppSettings) {
+    let service = 'invalid-service'
+    try {
+        const url = new URL(settings.apiBaseUrl)
+        if (url.protocol === 'https:' && !url.username && !url.password && !url.search && !url.hash) service = url.href.replace(/\/+$/, '')
+    } catch { /* Invalid configuration never reaches transport. Do not retain its raw contents. */ }
+    return JSON.stringify([service, settings.userId, settings.selectedOrganizationId, settings.impersonationToken || settings.impersonatingUserId ? 'impersonated' : 'own'])
+}
 export function metric(value: unknown): number | null {
     if (typeof value !== 'number' && typeof value !== 'string' || typeof value === 'string' && !/^\d+$/.test(value)) return null
     const number = Number(value)
