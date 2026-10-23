@@ -49,7 +49,8 @@ export type AccountSshKey = {
     id: number; name: string; fingerprint: string; keyType: string; addedAt: string
     lastUsedAt: string | null; lastUsedServer: string | null; lastUsedIp: string | null; lastUsedUserAgent: string | null
 }
-export type SupportTicket = { id: string; subject: string; status: string; last_message?: string; updated_at: string }
+export type SupportTicket = { id: string; subject: string; status: string; last_message?: string; updated_at: string
+    user_id?: string | null; resolution_version?: number; feedback_rating?: number | null; feedback_comment?: string | null }
 export type SupportMessage = { id: string; sender_id: string | null; sender_name: string; body: string; created_at: string }
 export type Organization = {
     id: string; tenantId?: string; name: string; slug?: string; role?: string; status?: string; lifecycleStatus?: string
@@ -60,6 +61,10 @@ export type OrganizationInvite = { id: string; email: string; role: string; stat
 export type OrganizationSettings = {
     name?: string; slug?: string; defaultWebhookPolicy?: string; alertVisibilityPolicy?: string
     lifecycleStatus?: string; retentionDays?: number
+}
+
+export class AccountRequestError extends Error {
+    constructor(message: string, readonly status: number) { super(message) }
 }
 
 /** Uses the same authenticated transport as the other native account APIs. */
@@ -79,7 +84,7 @@ export async function accountRequest<T>(settings: AppSettings, path: string, ini
         response = await apiFetch(settings, url, {
             ...init,
             headers: requestHeaders,
-            signal: init.signal || controller.signal,
+            signal: init.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal,
         })
     } finally {
         clearTimeout(timer)
@@ -87,7 +92,7 @@ export async function accountRequest<T>(settings: AppSettings, path: string, ini
     const payload = await response.json().catch(() => null)
     if (!response.ok) {
         const error = payload?.error
-        throw new Error(typeof error === 'string' ? error : error?.message || `Request failed (${response.status}).`)
+        throw new AccountRequestError(typeof error === 'string' ? error : error?.message || `Request failed (${response.status}).`, response.status)
     }
     if (payload === null && response.status !== 204) throw new Error('The service returned an invalid response.')
     return payload as T
@@ -137,9 +142,44 @@ export async function registerAccountPasskey(settings: AppSettings) {
 export const fetchAccountSshKeys = async (settings: AppSettings) => list<AccountSshKey>(await accountRequest(settings, 'user/self/ssh-keys'), 'keys')
 export const addAccountSshKey = (settings: AppSettings, name: string, publicKey: string) => accountRequest(settings, 'user/self/ssh-keys', { method: 'POST', body: JSON.stringify({ name: name.trim(), publicKey: publicKey.trim() }) })
 export const removeAccountSshKey = (settings: AppSettings, id: number) => accountRequest(settings, `user/self/ssh-keys/${id}`, { method: 'DELETE' })
-export const fetchAccountSupportTickets = async (settings: AppSettings) => list<SupportTicket>(await accountRequest(settings, 'support/my-tickets', {}, process.env.EXPO_PUBLIC_SUPPORT_API || 'https://support.hanasand.com/api'), 'tickets')
-export const fetchSupportMessages = async (settings: AppSettings, id: string) => list<SupportMessage>(await accountRequest(settings, `support/tickets/${encodeURIComponent(id)}/messages`, {}, process.env.EXPO_PUBLIC_SUPPORT_API || 'https://support.hanasand.com/api'), 'messages')
-export const sendSupportMessage = (settings: AppSettings, id: string, subject: string, message: string) => accountRequest<{ id?: string }>(settings, id ? `support/tickets/${encodeURIComponent(id)}/messages` : 'support/tickets', { method: 'POST', body: JSON.stringify(id ? { message } : { subject, message }) }, process.env.EXPO_PUBLIC_SUPPORT_API || 'https://support.hanasand.com/api')
+const supportBase = () => process.env.EXPO_PUBLIC_SUPPORT_API || 'https://support.hanasand.com/api'
+// In-memory scope only. Never log or persist this credential-bearing key.
+export function supportAccountScope(settings: AppSettings) {
+    return JSON.stringify([supportBase(), settings.apiBaseUrl, settings.userId, settings.authToken, settings.impersonationToken, settings.impersonatingUserId])
+}
+export function supportTicketAccess(settings: AppSettings, ticket?: SupportTicket) {
+    const ownAccount = !settings.impersonationToken && !settings.impersonatingUserId
+    const owned = ownAccount && ticket?.user_id === settings.userId
+    return { ownAccount, canReply: owned && ticket?.status === 'open', canFeedback: owned && ticket?.status === 'closed'
+        && Number.isSafeInteger(ticket.resolution_version) && Number(ticket.resolution_version) >= 0 && ticket.feedback_rating === null }
+}
+function supportWrite(settings: AppSettings) {
+    if (!supportTicketAccess(settings).ownAccount) throw new Error('Return to your own account to write to Support.')
+}
+function supportId(id: string) {
+    if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(id)) throw new Error('Choose a valid support conversation.')
+    return encodeURIComponent(id)
+}
+export const fetchAccountSupportTickets = async (settings: AppSettings, signal?: AbortSignal) => list<SupportTicket>(await accountRequest(settings, 'support/my-tickets', { signal, credentials: 'omit' }, supportBase()), 'tickets')
+export const fetchSupportMessages = async (settings: AppSettings, id: string, signal?: AbortSignal) => list<SupportMessage>(await accountRequest(settings, `support/tickets/${supportId(id)}/messages`, { signal, credentials: 'omit' }, supportBase()), 'messages')
+export function sendSupportMessage(settings: AppSettings, id: string, subject: string, message: string, requestId?: string) {
+    supportWrite(settings)
+    if (!message.trim() || message.length > 10000 || subject.length > 160) throw new Error('Keep the subject under 160 characters and the message under 10,000 characters.')
+    return accountRequest<{ id?: string; messageId?: string; ok?: boolean }>(settings, id ? `support/tickets/${supportId(id)}/messages` : 'support/tickets', {
+        method: 'POST', credentials: 'omit', body: JSON.stringify(id ? { message: message.trim(), ...(requestId ? { requestId } : {}) } : { subject: subject.trim(), message: message.trim() }),
+    }, supportBase()).then(result => {
+        if (id ? result?.ok !== true || !result.messageId : !result?.id) throw new Error('Message delivery was not confirmed. Refresh to check the conversation.')
+        return result
+    })
+}
+export function sendSupportFeedback(settings: AppSettings, ticket: SupportTicket, rating: number, comment: string) {
+    supportWrite(settings)
+    if (!supportTicketAccess(settings, ticket).canFeedback) throw new Error('Refresh your closed conversation before leaving feedback.')
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5 || comment.length > 2000) throw new Error('Choose 1–5 stars and keep feedback under 2,000 characters.')
+    return accountRequest<{ ok: boolean }>(settings, `support/tickets/${supportId(ticket.id)}/feedback`, { method: 'POST', credentials: 'omit',
+        body: JSON.stringify({ rating, comment: rating <= 3 ? comment.trim() : '', resolutionVersion: ticket.resolution_version }),
+    }, supportBase()).then(result => { if (result?.ok !== true) throw new Error('Feedback was not confirmed. Refresh to check it.'); return result })
+}
 export const fetchOrganizations = async (settings: AppSettings) => list<Organization>(await accountRequest(settings, 'organizations', {}, organizationListBase(settings)), 'organizations')
 export const organizationPath = (id: string, suffix: string) => `organizations/${encodeURIComponent(id)}/${suffix}`
 export const fetchOrganizationMembers = async (settings: AppSettings, id: string) => list<OrganizationMember>(await accountRequest(settings, organizationPath(id, 'members')), 'members')

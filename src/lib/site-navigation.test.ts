@@ -85,6 +85,12 @@ describe('native website navigation', () => {
         expect(items.find(item => item.path === '/watchlists')?.disabledReason).toBeUndefined()
     })
 
+    it('reuses native Profile Support for the Support Chats menu', () => {
+        const item = leaves(siteNavigation('account-id')).find(row => row.path === '/support')
+        expect(item?.tab).toBe('Profile')
+        expect(item?.disabledReason).toBeUndefined()
+    })
+
     it('marks pages without a native workflow as website links', () => {
         const items = leaves(siteNavigation('account-id'))
         expect(items.some(item => item.disabledReason)).toBe(true)

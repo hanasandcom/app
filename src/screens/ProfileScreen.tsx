@@ -5,11 +5,13 @@ import type { AppSettings } from '../types'
 import { deleteHanasandAccount, fetchProfileStats, type MobileProfileStats } from '../lib/api'
 import {
     addAccountSshKey, fetchAccountIdentity, fetchAccountPasskeys, fetchAccountSessions, fetchAccountSshKeys,
-    fetchAccountSupportTickets, fetchSupportMessages, sendSupportMessage, nativePasskeysSupported, registerAccountPasskey, removeAccountPasskey,
+    nativePasskeysSupported, registerAccountPasskey, removeAccountPasskey,
     removeAccountSshKey, renameAccountPasskey, revokeAccountSession, revokeOtherAccountSessions, updateAccountIdentity,
     describeAccountSession, filterAccountSessions, logOutCurrentAccountSession,
-    type AccountIdentity, type AccountPasskey, type AccountSession, type AccountSshKey, type SupportTicket, type SupportMessage,
+    type AccountIdentity, type AccountPasskey, type AccountSession, type AccountSshKey,
 } from '../lib/profile-api'
+import { ProfileSupportPanel } from '../components/ProfileSupportPanel'
+import { supportAccountScope } from '../lib/profile-api'
 import { GlassCard, InlineNotice, LabeledInput, PillButton, Screen, SectionTitle } from '../components/ui'
 import { getThemePalette, spacing, type ThemePalette } from '../theme/tokens'
 
@@ -40,13 +42,6 @@ export function ProfileScreen({ settings, onLogout, onDeleted, initialSection }:
     const [sessionDetailsId, setSessionDetailsId] = useState<number | null>(null)
     const visibleSessions = useMemo(() => filterAccountSessions(sessions, sessionQuery), [sessions, sessionQuery])
     const [keys, setKeys] = useState<AccountSshKey[]>([])
-    const [tickets, setTickets] = useState<SupportTicket[]>([])
-    const [ticketId, setTicketId] = useState('')
-    const [ticketMessages, setTicketMessages] = useState<SupportMessage[]>([])
-    const [supportSubject, setSupportSubject] = useState('')
-    const [supportMessage, setSupportMessage] = useState('')
-    const [messagesLoading, setMessagesLoading] = useState(false)
-    const [messagesError, setMessagesError] = useState('')
     const [keyName, setKeyName] = useState('')
     const [publicKey, setPublicKey] = useState('')
     const [addingKey, setAddingKey] = useState(false)
@@ -77,26 +72,11 @@ export function ProfileScreen({ settings, onLogout, onDeleted, initialSection }:
             } else if (section === 'SSH keys') {
                 const value = await fetchAccountSshKeys(settings)
                 if (active) setKeys(value)
-            } else {
-                const value = await fetchAccountSupportTickets(settings)
-                if (active) setTickets(value)
             }
         }
         void load().catch(cause => { if (active) setError(message(cause)) }).finally(() => { if (active) setLoading(false) })
         return () => { active = false }
     }, [settings.apiBaseUrl, settings.authToken, settings.userId, settings.impersonationToken, revision, section])
-
-    useEffect(() => {
-        let active = true
-        setTicketMessages([])
-        setMessagesError('')
-        if (section !== 'Support' || !ticketId) { setMessagesLoading(false); return }
-        setMessagesLoading(true)
-        void fetchSupportMessages(settings, ticketId).then(value => { if (active) setTicketMessages(value) })
-            .catch(cause => { if (active) setMessagesError(message(cause)) })
-            .finally(() => { if (active) setMessagesLoading(false) })
-        return () => { active = false }
-    }, [section, ticketId, revision, settings.apiBaseUrl, settings.authToken, settings.userId, settings.impersonationToken])
 
     async function act(work: () => Promise<unknown>, success: string, reload = true) {
         if (busy) return
@@ -220,32 +200,7 @@ export function ProfileScreen({ settings, onLogout, onDeleted, initialSection }:
                     <PillButton small label='Remove SSH key' tone='danger' disabled={busy} onPress={() => confirm('Remove SSH key?', `Remove ${key.name} from your account?`, 'Remove', () => removeAccountSshKey(settings, key.id), 'SSH key removed.')} />
                 </View>)}
             </GlassCard>}
-            {section === 'Support' && <GlassCard style={styles.card}>
-                <SectionTitle eyebrow='Account' title='Support tickets' />
-                <PillButton label='New support ticket' disabled={busy} onPress={() => { setTicketId(''); setSupportMessage(''); setSupportSubject('') }} />
-                {!loading && !error && !tickets.length && <Text style={styles.meta}>No support tickets yet.</Text>}
-                {tickets.map(ticket => <View key={ticket.id} style={styles.item}>
-                    <Text style={styles.title}>{ticket.subject}</Text><Text style={styles.meta}>{ticket.status} · {date(ticket.updated_at)}</Text>
-                    <Text style={styles.meta}>{ticket.last_message || 'No messages yet'}</Text>
-                    <PillButton small label={ticketId === ticket.id ? 'Selected conversation' : 'Read conversation'} disabled={busy} tone={ticketId === ticket.id ? 'accent' : 'default'} onPress={() => { setTicketId(ticket.id); setSupportMessage('') }} />
-                </View>)}
-                <View style={styles.item}>
-                    <SectionTitle eyebrow='Support' title={ticketId ? tickets.find(ticket => ticket.id === ticketId)?.subject || 'Conversation' : 'New ticket'} />
-                    <InlineNotice message={messagesError} />
-                    {messagesLoading && <Text style={styles.meta}>Loading conversation…</Text>}
-                    {ticketMessages.map(item => <View key={item.id} style={styles.item}>
-                        <Text style={styles.title}>{item.sender_name || (item.sender_id === settings.userId ? 'You' : 'Support')}</Text>
-                        <Text selectable style={styles.meta}>{item.body}</Text><Text style={styles.meta}>{date(item.created_at)}</Text>
-                    </View>)}
-                    {!ticketId && <LabeledInput label='Subject' value={supportSubject} onChangeText={setSupportSubject} />}
-                    <LabeledInput label='Message' value={supportMessage} onChangeText={setSupportMessage} multiline />
-                    <PillButton label={ticketId ? 'Send reply' : 'Create ticket'} tone='accent' disabled={busy || messagesLoading || !!messagesError || !supportMessage.trim() || (!ticketId && !supportSubject.trim())} onPress={() => void act(async () => {
-                        const result = await sendSupportMessage(settings, ticketId, supportSubject.trim(), supportMessage.trim())
-                        setSupportMessage('')
-                        if (result.id) setTicketId(result.id)
-                    }, 'Message sent.')} />
-                </View>
-            </GlassCard>}
+            {section === 'Support' && <ProfileSupportPanel key={supportAccountScope(settings)} settings={settings} revision={revision} />}
         </Screen>
     )
 }

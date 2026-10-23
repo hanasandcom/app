@@ -160,7 +160,7 @@ export default function App() {
         switch (item.tab) {
             case 'Home': navigation.navigate('Home'); break
             case 'Profile': {
-                const section = item.label === 'SSH Keys' ? 'SSH keys' : item.label === 'Tickets' ? 'Support' : ['Security', 'Sessions'].includes(item.label) ? item.label as 'Security' | 'Sessions' : 'Profile'
+                const section = item.label === 'SSH Keys' ? 'SSH keys' : item.path === '/support' || item.label === 'Tickets' ? 'Support' : ['Security', 'Sessions'].includes(item.label) ? item.label as 'Security' | 'Sessions' : 'Profile'
                 navigation.navigate('Profile', { section })
                 break
             }
