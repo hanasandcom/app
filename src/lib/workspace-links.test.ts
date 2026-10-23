@@ -41,6 +41,7 @@ test('TI administration handoffs use the owning website routes instead of dynami
 test('website handoffs retain configured origins, base paths and record identity', () => {
     expect(websitePageUrl('https://website.synthetic.invalid/prefix/', '/ti/activity?page=2', '')).toBe('https://website.synthetic.invalid/prefix/ti/activity?page=2')
     expect(websitePageUrl('https://website.synthetic.invalid', '/ti/profiles', 'https://intelligence.synthetic.invalid')).toBe('https://intelligence.synthetic.invalid/dashboard/ti/enrichment')
+    expect(websitePageUrl('https://website.synthetic.invalid', '/ti/activity?page=2', 'https://intelligence.synthetic.invalid/prefix/')).toBe('https://intelligence.synthetic.invalid/prefix/dashboard/ti/activity?page=2')
     const path = caseWebsitePath({ caseId: 'HA-42', alertId: 'alert', organizationId: 'org' })
     expect(websitePageUrl('https://hanasand.com', path, '')).toBe(`https://hanasand.com${path}`)
     expect(websitePageUrl('https://hanasand.com', '/logs?service=a%20b', '')).toBe('https://hanasand.com/logs?service=a%20b')
@@ -50,4 +51,21 @@ test('website handoffs reject external paths and unsafe configured addresses bef
     for (const path of ['https://other.invalid/', '//other.invalid/', '/\\other.invalid', '/ti/\nactivity', '/ bad']) expect(() => websitePageUrl('https://hanasand.com', path, '')).toThrow()
     for (const base of ['http://hanasand.com', 'https://user:secret@hanasand.com', 'https://hanasand.com?token=x', 'https://hanasand.com#x']) expect(() => websitePageUrl(base, '/status', '')).toThrow()
     expect(() => websitePageUrl('https://hanasand.com', '/ti/activity', 'http://ti.hanasand.com')).toThrow()
+})
+
+test('TI source handoffs retain the candidate-inventory alias behavior', () => {
+    const candidate = new URL(websitePageUrl('https://hanasand.com', '/ti/sources?available=true&q=feed', ''))
+    expect(candidate.searchParams.get('scope')).toBe('global')
+    expect(candidate.searchParams.get('lifecycle')).toBe('candidate')
+    expect(candidate.searchParams.get('q')).toBe('feed')
+    expect(candidate.searchParams.has('available')).toBe(false)
+    const filtered = new URL(websitePageUrl('https://hanasand.com', '/ti/sources?available=true&lifecycle=active', ''))
+    expect(filtered.searchParams.get('lifecycle')).toBe('active')
+})
+
+test('menu and contextual website handoffs both use the canonical URL helper', async () => {
+    const source = await Bun.file(new URL('../App.tsx', import.meta.url)).text()
+    expect(source).toContain('WebBrowser.openBrowserAsync(websitePageUrl(settings.siteBaseUrl, path))')
+    expect(source).toContain('if (item.disabledReason && item.path) {\n            openWebsite(item.path)')
+    expect(source.match(/WebBrowser\.openBrowserAsync\(/g)?.length).toBe(1)
 })

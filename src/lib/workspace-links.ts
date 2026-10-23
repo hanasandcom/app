@@ -23,8 +23,13 @@ export function websitePageUrl(siteBaseUrl: string, path: string, tiSiteUrl = pr
     const administrationPath = tiAdministrationPaths[relative.pathname]
     const tiBase = tiSiteUrl || (website.origin === 'https://hanasand.com' && website.pathname === '/' ? 'https://ti.hanasand.com' : undefined)
     if (administrationPath && tiBase) {
-        const target = new URL(administrationPath, secureWebsite(tiBase).origin)
+        const target = new URL(secureWebsite(tiBase).toString().replace(/\/+$/, '') + administrationPath)
         target.search = relative.search; target.hash = relative.hash
+        if (relative.pathname === '/ti/sources') {
+            target.searchParams.set('scope', 'global')
+            if (target.searchParams.get('available') === 'true' && !target.searchParams.has('lifecycle')) target.searchParams.set('lifecycle', 'candidate')
+            target.searchParams.delete('available')
+        }
         return target.toString()
     }
     const target = new URL(website.toString().replace(/\/+$/, '') + path)
