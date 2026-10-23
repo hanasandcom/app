@@ -147,3 +147,107 @@ describe('client key service boundaries', () => {
         expect(await api.loadRateOwners(settings, signal())).toEqual([])
     })
 })
+
+describe('screen operation lifecycle', () => {
+    it('aborts hidden reads and rejects late data even after focus returns', async () => {
+        const lifecycle = new api.RateOperations()
+        const operation = lifecycle.start('read')
+        let resolve!: (value: string) => void
+        const pending = new Promise<string>((done) => { resolve = done })
+        let applied = ''
+        const completion = pending.then((value) => {
+            if (lifecycle.reconcileRead(operation, true, false)) applied = value
+        })
+        lifecycle.invalidate()
+        expect(operation.controller.signal.aborted).toBe(true)
+        const returned = lifecycle.start('read')
+        resolve('stale hidden key list and membership')
+        await completion
+        expect(applied).toBe('')
+        expect(lifecycle.finish(operation)).toBe(false)
+        expect(lifecycle.canApply(returned, true)).toBe(true)
+        expect(lifecycle.reconcileRead(returned, false, true)).toBe(false)
+        expect(lifecycle.reconcileRead(returned, true, false)).toBe(true)
+        expect(lifecycle.finish(returned)).toBe(true)
+    })
+    it('discards interrupted write receipts and stays locked through automatic authorization reload', async () => {
+        for (const result of ['created secret', 'updated policy', 'deleted key']) {
+            const lifecycle = new api.RateOperations()
+            const write = lifecycle.start('write')
+            let resolve!: (value: string) => void
+            const pending = new Promise<string>((done) => { resolve = done })
+            let applied = ''
+            const completion = pending.then((value) => {
+                if (lifecycle.canApply(write, true)) applied = value
+            })
+            lifecycle.invalidate()
+            expect(write.controller.signal.aborted).toBe(true)
+            expect(lifecycle.requiresRefresh).toBe(true)
+            const automaticRead = lifecycle.start('read')
+            expect(lifecycle.reconcileRead(automaticRead, true, false)).toBe(true)
+            expect(lifecycle.requiresRefresh).toBe(true)
+            resolve(result)
+            await completion
+            expect(applied).toBe('')
+            expect(lifecycle.finish(write)).toBe(false)
+            expect(lifecycle.finish(automaticRead)).toBe(true)
+            const explicitRead = lifecycle.start('read')
+            expect(lifecycle.reconcileRead(explicitRead, false, true)).toBe(false)
+            expect(lifecycle.requiresRefresh).toBe(true)
+            expect(lifecycle.reconcileRead(explicitRead, true, true)).toBe(true)
+            expect(lifecycle.requiresRefresh).toBe(false)
+        }
+    })
+    it('propagates hide cancellation through the real request helper and discards late successful writes', async () => {
+        for (const kind of ['policy', 'create', 'delete'] as const) {
+            const lifecycle = new api.RateOperations()
+            const operation = lifecycle.start('write')
+            let release!: (value: Response) => void
+            respond = () => new Promise<Response>((resolve) => { release = resolve })
+            const pending = kind === 'policy'
+                ? api.saveRatePolicy(settings, organizations, policy, operation.controller.signal)
+                : kind === 'create'
+                    ? api.saveRateKey(settings, organizations, draft, operation.controller.signal)
+                    : api.deleteRateKey(settings, organizations, key.id, operation.controller.signal)
+            const transport = calls[calls.length - 1].init.signal!
+            expect(transport.aborted).toBe(false)
+            lifecycle.invalidate()
+            expect(transport.aborted).toBe(true)
+            release(Response.json(kind === 'policy' ? { settings: policy } : kind === 'create' ? { apiKey: key, secret: 'discard-late-secret' } : { ok: true }))
+            let applied = false
+            await pending.then(() => { if (lifecycle.canApply(operation, true)) applied = true })
+            expect(applied).toBe(false)
+            expect(lifecycle.requiresRefresh).toBe(true)
+        }
+    })
+    it('retains uncertainty after a failed write and clears it only after accepted explicit read', () => {
+        const lifecycle = new api.RateOperations()
+        const operation = lifecycle.start('write')
+        lifecycle.fail(operation)
+        expect(lifecycle.reconcileRead(operation, true, true)).toBe(false)
+        expect(lifecycle.requiresRefresh).toBe(true)
+        lifecycle.finish(operation)
+        const automatic = lifecycle.start('read')
+        lifecycle.reconcileRead(automatic, true, false)
+        expect(lifecycle.requiresRefresh).toBe(true)
+        lifecycle.invalidate()
+        expect(lifecycle.reconcileRead(automatic, true, true)).toBe(false)
+        expect(lifecycle.requiresRefresh).toBe(true)
+        const explicit = lifecycle.start('read')
+        lifecycle.reconcileRead(explicit, true, true)
+        expect(lifecycle.requiresRefresh).toBe(false)
+    })
+    it('wires every screen completion to the operation gate and resumes with read-only reloads', async () => {
+        const source = await Bun.file(new URL('../screens/RateLimitsScreen.tsx', import.meta.url)).text()
+        expect(source).toContain('operations.current.invalidate()')
+        expect(source).toContain('operation.controller.signal')
+        expect(source.match(/if \(!operations.current.canApply\(operation, visible\(\)\)\) return/g)).toHaveLength(3)
+        expect(source).toContain('operations.current.reconcileRead(operation, visible(), explicit)')
+        expect(source).toContain('if (applies()) setOwners(value)')
+        expect(source).toContain('if (foreground.current) void load(false)')
+        expect(source).toContain('else if (returning && focused.current) void load(false)')
+        expect(source).toContain('onPress={() => void load(true)}')
+        expect(source).not.toContain('if (!active.current) return')
+        expect(source).toContain('if (operations.current.finish(operation))')
+    })
+})

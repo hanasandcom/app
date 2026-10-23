@@ -7,7 +7,7 @@ import { useAppTheme } from '../theme/context'
 import { loadToolOrganizations, type ToolOrganization } from '../lib/organization-tools'
 import {
     canWriteRates, deleteRateKey, loadRateConfiguration, loadRateKeys, loadRateOwners, rateAccountScope,
-    saveRateKey, saveRatePolicy, validRateConfirmation, mayRevealRateSecret, type RateConfiguration, type RateKey,
+    saveRateKey, saveRatePolicy, validRateConfirmation, mayRevealRateSecret, RateOperations, type RateOperation, type RateConfiguration, type RateKey,
     type RateKeyDraft, type RateOwner, type RatePolicy
 } from '../lib/rate-limits'
 import { ApiKeyEditor } from './rate-limits/ApiKeyEditor'
@@ -35,45 +35,73 @@ function AccountRates({ settings }: { settings: AppSettings }) {
     const [keyVersion, setKeyVersion] = useState(0)
     const epoch = useRef(0), active = useRef(true), focused = useRef(true)
     const foreground = useRef(AppState.currentState === 'active'), running = useRef(false)
-    const request = useRef<AbortController | null>(null)
+    const operations = useRef(new RateOperations())
+    const workspace = useRef(settings.selectedOrganizationId)
     const writable = canWriteRates(settings, organizations) && !locked
     const allowed = useRef(writable)
     allowed.current = writable
     const visible = () => active.current && focused.current && foreground.current
     const message = (cause: unknown) => cause instanceof Error ? cause.message : 'The operation failed. Refresh before trying again.'
+    function hide() {
+        epoch.current++
+        operations.current.invalidate()
+        running.current = false
+        allowed.current = false
+        setBusy(false); setLocked(true); setSecret(null)
+        if (operations.current.requiresRefresh)
+            setError('A write was interrupted. Its outcome is unknown. Refresh explicitly before another write; your draft is retained.')
+    }
     useFocusEffect(useCallback(() => {
+        active.current = true
         focused.current = true
-        return () => { focused.current = false; epoch.current++; setSecret(null) }
+        if (foreground.current) void load(false)
+        return () => { focused.current = false; hide() }
     }, []))
-    useEffect(() => { epoch.current++; setSecret(null) }, [settings.selectedOrganizationId])
+    useEffect(() => {
+        if (workspace.current === settings.selectedOrganizationId) return
+        workspace.current = settings.selectedOrganizationId
+        hide()
+        if (visible()) void load(false)
+    }, [settings.selectedOrganizationId])
     useEffect(() => {
         active.current = true
         const listener = AppState.addEventListener('change', (state) => {
+            const returning = !foreground.current && state === 'active'
             foreground.current = state === 'active'
-            if (!foreground.current) { epoch.current++; setSecret(null) }
+            if (!foreground.current) hide()
+            else if (returning && focused.current) void load(false)
         })
-        void load()
-        return () => { active.current = false; epoch.current++; request.current?.abort(); listener.remove() }
+        return () => { active.current = false; epoch.current++; operations.current.invalidate(); listener.remove() }
     }, [])
-    async function load() {
-        if (running.current) return
-        running.current = true; setBusy(true); setSecret(null); setOwners([]); setError(''); setNotice(''); setLocked(true); epoch.current++
-        const controller = new AbortController(); request.current = controller
+    async function load(explicit: boolean) {
+        if (running.current || !visible()) return
+        running.current = true; allowed.current = false
+        setBusy(true); setSecret(null); setOwners([]); setNotice(''); setLocked(true); epoch.current++
+        if (!operations.current.requiresRefresh) setError('')
+        const operation = operations.current.start('read')
+        const signal = operation.controller.signal
+        const applies = () => operations.current.canApply(operation, visible())
         try {
             const [config, keyList, memberships] = await Promise.all([
-                loadRateConfiguration(settings, controller.signal), loadRateKeys(settings, controller.signal), loadToolOrganizations(settings, controller.signal)
+                loadRateConfiguration(settings, signal), loadRateKeys(settings, signal), loadToolOrganizations(settings, signal)
             ])
-            if (!active.current) return
-            setConfiguration(config); setKeys(keyList); setOrganizations(memberships); setLocked(false)
+            if (!operations.current.reconcileRead(operation, visible(), explicit)) return
+            setConfiguration(config); setKeys(keyList); setOrganizations(memberships)
+            setLocked(operations.current.requiresRefresh)
+            if (!operations.current.requiresRefresh) setError('')
             // Owner lookup is required only for writers and never persisted.
             if (canWriteRates(settings, memberships)) {
-                try { const value = await loadRateOwners(settings, controller.signal); if (active.current) setOwners(value) }
-                catch (cause) { if (active.current) setNotice(`Owner lookup unavailable: ${message(cause)} Existing owners are preserved.`) }
+                try { const value = await loadRateOwners(settings, signal); if (applies()) setOwners(value) }
+                catch (cause) { if (applies()) setNotice(`Owner lookup unavailable: ${message(cause)} Existing owners are preserved.`) }
             }
-        } catch (cause) { if (active.current) setError(message(cause)) }
-        finally { running.current = false; if (active.current) setBusy(false) }
+        } catch (cause) {
+            if (applies()) setError(`${message(cause)}${operations.current.requiresRefresh ? ' The previous write outcome remains unknown; an explicit refresh is still required.' : ''}`)
+        }
+        finally {
+            if (operations.current.finish(operation)) { running.current = false; if (visible()) setBusy(false) }
+        }
     }
-    function confirm(title: string, detail: string, action: () => Promise<void>) {
+    function confirm(title: string, detail: string, action: (operation: RateOperation) => Promise<void>) {
         const confirmation = ++epoch.current
         if (!validRateConfirmation(confirmation, epoch.current, allowed.current, running.current, visible())) return
         Alert.alert(title, detail, [
@@ -83,31 +111,34 @@ function AccountRates({ settings }: { settings: AppSettings }) {
             } }
         ])
     }
-    async function mutate(action: () => Promise<void>) {
-        if (running.current || !allowed.current || !visible()) return
+    async function mutate(action: (operation: RateOperation) => Promise<void>) {
+        if (running.current || !allowed.current || !visible() || operations.current.requiresRefresh) return
         epoch.current++; running.current = true; setBusy(true); setSecret(null); setError(''); setNotice('')
-        const controller = new AbortController(); request.current = controller
-        try { await action() }
+        const operation = operations.current.start('write')
+        try { await action(operation) }
         catch (cause) {
-            if (active.current) {
-                setLocked(true)
+            operations.current.fail(operation)
+            if (operations.current.canApply(operation, visible())) {
+                setLocked(true); allowed.current = false
                 setError(`${message(cause)} The outcome may be uncertain. Refresh before another write; your draft is retained.`)
             }
-        } finally { running.current = false; if (active.current) setBusy(false) }
+        } finally {
+            if (operations.current.finish(operation)) { running.current = false; if (visible()) setBusy(false) }
+        }
     }
     function savePolicy(policy: RatePolicy) {
-        confirm('Save global policy?', 'This replaces the complete policy for all new requests. Another administrator may have changed it. No automatic retry will run.', async () => {
-            const value = await saveRatePolicy(settings, organizations, policy, request.current!.signal)
-            if (!active.current) return
+        confirm('Save global policy?', 'This replaces the complete policy for all new requests. Another administrator may have changed it. No automatic retry will run.', async (operation) => {
+            const value = await saveRatePolicy(settings, organizations, policy, operation.controller.signal)
+            if (!operations.current.canApply(operation, visible())) return
             setConfiguration((current) => current ? { ...current, settings: value } : current)
             setPolicyVersion((value) => value + 1); setNotice('Global policy saved.')
         })
     }
     function saveKey(draft: RateKeyDraft, id?: string) {
-        confirm(id ? 'Save API key?' : 'Create API key?', id ? 'Replace this key’s details and scopes? Disabling it stops access.' : 'Create this key now? Its full secret will be shown once. Do not repeat creation after an uncertain response.', async () => {
+        confirm(id ? 'Save API key?' : 'Create API key?', id ? 'Replace this key’s details and scopes? Disabling it stops access.' : 'Create this key now? Its full secret will be shown once. Do not repeat creation after an uncertain response.', async (operation) => {
             const secretEpoch = epoch.current
-            const result = await saveRateKey(settings, organizations, draft, request.current!.signal, id)
-            if (!active.current) return
+            const result = await saveRateKey(settings, organizations, draft, operation.controller.signal, id)
+            if (!operations.current.canApply(operation, visible())) return
             setKeys((items) => id ? items.map((item) => item.id === id ? result.apiKey : item) : [result.apiKey, ...items])
             if (epoch.current === secretEpoch) { setSelected(result.apiKey.id); setKeyVersion((value) => value + 1) }
             const reveal = mayRevealRateSecret(secretEpoch, epoch.current, foreground.current, focused.current, active.current)
@@ -116,9 +147,9 @@ function AccountRates({ settings }: { settings: AppSettings }) {
         })
     }
     function removeKey(key: RateKey) {
-        confirm('Delete API key permanently?', `Delete “${key.name}” (${key.keyPrefix})? Access using this key will stop. This cannot be undone.`, async () => {
-            await deleteRateKey(settings, organizations, key.id, request.current!.signal)
-            if (!active.current) return
+        confirm('Delete API key permanently?', `Delete “${key.name}” (${key.keyPrefix})? Access using this key will stop. This cannot be undone.`, async (operation) => {
+            await deleteRateKey(settings, organizations, key.id, operation.controller.signal)
+            if (!operations.current.canApply(operation, visible())) return
             setKeys((items) => items.filter((item) => item.id !== key.id)); setSelected(null); setNotice('API key deleted.')
         })
     }
@@ -130,7 +161,7 @@ function AccountRates({ settings }: { settings: AppSettings }) {
             <View style={{ flexDirection: 'row', gap: 8 }}>
                 <PillButton label='Keys' tone={tab === 'keys' ? 'accent' : 'default'} onPress={() => changeTab('keys')} />
                 <PillButton label='Policy' tone={tab === 'policy' ? 'accent' : 'default'} onPress={() => changeTab('policy')} />
-                <PillButton label={busy ? 'Working…' : 'Refresh'} disabled={busy} onPress={() => void load()} />
+                <PillButton label={busy ? 'Working…' : 'Refresh'} disabled={busy} onPress={() => void load(true)} />
             </View>
             <InlineNotice message={error} />
             <InlineNotice message={notice} tone='info' />

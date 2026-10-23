@@ -202,3 +202,40 @@ export function validRateConfirmation(expected: number, current: number, writabl
 export function mayRevealRateSecret(operationEpoch: number, currentEpoch: number, foreground: boolean, focused: boolean, active: boolean) {
     return operationEpoch === currentEpoch && foreground && focused && active
 }
+
+export type RateOperation = { epoch: number; kind: 'read' | 'write'; controller: AbortController }
+/** Owns only this screen's in-flight operation; aborted writes need explicit reconciliation. */
+export class RateOperations {
+    private epoch = 0
+    private current: RateOperation | null = null
+    requiresRefresh = false
+    start(kind: RateOperation['kind']): RateOperation {
+        this.invalidate()
+        const operation = { epoch: ++this.epoch, kind, controller: new AbortController() }
+        this.current = operation
+        return operation
+    }
+    invalidate() {
+        const operation = this.current
+        this.current = null
+        this.epoch++
+        if (operation?.kind === 'write') this.requiresRefresh = true
+        operation?.controller.abort()
+    }
+    canApply(operation: RateOperation, visible: boolean) {
+        return visible && this.current === operation && operation.epoch === this.epoch && !operation.controller.signal.aborted
+    }
+    reconcileRead(operation: RateOperation, visible: boolean, explicit: boolean) {
+        if (operation.kind !== 'read' || !this.canApply(operation, visible)) return false
+        if (explicit) this.requiresRefresh = false
+        return true
+    }
+    fail(operation: RateOperation) {
+        if (this.current === operation && operation.kind === 'write') this.requiresRefresh = true
+    }
+    finish(operation: RateOperation) {
+        if (this.current !== operation) return false
+        this.current = null
+        return true
+    }
+}
