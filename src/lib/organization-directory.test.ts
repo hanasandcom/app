@@ -142,7 +142,7 @@ describe('directory lifecycle and switch receipt gates', () => {
         expect(source).toContain('requests.current.canApply(operation, visible())')
         expect(source).toContain('onSelectOrganization(target.id)')
         expect(source).toContain('requests.current.invalidate()')
-        expect(source).not.toContain("method: 'POST'")
+        expect(source).not.toContain('method: \'POST\'')
         expect(source).toContain('Show 50 more loaded organizations')
     })
 })
