@@ -337,6 +337,16 @@ describe('desktop command proof', () => {
 
 
 describe('workspace transport', () => {
+    it('retains authentication status for model discovery recovery', async () => {
+        for (const status of [401, 403]) {
+            mockFetch(async () => new Response(JSON.stringify({ error: 'Synthetic authorization rejected' }), { status }))
+            let failure: unknown
+            try { await fetchAiModels(settings) } catch (cause) { failure = cause }
+            expect(failure).toBeInstanceOf(Error)
+            expect((failure as Error & { status: number }).status).toBe(status)
+        }
+    })
+
     it('forwards discovery cancellation and skips a pre-aborted model read', async () => {
         const controller = new AbortController()
         let calls = 0
