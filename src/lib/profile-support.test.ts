@@ -20,12 +20,12 @@ test('Support customer feed retains server lifecycle, ownership and resolution d
     expect(new Headers(calls[0].init.headers).get('id')).toBe(settings.userId)
     expect(new Headers(calls[0].init.headers).get('x-organization-id')).toBeNull()
 })
-test('message read uses exact route and caller cancellation', async () => {
+test('message read uses exact route and detaches caller cancellation after settlement', async () => {
     respond = () => Response.json({ messages: [] })
     const controller = new AbortController()
     await fetchSupportMessages(settings, id, controller.signal)
     expect(calls[0].url).toBe(`https://support.hanasand.com/api/support/tickets/${id}/messages`)
-    controller.abort(); expect(calls[0].init.signal?.aborted).toBe(true)
+    controller.abort(); expect(calls[0].init.signal?.aborted).toBe(false)
 })
 test('customer write authority is server-owned open/closed state, never organization membership', () => {
     expect(supportTicketAccess(settings, ticket({ status: 'open' }))).toMatchObject({ canReply: true, canFeedback: false })
@@ -102,4 +102,30 @@ test('cancelled account read exposes its aborted signal even if transport resolv
     finish(Response.json({ tickets: [ticket()] }))
     // The helper preserves transport semantics; UI's abort/scope guard discards it.
     expect(await read).toEqual([ticket()])
+})
+
+test('native AbortSignal without static any supports pre-abort, later abort and listener cleanup', async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(AbortSignal, 'any')!
+    Object.defineProperty(AbortSignal, 'any', { value: undefined, configurable: true })
+    try {
+        const pre = new AbortController(); pre.abort()
+        await fetchAccountSupportTickets(settings, pre.signal)
+        expect(calls[0].init.signal?.aborted).toBe(true)
+        const later = new AbortController()
+        let finish!: (response: Response) => void
+        respond = (() => new Promise<Response>(resolve => { finish = resolve })) as unknown as typeof respond
+        const pending = fetchAccountSupportTickets(settings, later.signal)
+        later.abort(); expect(calls[1].init.signal?.aborted).toBe(true)
+        finish(Response.json({ tickets: [] })); await pending
+        respond = () => Response.json({ tickets: [] })
+        const settled = new AbortController()
+        await fetchAccountSupportTickets(settings, settled.signal)
+        settled.abort()
+        expect(calls[2].init.signal?.aborted).toBe(false)
+    } finally { Object.defineProperty(AbortSignal, 'any', descriptor) }
+})
+test('ticket paths accept UUID versions1–8 instead of artificially rejecting version7 records', async () => {
+    respond = () => Response.json({ messages: [] })
+    await fetchSupportMessages(settings, '11111111-1111-7111-8111-111111111111')
+    expect(calls[0].url).toEndWith('/11111111-1111-7111-8111-111111111111/messages')
 })

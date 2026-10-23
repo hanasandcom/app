@@ -79,15 +79,19 @@ export async function accountRequest<T>(settings: AppSettings, path: string, ini
     if (settings.impersonationToken) requestHeaders.set('x-impersonation-token', settings.impersonationToken)
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 15000)
+    const cancel = () => controller.abort()
+    if (init.signal?.aborted) controller.abort()
+    else init.signal?.addEventListener('abort', cancel)
     let response: Response
     try {
         response = await apiFetch(settings, url, {
             ...init,
             headers: requestHeaders,
-            signal: init.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal,
+            signal: controller.signal,
         })
     } finally {
         clearTimeout(timer)
+        init.signal?.removeEventListener('abort', cancel)
     }
     const payload = await response.json().catch(() => null)
     if (!response.ok) {
@@ -157,7 +161,7 @@ function supportWrite(settings: AppSettings) {
     if (!supportTicketAccess(settings).ownAccount) throw new Error('Return to your own account to write to Support.')
 }
 function supportId(id: string) {
-    if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(id)) throw new Error('Choose a valid support conversation.')
+    if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(id)) throw new Error('Choose a valid support conversation.')
     return encodeURIComponent(id)
 }
 export const fetchAccountSupportTickets = async (settings: AppSettings, signal?: AbortSignal) => list<SupportTicket>(await accountRequest(settings, 'support/my-tickets', { signal, credentials: 'omit' }, supportBase()), 'tickets')
