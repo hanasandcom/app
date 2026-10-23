@@ -146,7 +146,7 @@ export async function registerAccountPasskey(settings: AppSettings) {
 export const fetchAccountSshKeys = async (settings: AppSettings) => list<AccountSshKey>(await accountRequest(settings, 'user/self/ssh-keys'), 'keys')
 export const addAccountSshKey = (settings: AppSettings, name: string, publicKey: string) => accountRequest(settings, 'user/self/ssh-keys', { method: 'POST', body: JSON.stringify({ name: name.trim(), publicKey: publicKey.trim() }) })
 export const removeAccountSshKey = (settings: AppSettings, id: number) => accountRequest(settings, `user/self/ssh-keys/${id}`, { method: 'DELETE' })
-const supportBase = () => process.env.EXPO_PUBLIC_SUPPORT_API || 'https://support.hanasand.com/api'
+export const supportBase = () => process.env.EXPO_PUBLIC_SUPPORT_API || 'https://support.hanasand.com/api'
 // In-memory scope only. Never log or persist this credential-bearing key.
 export function supportAccountScope(settings: AppSettings) {
     return JSON.stringify([supportBase(), settings.apiBaseUrl, settings.userId, settings.authToken, settings.impersonationToken, settings.impersonatingUserId])
