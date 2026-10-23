@@ -152,3 +152,13 @@ it('opens organization privacy in its native retention workflow', () => {
     expect(item?.disabledReason).toBeUndefined()
     expect(nativeToolForPath(item?.path)).toBe('organization-privacy')
 })
+
+it('opens Articles and Thoughts in their native editorial workflows', () => {
+    const items = leaves(siteNavigation('synthetic-user'))
+    for (const [path, tool] of Object.entries({ '/content/articles': 'articles', '/content/thoughts': 'thoughts' } as const)) {
+        const item = items.find(row => row.path === path)
+        expect(item?.tab).toBe('Tools')
+        expect(item?.disabledReason).toBeUndefined()
+        expect(nativeToolForPath(item?.path)).toBe(tool)
+    }
+})

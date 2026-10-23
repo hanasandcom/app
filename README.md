@@ -50,6 +50,8 @@ TI administration website links open the owning `ti.hanasand.com/dashboard/ti/` 
 
 Privacy & Retention uses the selected organization’s existing Core privacy API directly. It shows protection, recent runs and requests, paged records, and reviewed export, purge and deletion actions. Export files are checksum-checked and temporary. Deletion requires the current organization name and password. A missing request in the limited history or loss of organization access does not establish that a change failed or completed. Device sharing, production authorization and backend latency remain unverified.
 
+Articles and Thoughts use the registered Core content APIs for workspace lists, native Markdown editing and preview, creation, saving and deletion. Saves persist immediately; there is no separate draft or publication state. Personal reads the shared editorial pool, with Hanasand permissions required for editing; organization content uses its own membership. Interrupted writes retain a scoped fingerprint for explicit reconciliation within the app process. Article reads expose the body without original YAML frontmatter, so saving can remove that metadata; the editor discloses this before saving. There is no server revision check or version-history contract. Device behavior and production authorization remain unverified.
+
 ## Mobile releases
 
 Mobile builds use [EAS Build](https://docs.expo.dev/build/introduction/) and the manual GitHub Actions workflow at **Actions → Mobile EAS build → Run workflow**. It supports iOS, Android, or both, with a `preview` (internal distribution) or `production` (store-signed artifact) profile. The workflow only builds artifacts; it does not submit them to either app store or publish an update. Preview builds are the default.

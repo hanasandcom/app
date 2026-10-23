@@ -3,6 +3,8 @@ import { UserManagementScreen } from './UserManagementScreen'
 import { LoadTestsScreen } from './LoadTestsScreen'
 import ThesisScreen from './ThesisScreen'
 import { OrganizationPrivacyScreen } from './OrganizationPrivacyScreen'
+import ArticlesScreen from './ArticlesScreen'
+import ThoughtsScreen from './ThoughtsScreen'
 import { RuleTuningScreen } from './RuleTuningScreen'
 import { ApiReferenceScreen } from './ApiReferenceScreen'
 import { SupportDeskScreen } from './SupportDeskScreen'
@@ -34,6 +36,8 @@ export function NativeToolsScreen({ settings, tool, onManageSshKeys, onSelectOrg
     onOpenApiJson: () => void; onOpenGuide: () => void; initialQuery?: string
 }) {
     switch (tool) {
+        case 'articles': return <ArticlesScreen settings={settings} />
+        case 'thoughts': return <ThoughtsScreen settings={settings} />
         case 'organization-privacy': return <OrganizationPrivacyScreen settings={settings} />
         case 'thesis': return <ThesisScreen settings={settings} />
         case 'load-tests': return <LoadTestsScreen settings={settings} />

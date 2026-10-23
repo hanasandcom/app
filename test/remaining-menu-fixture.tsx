@@ -10,6 +10,9 @@ import { PillButton } from '../src/components/ui'
 import { UserManagementScreen } from '../src/screens/UserManagementScreen'
 import { LoadTestsScreen } from '../src/screens/LoadTestsScreen'
 import { OrganizationPrivacyScreen } from '../src/screens/OrganizationPrivacyScreen'
+import ArticlesScreen from '../src/screens/ArticlesScreen'
+import ThoughtsScreen from '../src/screens/ThoughtsScreen'
+import { createPublishingApi } from '../src/features/publishing/api'
 import * as Crypto from 'expo-crypto'
 import type { PrivacyTransport } from '../src/features/privacy/api'
 import ThesisScreen from '../src/screens/ThesisScreen'
@@ -33,6 +36,8 @@ const tests = [{ id: 'fixture-scan', url: 'https://target.synthetic.invalid/chec
     summary: { requests: 32, checks: 32, failures: 0, failureRate: 0, duration: { avg: 23, med: 20, p95: 30, max: 35 },
         rps: [{ time: at, value: 1 }, { time: '2026-10-23T07:00:30Z', value: 1.1 }] },
     previous_run_summary: { requests: 30, duration: { p95: 35 } }, p95_delta_ms: 5 }]
+const articles = Array.from({ length: 24 }, (_, index) => ({ id: `fixture-article-${index}.md`, organization_id: org.id, title: `Synthetic article ${index}`, content: `# Synthetic article ${index}\n\n**Public synthetic text**, [a link](https://synthetic.invalid) and a table.\n\n| Topic | State |\n| --- | --- |\n| Native editor | Ready |`, created: at, modified: at, metadata: { wordCount: 20, estimatedMinutes: 1 } }))
+const thoughts = Array.from({ length: 24 }, (_, index) => ({ id: index + 1, organization_id: org.id, title: `Synthetic thought ${index}`, created_by: settings.userId, created_at: at }))
 let hold = false, fail = false, release: (() => void) | undefined
 const sockets = new Set<LoadSocket>()
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
@@ -55,6 +60,52 @@ globalThis.fetch = Object.assign(async (...[input, init]: Parameters<typeof fetc
     const headers = new Headers(init?.headers)
     if (headers.get('authorization') !== 'Bearer synthetic-token' || headers.get('id') !== settings.userId) return json({ error: 'Synthetic actor headers missing.' }, 401)
     const method = init?.method || 'GET', body = init?.body ? JSON.parse(String(init.body)) : {}
+    if (method === 'GET' && url.pathname === '/api/organizations') return json({ organizations: [{ ...org, role: 'owner', lifecycleStatus: 'active' }] })
+    if (/^\/api\/(?:articles|article\/|thoughts|thought\/)/.test(url.pathname)) {
+        if (headers.get('x-organization-id') !== org.id) return json({ error: 'Synthetic content scope missing.' }, 403)
+        if (method === 'GET' && url.pathname === '/api/articles') return json(articles.map(item => ({ id: item.id, organization_id: item.organization_id, title: item.title, created: item.created, modified: item.modified, metadata: item.metadata })))
+        if (method === 'GET' && url.pathname === '/api/thoughts') return json(thoughts)
+        if (method === 'POST' && url.pathname === '/api/thought/title') {
+            const matches = thoughts.filter(item => item.title === body.title)
+            return matches.length ? json(matches) : json({ error: 'Synthetic thought missing.' }, 404)
+        }
+        if (method === 'POST' && url.pathname === '/api/thoughts') {
+            if (thoughts.some(item => item.title === body.title)) return json({ error: 'Synthetic title collision.' }, 409)
+            const item = { id: Math.max(...thoughts.map(item => item.id), 0) + 1, organization_id: org.id, title: String(body.title), created_by: settings.userId, created_at: at }
+            thoughts.unshift(item)
+            const saved = { ...item }
+            if (hold) await new Promise<void>(resolve => { release = resolve })
+            return fail ? json({ error: 'Synthetic saved thought receipt lost.' }, 500) : json(saved, 201)
+        }
+        const article = /^\/api\/article\/([^/]+)$/.exec(url.pathname)
+        if (article) {
+            const id = decodeURIComponent(article[1]), index = articles.findIndex(item => item.id === id)
+            if (method === 'GET') return index < 0 ? json({ error: 'Synthetic article missing.' }, 404) : json(articles[index])
+            if (method === 'POST') {
+                if (index >= 0) return json({ error: 'Synthetic filename collision.' }, 409)
+                articles.unshift({ id, organization_id: org.id, title: String(body.content).split('\n')[0].replace(/^#+\s*/, ''), content: String(body.content), created: at, modified: at, metadata: { wordCount: 20, estimatedMinutes: 1 } })
+                if (hold) await new Promise<void>(resolve => { release = resolve })
+                return fail ? json({ error: 'Synthetic saved article receipt lost.' }, 500) : json({ created: true, name: id }, 201)
+            }
+            if (index < 0) return json({ error: 'Synthetic article missing.' }, 404)
+            if (method === 'PUT') { articles[index].content = String(body.content); articles[index].title = String(body.content).split('\n')[0].replace(/^#+\s*/, ''); return finishWrite({ updated: true, id }) }
+            if (method === 'DELETE') { articles.splice(index, 1); return finishWrite({ deleted: true, id }) }
+        }
+        const thought = /^\/api\/thought\/([1-9]\d*)$/.exec(url.pathname)
+        if (thought) {
+            const id = Number(thought[1]), index = thoughts.findIndex(item => item.id === id)
+            if (index < 0) return json({ error: 'Synthetic thought missing.' }, 404)
+            if (method === 'GET') return json(thoughts[index])
+            if (method === 'PUT') {
+                if (thoughts.some(item => item.id !== id && item.title === body.title)) return json({ error: 'Synthetic title collision.' }, 409)
+                thoughts[index].title = String(body.title)
+                const saved = { ...thoughts[index] }
+                if (hold) await new Promise<void>(resolve => { release = resolve })
+                return fail ? json({ error: 'Synthetic saved thought receipt lost.' }, 500) : json({ result: { rows: [saved] }, message: 'Synthetic thought updated.' }, 201)
+            }
+            if (method === 'DELETE') { thoughts.splice(index, 1); return finishWrite({ deleted: true, id: String(id) }) }
+        }
+    }
     if (url.pathname === '/api/organizations/fixture-org/privacy') {
         if (method === 'GET') return privacyDeleted ? json({ error: 'Synthetic membership removed.' }, 404) : json(privacyState(Number(url.searchParams.get('itemOffset') || 0), Number(url.searchParams.get('itemLimit') || 50)))
         if (method === 'POST' && ['export', 'run_retention', 'delete'].includes(body.action)) {
@@ -166,6 +217,10 @@ const privacyTransport: PrivacyTransport = (_settings, url, init) => fetch(url, 
 const privacyShare: typeof import('../src/features/privacy/export').sharePrivacyExport = async (_exported, isCurrent) => {
     if (isCurrent()) Alert.alert('Synthetic export', 'The verified archive reached the synthetic share callback.')
 }
+const publishingTransport: import('../src/features/publishing/api').PublishingFetch = (_settings, url, init) => fetch(url, init)
+const publishingDigest = (value: string) => Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, value)
+const articleServices = { api: createPublishingApi(settings, 'articles', publishingTransport), digest: publishingDigest }
+const thoughtServices = { api: createPublishingApi(settings, 'thoughts', publishingTransport), digest: publishingDigest }
 function Fixture() {
     const [mode, setMode] = useState('Users'), [event, setEvent] = useState('No synthetic operations yet')
     return <View style={{ flex: 1 }}>
@@ -173,7 +228,7 @@ function Fixture() {
             <Text style={{ color: '#b2b9c2' }}>Synthetic only · no external requests</Text>
             <Text style={{ color: '#b2b9c2' }}>{event}</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                {['Users', 'Load testing', 'Thesis', 'Privacy'].map(name => <PillButton key={name} small label={`Fixture ${name}`} onPress={() => setMode(name)} />)}
+                {['Users', 'Load testing', 'Thesis', 'Privacy', 'Articles', 'Thoughts'].map(name => <PillButton key={name} small label={`Fixture ${name}`} onPress={() => setMode(name)} />)}
                 <PillButton small label='Toggle held response' onPress={() => { hold = !hold; setEvent(`Hold: ${hold}`) }} />
                 <PillButton small label='Release response' onPress={() => { release?.(); release = undefined; setEvent('Released synthetic response') }} />
                 <PillButton small label='Toggle saved-but-error' onPress={() => { fail = !fail; setEvent(`Saved then error: ${fail}`) }} />
@@ -181,7 +236,7 @@ function Fixture() {
                 <PillButton small label='Emit shared document change' onPress={() => { shared = { ...shared, revision: shared.revision + 1, body: shared.body + '\n\nSynthetic other-editor change.' }; versions.unshift(clone(shared)); for (const receive of thesisListeners) receive(clone(shared)) }} />
             </View>
         </View>
-        {mode === 'Users' ? <UserManagementScreen settings={settings} onSelectOrganization={id => setEvent(`Open organization: ${id}`)} /> : mode === 'Privacy' ? <OrganizationPrivacyScreen settings={settings} transport={privacyTransport} exportFile={privacyShare} /> : mode === 'Thesis' ? <ThesisScreen settings={settings} services={thesisServices} /> : <LoadTestsScreen settings={settings} liveTransport={liveTransport} />}
+        {mode === 'Users' ? <UserManagementScreen settings={settings} onSelectOrganization={id => setEvent(`Open organization: ${id}`)} /> : mode === 'Articles' ? <ArticlesScreen settings={settings} services={articleServices} /> : mode === 'Thoughts' ? <ThoughtsScreen settings={settings} services={thoughtServices} /> : mode === 'Privacy' ? <OrganizationPrivacyScreen settings={settings} transport={privacyTransport} exportFile={privacyShare} /> : mode === 'Thesis' ? <ThesisScreen settings={settings} services={thesisServices} /> : <LoadTestsScreen settings={settings} liveTransport={liveTransport} />}
     </View>
 }
 registerRootComponent(() => <GestureHandlerRootView style={{ flex: 1 }}><AppThemeProvider mode='obsidian'><NavigationContainer><Stack.Navigator screenOptions={{ headerShown: false }}><Stack.Screen name='SyntheticRemainingMenu' component={Fixture} /></Stack.Navigator></NavigationContainer></AppThemeProvider></GestureHandlerRootView>)
