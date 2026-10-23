@@ -81,7 +81,7 @@ function WorkspaceWatchlists({ settings }: { settings: AppSettings }) {
         {!hasOrganization ? <InlineNotice tone='info' message='Select an organization in the workspace picker to view its watchlists.' /> : <>
             <View style={row}><PillButton label={loading ? 'Loading…' : 'Refresh watchlists'} disabled={busy || loading} onPress={() => setRevision(value => value + 1)} /><PillButton label='Create watch term' tone='accent' disabled={!allowed('create')} onPress={() => openEditor('', { kind: 'company', value: '', notes: '' })} /></View>
             <InlineNotice message={error} /><InlineNotice message={notice} tone='success' /><InlineNotice message={warning} tone='info' />
-            {page && !page.projectionSupported && <InlineNotice tone='info' message='Watchlists are available to read. Update the monitoring service to enable watchlist changes.' />}
+            {page && !page.projectionSupported && <InlineNotice tone='info' message='You can view watchlists. Changes are temporarily unavailable.' />}
             {page && !page.canWrite && <InlineNotice tone='info' message='Your organization access is read-only for watch terms.' />}
             {mustRefresh && <InlineNotice tone='info' message='Refresh to review the saved state before another change. No action will be retried automatically.' />}
             {editing !== null && <GlassCard style={{ gap: 12 }}>
