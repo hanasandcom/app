@@ -44,6 +44,15 @@ export function PublishingEditor({ desk }: { desk: PublishingDesk }) {
         </View>
         {article && creating && <PublishingField label='Article filename' value={state.draft.id} onChange={id => desk.edit(host, { id })} editable={canEdit} host={host} />}
         {preview || !canEdit ? <MarkdownView source={state.draft.body} /> : <PublishingField label={article ? 'Article Markdown' : 'Thought Markdown'} value={state.draft.body} onChange={body => desk.edit(host, { body })} editable={canEdit} multiline host={host} />}
+        {state.latest && <View style={{ gap: 10 }}>
+            <InlineNotice message='The saved body changed while your draft was open. There is no server revision check; saving your draft may overwrite this version.' />
+            <PublishingText heading>Latest saved body</PublishingText>
+            <MarkdownView source={state.latest.body || ''} />
+            <View key={`latest:${host}`}><PillButton label='Review replacing draft with latest' disabled={!canEdit} onPress={() => {
+                if (!desk.canEdit(host)) return
+                Alert.alert('Replace unsaved draft?', 'Use the latest loaded saved body and discard your current unsaved text?', [{ text: 'Keep draft', style: 'cancel' }, { text: 'Use latest', style: 'destructive', onPress: () => desk.useLatest(host) }])
+            }} /></View>
+        </View>}
         {state.lookup && <InlineNotice tone='info' message={state.lookup.length ? 'Matching saved content exists in this workspace. No new save has been submitted.' : 'No matching content was found in this workspace. A global filename or title may still be reserved elsewhere.'} />}
         {state.lookup?.map(item => <View key={item.id} style={{ gap: 6 }}><PublishingText heading>{item.title}</PublishingText><PublishingText muted>{item.id}</PublishingText><MarkdownView source={item.body || ''} /></View>)}
         <View key={`save-actions:${host}`}>

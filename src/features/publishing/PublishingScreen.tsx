@@ -38,6 +38,8 @@ export function PublishingScreen({ settings, kind, services }: { settings: AppSe
     const ready = desk.canRead(host)
     const label = kind === 'articles' ? 'Articles' : 'Thoughts'
     const words = state.items.every(item => item.words !== undefined) ? state.items.reduce((sum, item) => sum + item.words!, 0) : null
+    const minutes = state.items.every(item => item.minutes !== undefined) ? state.items.reduce((sum, item) => sum + item.minutes!, 0) : null
+    const latest = filterContent(state.items, '', 'newest')[0]
     function reviewedUnknown() {
         if (!ready || !state.unknown?.reviewed) return
         Alert.alert('Finish reviewing the uncertain operation?', 'The displayed data does not prove which request saved it. This acknowledgment enables editing; it does not retry the operation or create a save receipt. Keep your draft for comparison.', [
@@ -72,8 +74,9 @@ export function PublishingScreen({ settings, kind, services }: { settings: AppSe
             {state.mode !== 'list' ? <PublishingEditor desk={desk} /> : <>
                 <PublishingActions>
                     <StatChip label='Saved' value={String(state.items.length)} />
-                    {kind === 'articles' ? <StatChip label='Words' value={words === null ? 'Unavailable' : String(words)} /> : <StatChip label='Authors' value={String(new Set(state.items.map(item => item.creatorId).filter(Boolean)).size)} />}
+                    {kind === 'articles' ? <><StatChip label='Words' value={words === null ? 'Unavailable' : String(words)} /><StatChip label='Reading time' value={minutes === null ? 'Unavailable' : `${minutes} min`} /></> : <StatChip label='Authors' value={String(new Set(state.items.map(item => item.creatorId).filter(Boolean)).size)} />}
                 </PublishingActions>
+                {latest && <PublishingText muted>Latest: {latest.title} · {latest.updatedAt || latest.createdAt || 'Date unavailable'}</PublishingText>}
                 <PublishingField label='Search titles or IDs' value={search} onChange={value => { if (desk.canRead(host)) { setSearch(value); setPage(0) } }} editable={ready} host={host} />
                 <View key={`list-controls:${host}`}><PublishingActions>
                     <PillButton label={sort === 'newest' ? 'Sort: newest' : 'Sort: title'} onPress={() => { if (desk.canRead(host)) { setSort(sort === 'newest' ? 'title' : 'newest'); setPage(0) } }} disabled={!ready} />

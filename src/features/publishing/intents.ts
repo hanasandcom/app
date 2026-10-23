@@ -1,6 +1,6 @@
 import type { AppSettings } from '../../types'
 import type { ContentKind, Mutation } from './contracts'
-import { PublishingError } from './contracts'
+import { contentOrganization, PublishingError } from './contracts'
 
 export type PendingPublication = { key: string; action: Mutation['action']; id: string | null; digest: string; length: number; creatorId: string; nonce: number }
 export type PublishingDigest = (text: string) => Promise<string>
@@ -12,7 +12,7 @@ export const nativeDigest: PublishingDigest = async text => {
 const unresolved = new Map<string, PendingPublication>()
 let nonce = 0
 export function publicationKey(settings: AppSettings, kind: ContentKind) {
-    return JSON.stringify([settings.apiBaseUrl.replace(/\/+$/, ''), settings.userId, settings.selectedOrganizationId || null, kind])
+    return JSON.stringify([settings.apiBaseUrl.replace(/\/+$/, ''), settings.userId, contentOrganization(settings), kind, settings.impersonationToken || settings.impersonatingUserId ? ['impersonating', settings.impersonatingUserId || null] : ['own']])
 }
 export const pendingPublication = (key: string) => unresolved.get(key)
 export function rememberPublication(key: string, mutation: Mutation, digest: string, creatorId: string, id: string | null) {

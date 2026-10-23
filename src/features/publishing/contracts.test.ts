@@ -82,3 +82,54 @@ test('search and sorting operate on the actual unpaginated server list without a
     expect(filterContent([one], 'example', 'newest')).toHaveLength(1)
     expect(filterContent([one], 'missing', 'title')).toHaveLength(0)
 })
+
+test('personal sentinel is the unscoped editorial pool, never a transport organization or org authority', async () => {
+    const personal = { ...settings, selectedOrganizationId: 'personal' }
+    const requests: { scoped: AppSettings; headers: Headers; url: string }[] = []
+    const api = createPublishingApi(personal, 'articles', async (scoped, url, init) => {
+        requests.push({ scoped, headers: new Headers(init.headers), url })
+        return Response.json(url.includes('internalPages') ? { allowed: true, canEdit: true } : [{ ...article, organization_id: null }])
+    })
+    const permission = await api.access(signal())
+    expect(permission.organizationId).toBeNull()
+    requireWriter(personal, permission)
+    expect((await api.list(signal()))[0].organizationId).toBeNull()
+    expect(requests.every(request => !request.headers.has('x-organization-id') && request.scoped.selectedOrganizationId === undefined)).toBe(true)
+    const denied = createPublishingApi(personal, 'articles', async () => Response.json({ allowed: false, canEdit: false }))
+    expect((await denied.access(signal())).canWrite).toBe(false)
+    expect(() => requireWriter(settings, permission)).toThrow()
+    expect(() => requireWriter(personal, permission, contentItem(article, 'articles'))).toThrow()
+})
+
+test('all actual create/update/delete receipts use canonical paths and status envelopes exactly once', async () => {
+    const calls: [string, string, unknown][] = []
+    const articles = createPublishingApi(settings, 'articles', async (_, url, init) => {
+        calls.push([new URL(url).pathname, init.method!, init.body ? JSON.parse(String(init.body)) : null])
+        if (init.method === 'POST') return Response.json({ created: true, name: 'example.md' }, { status: 201 })
+        return Response.json(init.method === 'PUT' ? { updated: true, id: 'example.md' } : { deleted: true, id: 'example.md' })
+    })
+    const saved = contentItem(article, 'articles')
+    expect((await articles.mutate(access, { action: 'create', draft: { id: 'example', body: '# Created' } }, signal())).id).toBe('example.md')
+    expect((await articles.mutate(access, { action: 'update', draft: { id: saved.id, body: '# Updated' }, original: saved }, signal())).action).toBe('update')
+    expect((await articles.mutate(access, { action: 'delete', draft: { id: saved.id, body: '# Updated' }, original: saved }, signal())).action).toBe('delete')
+    const thoughts = createPublishingApi(settings, 'thoughts', async (_, url, init) => {
+        calls.push([new URL(url).pathname, init.method!, init.body ? JSON.parse(String(init.body)) : null])
+        return Response.json(init.method === 'POST' ? thought : { deleted: true, id: 42 }, { status: init.method === 'POST' ? 201 : 200 })
+    })
+    expect((await thoughts.mutate(access, { action: 'create', draft: { id: '', body: thought.title } }, signal())).item?.id).toBe('42')
+    expect((await thoughts.mutate(access, { action: 'delete', draft: { id: '42', body: thought.title }, original: contentItem(thought, 'thoughts') }, signal())).id).toBe('42')
+    expect(calls).toEqual([
+        ['/api/article/example.md', 'POST', { content: '# Created' }], ['/api/article/example.md', 'PUT', { content: '# Updated' }], ['/api/article/example.md', 'DELETE', null],
+        ['/api/thoughts', 'POST', { title: thought.title }], ['/api/thought/42', 'DELETE', null],
+    ])
+})
+
+test('body read failure after dispatch is uncertain and read-only title lookup does not retry on collision', async () => {
+    let requests = 0
+    const api = createPublishingApi(settings, 'articles', async () => { requests++; return { status: 200, ok: true, text: async () => { throw new Error('Disconnected') } } as unknown as Response })
+    await expect(api.mutate(access, { action: 'update', original: contentItem(article, 'articles'), draft: { id: article.id, body: 'changed' } }, signal())).rejects.toMatchObject({ uncertain: true })
+    expect(requests).toBe(1)
+    const collision = createPublishingApi(settings, 'thoughts', async () => { requests++; return Response.json({ error: 'exists' }, { status: 409 }) })
+    await expect(collision.mutate(access, { action: 'create', draft: { id: '', body: thought.title } }, signal())).rejects.toMatchObject({ status: 409, uncertain: false })
+    expect(requests).toBe(2)
+})

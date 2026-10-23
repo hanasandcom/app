@@ -13,9 +13,13 @@ export type SavedReceipt = { action: Mutation['action']; id: string; item?: Cont
 export class PublishingError extends Error {
     constructor(message: string, readonly status = 0, readonly uncertain = false) { super(message) }
 }
+export function contentOrganization(settings: AppSettings) {
+    const id = settings.selectedOrganizationId?.trim()
+    return id && id !== 'personal' ? id : null
+}
 export function accountScope(settings: AppSettings) {
     // Memory-only context. Never log or persist this value.
-    return JSON.stringify([settings.apiBaseUrl, settings.userId, settings.authToken, settings.selectedOrganizationId || null, settings.impersonationToken, settings.impersonatingUserId])
+    return JSON.stringify([settings.apiBaseUrl, settings.userId, settings.authToken, contentOrganization(settings), settings.impersonationToken, settings.impersonatingUserId])
 }
 export function object(value: unknown): Record<string, unknown> {
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new PublishingError('The publishing service returned invalid data.')
@@ -52,7 +56,7 @@ export function assertItemScope(item: ContentItem, organizationId: string | null
     return item
 }
 export function requireWriter(settings: AppSettings, access: PublishingAccess, original?: ContentItem) {
-    if (settings.impersonationToken || settings.impersonatingUserId || access.scope !== accountScope(settings) || !access.canRead || !access.canWrite || access.organizationId !== (settings.selectedOrganizationId || null)) throw new PublishingError('Editing access could not be verified. Refresh using your own eligible account.', 403)
+    if (settings.impersonationToken || settings.impersonatingUserId || access.scope !== accountScope(settings) || !access.canRead || !access.canWrite || access.organizationId !== (contentOrganization(settings))) throw new PublishingError('Editing access could not be verified. Refresh using your own eligible account.', 403)
     if (original) assertItemScope(original, access.organizationId)
 }
 export function validateMutation(kind: ContentKind, mutation: Mutation) {

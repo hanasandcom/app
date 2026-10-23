@@ -132,3 +132,102 @@ test('late old account permission response never publishes or attaches after hid
     expect(f.desk.state.access).toBeUndefined()
     expect(f.desk.state.pending).toBeNull()
 })
+
+test('unknown Thought create retains digest only across remount; manual scoped read cannot manufacture receipt', async () => {
+    const f = fixture()
+    const item: ContentItem = { kind: 'thoughts', id: '24', title: '# Retained thought', body: '# Retained thought', organizationId: 'org', creatorId: f.settings.userId }
+    let posts = 0
+    f.api.list = async () => [item]
+    f.api.mutate = async () => { posts++; throw new PublishingError('Lost response', 500, true) }
+    const desk = new PublishingDesk(f.settings, 'thoughts', f.api, digest)
+    desk.activate(); await tick(); desk.startCreate(desk.state.host); desk.edit(desk.state.host, { body: item.body! })
+    await desk.confirm(desk.review('create', desk.state.host)!)
+    const key = publicationKey(f.settings, 'thoughts')
+    const remembered = pendingPublication(key)!
+    expect(remembered.id).toBeNull()
+    expect(JSON.stringify(remembered)).not.toContain(item.body!)
+    expect(JSON.stringify(remembered)).not.toContain(f.settings.authToken)
+    desk.dispose()
+    const next = new PublishingDesk(f.settings, 'thoughts', f.api, digest)
+    next.activate(); await tick()
+    expect(next.state.unknown?.reviewed).toBe(false)
+    await next.refresh(true, next.state.host)
+    expect(next.state.unknown?.matches.map(row => row.id)).toEqual(['24'])
+    expect(next.state.receipt).toBeUndefined()
+    expect(posts).toBe(1)
+    next.acknowledge(next.state.host)
+})
+
+test('unknown delete retains original identity; a manual not-found read is review evidence, never a delete receipt', async () => {
+    const f = fixture(); await open(f)
+    f.api.mutate = async () => { throw new PublishingError('Lost deletion response', 500, true) }
+    await f.desk.confirm(f.desk.review('delete', f.desk.state.host)!)
+    f.api.list = async () => []
+    f.api.detail = async () => { throw new PublishingError('Absent', 404) }
+    await f.desk.refresh(true, f.desk.state.host)
+    expect(f.desk.state.unknown?.missing).toBe(true)
+    expect(f.desk.state.unknown?.intent.id).toBe(f.item.id)
+    expect(f.desk.state.receipt).toBeUndefined()
+    f.desk.acknowledge(f.desk.state.host)
+})
+
+test('known collision retains draft and explicit refresh restores authority without resending create', async () => {
+    const f = fixture(); f.desk.activate(); await tick()
+    f.desk.startCreate(f.desk.state.host); f.desk.edit(f.desk.state.host, { id: 'example', body: '# Duplicate' })
+    let posts = 0
+    f.api.mutate = async () => { posts++; throw new PublishingError('Collision', 409, false) }
+    await f.desk.confirm(f.desk.review('create', f.desk.state.host)!)
+    expect(f.desk.state.unknown).toBeUndefined()
+    expect(f.desk.state.draft.body).toBe('# Duplicate')
+    await f.desk.refresh(true, f.desk.state.host)
+    expect(posts).toBe(1)
+    expect(f.desk.state.draft.body).toBe('# Duplicate')
+})
+
+test('server changes are shown separately from local draft; replacing draft requires current target', async () => {
+    const f = fixture(); await open(f)
+    f.desk.edit(f.desk.state.host, { body: '# Local draft' })
+    f.setDetail({ ...f.item, body: '# New remote' })
+    const old = f.desk.state.host
+    await f.desk.refresh(true, old)
+    expect(f.desk.state.draft.body).toBe('# Local draft')
+    expect(f.desk.state.latest?.body).toBe('# New remote')
+    f.desk.useLatest(old)
+    expect(f.desk.state.draft.body).toBe('# Local draft')
+    f.desk.useLatest(f.desk.state.host)
+    expect(f.desk.state.draft.body).toBe('# New remote')
+})
+
+test('UI source bindings replace the actual field/action hosts at controller boundaries', async () => {
+    const field = await Bun.file(new URL('./ui.tsx', import.meta.url)).text()
+    const editor = await Bun.file(new URL('./PublishingEditor.tsx', import.meta.url)).text()
+    const screen = await Bun.file(new URL('./PublishingScreen.tsx', import.meta.url)).text()
+    expect(field).toContain('key={`${label}:${host}`}')
+    expect(editor).toContain('desk.edit(host, { body })')
+    expect(editor).toContain('desk.confirm(reviewed)')
+    expect(editor).toContain('key={`save-actions:${host}`}')
+    expect(screen).toContain('key={`toolbar:${host}`}')
+    expect(screen).toContain('key={`ack:${host}`}')
+    expect(screen).toContain('desk.refresh(true, host)')
+})
+
+test('impersonated read/ack cannot inspect or clear the own-account uncertain intent', async () => {
+    const f = fixture(); await open(f)
+    f.api.mutate = async () => { throw new PublishingError('Lost write', 500, true) }
+    f.desk.edit(f.desk.state.host, { body: '# Own uncertain text' })
+    await f.desk.confirm(f.desk.review('update', f.desk.state.host)!)
+    f.desk.hide()
+    for (const changed of [{ ...f.settings, impersonationToken: 'imp' }, { ...f.settings, impersonatingUserId: 'target' }]) {
+        const api = { ...f.api, access: async () => ({ scope: accountScope(changed), organizationId: 'org', name: 'Impersonation', canRead: true, canWrite: false }) }
+        const impersonated = new PublishingDesk(changed, 'articles', api, digest)
+        impersonated.activate(); await tick()
+        await impersonated.refresh(true, impersonated.state.host)
+        impersonated.acknowledge(impersonated.state.host)
+        expect(impersonated.state.unknown).toBeUndefined()
+        expect(pendingPublication(publicationKey(f.settings, 'articles'))?.action).toBe('update')
+    }
+    const ownAgain = new PublishingDesk(f.settings, 'articles', f.api, digest)
+    ownAgain.activate(); await tick()
+    expect(ownAgain.state.unknown?.reviewed).toBe(false)
+    expect(ownAgain.canEdit(ownAgain.state.host)).toBe(false)
+})

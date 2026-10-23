@@ -1,6 +1,6 @@
 import type { AppSettings } from '../../types'
 import { organizationListBase } from '../../lib/organization-endpoint'
-import { accountScope, articleId, assertItemScope, contentItem, object, PublishingError, requireWriter, validateMutation, type ContentKind, type Mutation, type PublishingAccess, type SavedReceipt } from './contracts'
+import { accountScope, contentOrganization, articleId, assertItemScope, contentItem, object, PublishingError, requireWriter, validateMutation, type ContentKind, type Mutation, type PublishingAccess, type SavedReceipt } from './contracts'
 
 export type PublishingFetch = (settings: AppSettings, url: string, init: RequestInit) => Promise<Response>
 const defaultFetch: PublishingFetch = async (settings, url, init) => (await import('../../lib/api')).apiFetch(settings, url, init)
@@ -10,8 +10,8 @@ export function publishingEndpoint(base: string, path: string) {
     return url.toString().replace(/\/+$/, '') + '/' + path
 }
 export function createPublishingApi(settings: AppSettings, kind: ContentKind, transport: PublishingFetch = defaultFetch, deadlineMs = 20000) {
-    const fixed = { ...settings }
-    const organizationId = fixed.selectedOrganizationId || null
+    const organizationId = contentOrganization(settings)
+    const fixed = { ...settings, selectedOrganizationId: organizationId || undefined }
     async function request(path: string, signal: AbortSignal, method = 'GET', body?: unknown, membership = false, readOnlyPost = false) {
         if (!fixed.authToken || !fixed.userId) throw new PublishingError('Sign in to open publishing.', 401)
         const writing = method !== 'GET' && !readOnlyPost
@@ -42,7 +42,8 @@ export function createPublishingApi(settings: AppSettings, kind: ContentKind, tr
                         body: body === undefined ? undefined : JSON.stringify(body),
                     })
                 } catch { throw new PublishingError('The publishing service could not be reached. Refresh and review before trying again.', 0, writing) }
-                const text = await response.text()
+                let text: string
+                try { text = await response.text() } catch { throw new PublishingError('The response was interrupted. Review the service result before trying again.', response.status, writing) }
                 if (text.length > 8_000_000) throw new PublishingError('The response exceeded its size limit.', response.status, writing)
                 let value: unknown
                 try { value = JSON.parse(text) } catch { throw new PublishingError('The publishing response is invalid. Review before trying again.', response.status, writing) }
