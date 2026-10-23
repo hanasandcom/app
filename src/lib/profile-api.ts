@@ -185,7 +185,32 @@ export function sendSupportFeedback(settings: AppSettings, ticket: SupportTicket
         body: JSON.stringify({ rating, comment: rating <= 3 ? comment.trim() : '', resolutionVersion: ticket.resolution_version }),
     }, supportBase()).then(result => { if (result?.ok !== true) throw new Error('Feedback was not confirmed. Refresh to check it.'); return result })
 }
-export const fetchOrganizations = async (settings: AppSettings) => list<Organization>(await accountRequest(settings, 'organizations', {}, organizationListBase(settings)), 'organizations')
+export const fetchOrganizations = async (settings: AppSettings, signal?: AbortSignal) => list<Organization>(await accountRequest(settings, 'organizations', { signal }, organizationListBase(settings)), 'organizations')
+
+function retryableOrganizationReadFailure(error: unknown) {
+    if (error instanceof AccountRequestError) return error.status === 429 || error.status >= 500
+    return error instanceof TypeError && /network request failed|failed to fetch|network error/i.test(error.message)
+}
+
+function waitForOrganizationRetry(signal: AbortSignal | undefined, delayMs: number) {
+    return new Promise<void>((resolve, reject) => {
+        if (signal?.aborted) { reject(signal.reason || new Error('Organization lookup was cancelled.')); return }
+        const timer = setTimeout(() => { signal?.removeEventListener('abort', cancel); resolve() }, delayMs)
+        const cancel = () => { clearTimeout(timer); reject(signal?.reason || new Error('Organization lookup was cancelled.')) }
+        signal?.addEventListener('abort', cancel, { once: true })
+    })
+}
+
+/** Retry one transient failure while loading the workspace picker on app startup. */
+export async function fetchOrganizationsWithRetry(settings: AppSettings, signal?: AbortSignal, retryDelayMs = 500) {
+    try {
+        return await fetchOrganizations(settings, signal)
+    } catch (error) {
+        if (signal?.aborted || !retryableOrganizationReadFailure(error)) throw error
+        await waitForOrganizationRetry(signal, retryDelayMs)
+        return fetchOrganizations(settings, signal)
+    }
+}
 export const organizationPath = (id: string, suffix: string) => `organizations/${encodeURIComponent(id)}/${suffix}`
 export const fetchOrganizationMembers = async (settings: AppSettings, id: string) => list<OrganizationMember>(await accountRequest(settings, organizationPath(id, 'members')), 'members')
 export const fetchOrganizationInvites = async (settings: AppSettings, id: string) => list<OrganizationInvite>(await accountRequest(settings, organizationPath(id, 'invites')), 'invites')

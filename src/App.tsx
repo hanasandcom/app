@@ -28,7 +28,7 @@ import { WorkspacePageScreen } from './screens/WorkspacePageScreen'
 import { NativeToolsScreen } from './screens/NativeToolsScreen'
 import { nativeToolForPath } from './lib/native-tool-navigation'
 import { organizationSectionForPath } from './lib/organization-navigation'
-import { fetchOrganizations, type Organization } from './lib/profile-api'
+import { fetchOrganizationsWithRetry, type Organization } from './lib/profile-api'
 import type { SiteNavigationItem } from './data/site-navigation'
 import { loadAiChat, loadSettings, saveAiChat, saveSettings, settingsWriteRevision } from './lib/storage'
 import { getThemePalette, palette } from './theme/tokens'
@@ -137,9 +137,10 @@ export default function App() {
         if (!settings?.authToken || !settings.userId) { setOrganizations([]); return }
         if (!sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)) return
         let active = true
+        const controller = new AbortController()
         const saveRevision = settingsWriteRevision()
         setOrganizationError('')
-        void fetchOrganizations(settings).then(async items => {
+        void fetchOrganizationsWithRetry(settings, controller.signal).then(async items => {
             if (!active || !sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)) return
             const available = items.filter(item => !item.lifecycleStatus || item.lifecycleStatus === 'active')
             setOrganizations(available)
@@ -153,7 +154,7 @@ export default function App() {
                 }
             }
         }).catch(error => { if (active && sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)) setOrganizationError(error instanceof Error ? error.message : 'Unable to load organizations.') })
-        return () => { active = false }
+        return () => { active = false; controller.abort() }
     }, [settings?.apiBaseUrl, settings?.userId, settings?.authToken, organizationRevision, sessionIntentVersion])
 
     async function selectWorkspace(id: string) {

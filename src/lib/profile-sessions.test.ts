@@ -12,7 +12,7 @@ mock.module('./api', () => ({
         return response()
     },
 }))
-const { describeAccountSession, filterAccountSessions, fetchOrganizations, fetchAccountSessions, revokeAccountSession, revokeOtherAccountSessions, logOutCurrentAccountSession } = await import('./profile-api')
+const { describeAccountSession, filterAccountSessions, fetchOrganizations, fetchOrganizationsWithRetry, fetchAccountSessions, revokeAccountSession, revokeOtherAccountSessions, logOutCurrentAccountSession } = await import('./profile-api')
 const settings = { apiBaseUrl: 'https://api.example.test/api/', authToken: 'synthetic-token', userId: 'synthetic-user', impersonationToken: '' } as AppSettings
 const session = (changes: Partial<AccountSession> = {}): AccountSession => ({
     token_id: 3, id: 'synthetic-user', ip: '203.0.113.10', current: false, user_agent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X) Version/18.0 Safari/605.1',
@@ -69,6 +69,28 @@ describe('existing Identity session contracts', () => {
         expect(calls[0].url).toBe('https://identity.hanasand.com/api/organizations')
         await fetchOrganizations(settings)
         expect(calls[1].url).toBe('https://api.example.test/api/organizations')
+    })
+
+    it('retries one transient organization network failure and returns the canonical list', async () => {
+        let first = true
+        response = () => {
+            if (first) { first = false; throw new TypeError('Network request failed') }
+            return Response.json({ organizations: [{ id: 'hanasand-id', name: 'Hanasand', slug: 'hanasand', lifecycleStatus: 'active' }] })
+        }
+        expect(await fetchOrganizationsWithRetry(settings, undefined, 0)).toEqual([{ id: 'hanasand-id', name: 'Hanasand', slug: 'hanasand', lifecycleStatus: 'active' }])
+        expect(calls).toHaveLength(2)
+        expect(calls.map(call => call.url)).toEqual(['https://api.example.test/api/organizations', 'https://api.example.test/api/organizations'])
+    })
+
+    it('does not retry authorization rejection or a cancelled organization read', async () => {
+        response = () => Response.json({ error: 'Unauthorized.' }, { status: 401 })
+        await expect(fetchOrganizationsWithRetry(settings, undefined, 0)).rejects.toThrow('Unauthorized.')
+        expect(calls).toHaveLength(1)
+        calls = []
+        const controller = new AbortController()
+        response = () => { controller.abort(); throw new TypeError('Network request failed') }
+        await expect(fetchOrganizationsWithRetry(settings, controller.signal, 0)).rejects.toThrow('Network request failed')
+        expect(calls).toHaveLength(1)
     })
 
     it('loads the actual session envelope through authenticated managed transport', async () => {
