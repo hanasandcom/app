@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 const calls: Array<{ url: string; init: RequestInit }> = []
 let payload: unknown = { conversations: [] }
 let status = 200
-mock.module('./api', () => ({ apiFetch: async (_settings: unknown, url: string, init: RequestInit) => { calls.push({ url, init }); return new Response(JSON.stringify(payload), { status }) } }))
+let networkFailures = 0
+let transientHttpResponses = 0
+mock.module('./api', () => ({ apiFetch: async (_settings: unknown, url: string, init: RequestInit) => { calls.push({ url, init }); if (networkFailures > 0) { networkFailures--; throw new TypeError('Network request failed') } if (transientHttpResponses > 0) { transientHttpResponses--; return new Response(JSON.stringify(payload), { status: 503 }) } return new Response(JSON.stringify(payload), { status }) } }))
 mock.module('expo-crypto', () => ({ randomUUID: () => '11111111-1111-4111-8111-111111111111' }))
 const api = await import('./ai-workspace')
 const settings = { siteBaseUrl: 'https://example.test', apiBaseUrl: 'https://api.example.test/api', codexApiPath: '/tools/ai', authToken: 'token', userId: 'user' } as Parameters<typeof api.fetchAiWorkspace>[0]
@@ -36,7 +38,7 @@ class FakeSocket {
 }
 const originalSocket = globalThis.WebSocket
 beforeEach(() => {
-    calls.length = 0; status = 200; payload = { conversations: [] }; socketMode = 'complete'; FakeSocket.sent = []; FakeSocket.closed = 0
+    calls.length = 0; status = 200; payload = { conversations: [] }; networkFailures = 0; transientHttpResponses = 0; socketMode = 'complete'; FakeSocket.sent = []; FakeSocket.closed = 0
     globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket
 })
 afterEach(() => { globalThis.WebSocket = originalSocket })
@@ -46,6 +48,24 @@ describe('shared mobile AI workspace', () => {
         const values = await api.fetchAiWorkspace(settings)
         expect(calls[0].url).toBe('https://example.test/api/backend/ai/workspace')
         expect(values[0].messages[0].createdAt).toBe(Date.parse('2026-10-22T12:00:00Z'))
+    })
+    it('retries one transient workspace network error and does not retry authorization failures', async () => {
+        networkFailures = 1
+        expect(await api.fetchAiWorkspaceWithRetry(settings, undefined, 0)).toEqual([])
+        expect(calls).toHaveLength(2)
+        calls.length = 0
+        status = 401; payload = { error: 'Unauthorized.' }
+        await expect(api.fetchAiWorkspaceWithRetry(settings, undefined, 0)).rejects.toThrow('Unauthorized.')
+        expect(calls).toHaveLength(1)
+    })
+    it('retries transient ChatGPT history server errors but preserves the original error', async () => {
+        payload = { items: [] }; transientHttpResponses = 1
+        expect(await api.fetchChatGptActivityWithRetry(settings, 'conversation-1', undefined, 0)).toEqual([])
+        expect(calls).toHaveLength(2)
+        expect(calls[0].url).toBe('https://example.test/api/prompt?conversationId=conversation-1&threadId=chatgpt-conversation-1')
+        status = 401; payload = { error: 'Unauthorized.' }; calls.length = 0
+        await expect(api.fetchChatGptActivityWithRetry(settings, 'conversation-1', undefined, 0)).rejects.toThrow('Unauthorized.')
+        expect(calls).toHaveLength(1)
     })
     it('persists a new turn strictly after prior history even when the wall clock moves backward', async () => {
         const future = Date.parse('2026-10-22T12:00:01Z')

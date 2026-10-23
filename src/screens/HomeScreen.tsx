@@ -6,7 +6,7 @@ import { ArrowUp, Sparkles } from 'lucide-react-native'
 import type { AiChatMessage, AppSettings, DesktopAgentStatus } from '../types'
 import { fetchDesktopAgentStatus, fetchDesktopScreenshot, isHanasandOrganizationMember, runDesktopAgentCommand } from '../lib/api'
 import { InlineNotice, PillButton, Screen } from '../components/ui'
-import { createAiConversation, fetchAiWorkspace, fetchChatGptActivity, submitChatGptPrompt, aiAccountScope, aiPortalHistoryScope, aiConversationContextReady, aiAgentCanSubmit, aiMessageLabel, type AiMembershipState, type AiPortalHistoryState, workspaceMessages, conversationContext, newConversation, nextAiMessageTimestamp, persistAiMessage, runHanasandPrompt, type AiConversation, type WorkspaceMessage, type PromptPortalItem } from '../lib/ai-workspace'
+import { createAiConversation, fetchAiWorkspaceWithRetry, fetchChatGptActivityWithRetry, submitChatGptPrompt, aiAccountScope, aiPortalHistoryScope, aiConversationContextReady, aiAgentCanSubmit, aiMessageLabel, type AiMembershipState, type AiPortalHistoryState, workspaceMessages, conversationContext, newConversation, nextAiMessageTimestamp, persistAiMessage, runHanasandPrompt, type AiConversation, type WorkspaceMessage, type PromptPortalItem } from '../lib/ai-workspace'
 import { spacing, type ThemePalette } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
 
@@ -129,7 +129,7 @@ export function HomeScreen({
             setActiveConversationId('')
         }
         runControllerRef.current?.abort()
-        void fetchAiWorkspace(settings, controller.signal).then(async values => {
+        void fetchAiWorkspaceWithRetry(settings, controller.signal).then(async values => {
             const savedId = await AsyncStorage.getItem(preferenceKey).catch(() => '')
             if (controller.signal.aborted) return
             persistedConversationIds.current = new Set(values.map(item => item.id))
@@ -163,7 +163,7 @@ export function HomeScreen({
         const refresh = async () => {
             setPortalRefreshing(true)
             try {
-                const items = await fetchChatGptActivity(settings, activeConversationId, controller.signal)
+                const items = await fetchChatGptActivityWithRetry(settings, activeConversationId, controller.signal)
                 if (controller.signal.aborted) return
                 updatePortal(items)
                 setPortalError('')

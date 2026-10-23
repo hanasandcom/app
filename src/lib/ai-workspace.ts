@@ -32,6 +32,9 @@ export type PromptContextMessage = { role: 'user' | 'assistant'; content: string
 
 export type AiMembershipState = { scope: string; status: 'loading' | 'member' | 'nonmember' | 'error'; error?: string }
 export type AiPortalHistoryState = { scope: string; status: 'loading' | 'ready' | 'error' }
+class AiServiceHttpError extends Error {
+    constructor(message: string, readonly status: number) { super(message) }
+}
 export function aiAccountScope(settings: AppSettings) {
     // Memory-only scope: never persist, render, or log credentials.
     return JSON.stringify([settings.siteBaseUrl, settings.apiBaseUrl, settings.userId, settings.authToken, settings.impersonatingUserId, settings.impersonationToken, settings.selectedOrganizationId])
@@ -62,7 +65,8 @@ async function request<T>(settings: AppSettings, url: string, init: RequestInit 
     if (init.body && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json')
     const controller = new AbortController()
     const abort = () => controller.abort()
-    const timeout = setTimeout(abort, timeoutMs)
+    let timedOut = false
+    const timeout = setTimeout(() => { timedOut = true; controller.abort() }, timeoutMs)
     init.signal?.addEventListener('abort', abort, { once: true })
     if (init.signal?.aborted) controller.abort()
     let response: Response
@@ -70,11 +74,14 @@ async function request<T>(settings: AppSettings, url: string, init: RequestInit 
     try {
         response = await apiFetch(settings, url, { ...init, headers, signal: controller.signal })
         body = await response.json().catch(() => null)
+    } catch (cause) {
+        if (timedOut) throw new Error('The AI service request timed out.', { cause })
+        throw cause
     } finally {
         clearTimeout(timeout)
         init.signal?.removeEventListener('abort', abort)
     }
-    if (!response.ok) throw new Error(typeof body?.error === 'string' ? body.error : body?.error?.message || `AI service request failed (${response.status}).`)
+    if (!response.ok) throw new AiServiceHttpError(typeof body?.error === 'string' ? body.error : body?.error?.message || `AI service request failed (${response.status}).`, response.status)
     if (!body || typeof body !== 'object') throw new Error('The AI service returned an invalid response.')
     return body as T
 }
@@ -109,6 +116,29 @@ export async function fetchAiWorkspace(settings: AppSettings, signal?: AbortSign
     if (!Array.isArray(body.conversations)) throw new Error('The AI service returned an invalid workspace.')
     return body.conversations.map(normalizeConversation)
 }
+function retryableReadFailure(error: unknown) {
+    if (error instanceof AiServiceHttpError) return error.status === 429 || error.status >= 500
+    if (error instanceof TypeError) return /network request failed|failed to fetch|network error/i.test(error.message)
+    return error instanceof Error && error.message === 'The AI service request timed out.'
+}
+function waitForReadRetry(signal: AbortSignal | undefined, delayMs: number) {
+    return new Promise<void>((resolve, reject) => {
+        if (signal?.aborted) { reject(signal.reason || new Error('Workspace lookup was cancelled.')); return }
+        const timer = setTimeout(() => { signal?.removeEventListener('abort', cancel); resolve() }, delayMs)
+        const cancel = () => { clearTimeout(timer); reject(signal?.reason || new Error('Workspace lookup was cancelled.')) }
+        signal?.addEventListener('abort', cancel, { once: true })
+    })
+}
+/** Retry one transient website workspace read; never replay writes or auth failures. */
+export async function fetchAiWorkspaceWithRetry(settings: AppSettings, signal?: AbortSignal, retryDelayMs = 400) {
+    try {
+        return await fetchAiWorkspace(settings, signal)
+    } catch (error) {
+        if (signal?.aborted || !retryableReadFailure(error)) throw error
+        await waitForReadRetry(signal, retryDelayMs)
+        return fetchAiWorkspace(settings, signal)
+    }
+}
 export async function createAiConversation(settings: AppSettings, conversation: AiConversation): Promise<AiConversation> {
     const body = await request<AiConversation>(settings, workspaceUrl(settings, 'conversations'), {
         method: 'POST', body: JSON.stringify({ id: conversation.id, title: conversation.title, modelStrategy: 'auto' }),
@@ -137,6 +167,15 @@ function portalItems(payload: { items?: PromptPortalItem[] }, conversationId: st
 }
 export async function fetchChatGptActivity(settings: AppSettings, conversationId: string, signal?: AbortSignal) {
     return portalItems(await request(settings, portalUrl(settings, conversationId), { signal }), conversationId)
+}
+export async function fetchChatGptActivityWithRetry(settings: AppSettings, conversationId: string, signal?: AbortSignal, retryDelayMs = 400) {
+    try {
+        return await fetchChatGptActivity(settings, conversationId, signal)
+    } catch (error) {
+        if (signal?.aborted || !retryableReadFailure(error)) throw error
+        await waitForReadRetry(signal, retryDelayMs)
+        return fetchChatGptActivity(settings, conversationId, signal)
+    }
 }
 export async function submitChatGptPrompt(settings: AppSettings, conversationId: string, prompt: string, context: PromptContextMessage[], signal?: AbortSignal) {
     const form = new FormData()
