@@ -52,6 +52,12 @@ export const defaultJsonRule: AutomationJsonRule = { path: '', operator: 'gt', v
 export const automationActions = ['agent_prompt', 'echo', 'mail_health_check', 'system_alert', 'organization_report'] as const
 export const monitoringTypes = ['fetch', 'post', 'tcp', 'ssh', 'json', 'push'] as const
 export function automationInitialTab(section: 'health' | 'cron') { return section === 'health' ? 'personal' as const : 'cron' as const }
+export function automationSelection(items: ReadonlyArray<Pick<AgentAutomation, 'id'>>, selectedId: string, exact = false) {
+    if (items.some(item => item.id === selectedId)) return { id: selectedId, missing: false }
+    if (exact && selectedId) return { id: selectedId, missing: true }
+    return { id: items[0]?.id || '', missing: false }
+}
+export const automationReadCurrent = (active: boolean, request: number, sequence: number) => active && request === sequence
 export function automationEditError(draft: AgentAutomationPayload) {
     if (!(automationActions as readonly string[]).includes(draft.actionType)) return 'This action type is not supported by this editor. Its settings have been preserved.'
     if (draft.monitoringType && !(monitoringTypes as readonly string[]).includes(draft.monitoringType)) return 'This monitoring type is not supported by this editor. Its settings have been preserved.'

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { automationEditError, automationInitialTab, automationSavePayload, newAutomationDraft, normalizeAutomation, toAutomationDraft, validateAutomationDraft } from './automation-contract'
+import { automationEditError, automationInitialTab, automationReadCurrent, automationSelection, automationSavePayload, newAutomationDraft, normalizeAutomation, toAutomationDraft, validateAutomationDraft } from './automation-contract'
 const existing = (actionType = 'agent_prompt', extra: Record<string, unknown> = {}) => ({
     id: 'synthetic-check', name: 'Synthetic health', prompt: 'Read-only synthetic check.', actionType,
     targetUrl: 'https://example.test/health', monitoringType: 'json', jsonRule: { path: 'checks.*.healthy', operator: 'eq' as const, value: true, aggregate: 'first' as const },
@@ -66,5 +66,69 @@ describe('health check editing contracts', () => {
         expect(automationSavePayload(draft).targetUrl).toBe('synthetic/source-1')
         expect(validateAutomationDraft({ ...draft, targetUrl: 'other-source' }, item, true)).toContain('separate check')
         expect(validateAutomationDraft({ ...draft, monitoringType: 'fetch' }, item, true)).toContain('separate check')
+    })
+})
+
+
+describe('exact health-check deep links', () => {
+    it('keeps a missing requested target unavailable and retains ordinary no-ID selection', () => {
+        const items = [{ id: 'check-A' }, { id: 'check-B' }]
+        expect(automationSelection(items, 'check-B', true)).toEqual({ id: 'check-B', missing: false })
+        expect(automationSelection(items, 'missing-check', true)).toEqual({ id: 'missing-check', missing: true })
+        expect(automationSelection([], 'missing-check', true)).toEqual({ id: 'missing-check', missing: true })
+        expect(automationSelection(items, '', false)).toEqual({ id: 'check-A', missing: false })
+        expect(automationSelection(items, 'old-selection', false)).toEqual({ id: 'check-A', missing: false })
+        expect(automationSelection(items, 'check-B', false)).toEqual({ id: 'check-B', missing: false })
+    })
+    it('one shared read ticket rejects old overview/detail/finally after a newer selection', async () => {
+        for (const boundary of ['overview', 'detail']) {
+            let sequence = 0, fetchedDetails = 0
+            const state = { selected: '', busy: '' }
+            const active = true
+            let releaseOverview: () => void = () => {}, releaseOldDetail: () => void = () => {}, releaseNewDetail: () => void = () => {}
+            const overview = boundary === 'overview' ? new Promise<void>(resolve => { releaseOverview = resolve }) : Promise.resolve()
+            const oldDetail = new Promise<void>(resolve => { releaseOldDetail = resolve })
+            const newDetail = new Promise<void>(resolve => { releaseNewDetail = resolve })
+            const loadRequest = ++sequence; state.busy = 'load'
+            const loading = (async () => {
+                try {
+                    await overview
+                    if (!automationReadCurrent(active, loadRequest, sequence)) return
+                    state.selected = automationSelection([{ id: 'check-A' }], 'check-A', true).id
+                    fetchedDetails++
+                    await oldDetail
+                    if (!automationReadCurrent(active, loadRequest, sequence)) return
+                    state.selected = 'check-A-detail'
+                } finally { if (automationReadCurrent(active, loadRequest, sequence)) state.busy = '' }
+            })()
+            await Promise.resolve()
+            const selectRequest = ++sequence; state.selected = 'check-B'; state.busy = 'select-B'
+            const selecting = (async () => {
+                try { await newDetail; if (automationReadCurrent(active, selectRequest, sequence)) state.selected = 'check-B-detail' }
+                finally { if (automationReadCurrent(active, selectRequest, sequence)) state.busy = '' }
+            })()
+            releaseOverview(); releaseOldDetail(); await loading
+            expect(state.selected).toBe('check-B')
+            expect(state.busy).toBe('select-B')
+            expect(fetchedDetails).toBe(boundary === 'overview' ? 0 : 1)
+            releaseNewDetail(); await selecting
+            expect(state.selected).toBe('check-B-detail'); expect(state.busy).toBe('')
+            expect(automationReadCurrent(false, selectRequest, sequence)).toBe(false)
+            expect(automationReadCurrent(true, selectRequest, ++sequence)).toBe(false)
+        }
+    })
+    it('the actual screen binds exact selection, JSON remount identity and both shared-ticket finally guards', async () => {
+        const source = await Bun.file(new URL('../screens/AutomationsScreen.tsx', import.meta.url)).text()
+        expect(source).toContain('key={JSON.stringify([workspaceAccountKey(settings), settings.authToken, settings.impersonationToken, section, initialAutomationId || \'\'])}')
+        expect(source).toContain('[selectedId, setSelectedId] = useState(initialAutomationId || \'\')')
+        expect(source).toContain('automationSelection(next, selectId, !!initialAutomationId)')
+        expect(source).toContain('initialAutomationId && (!details.automation || details.automation.id !== nextSelected)')
+        expect(source).toContain('if (initialAutomationId) setShowEditor(true)')
+        expect(source).toContain('!runs.length && !runsError && (!initialAutomationId || showEditor)')
+        const load = source.slice(source.indexOf('async function load('), source.indexOf('async function selectAutomation('))
+        expect(load).toContain('const request = ++detailsSequence.current')
+        expect(load.split('automationReadCurrent(active.current, request, detailsSequence.current)').length - 1).toBe(4)
+        const select = source.slice(source.indexOf('async function selectAutomation('), source.indexOf('async function save('))
+        expect(select).toContain('if (automationReadCurrent(active.current, request, detailsSequence.current)) setBusy(\'\')')
     })
 })

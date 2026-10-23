@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { CalendarClock, Play, RefreshCw } from 'lucide-react-native'
 import { createAutomation, deleteAutomation, fetchAutomationDetails, fetchAutomationOverview, runAutomationNow, updateAutomation } from '../lib/api'
-import { automationEditError, automationInitialTab, automationSavePayload, defaultJsonRule, monitoringTypes, newAutomationDraft, toAutomationDraft, validateAutomationDraft } from '../lib/automation-contract'
+import { automationEditError, automationInitialTab, automationReadCurrent, automationSelection, automationSavePayload, defaultJsonRule, monitoringTypes, newAutomationDraft, toAutomationDraft, validateAutomationDraft } from '../lib/automation-contract'
 import type { AgentAutomation, AgentAutomationPayload, AgentAutomationRun, AppSettings } from '../types'
 import { changeWorkspaceCronJob, loadWorkspaceCronJobs, workspaceAccountKey, type WorkspaceCronJob } from '../lib/workspace-data'
 import { GlassCard, InlineNotice, PillButton, Screen } from '../components/ui'
@@ -12,11 +12,11 @@ import { useAppTheme } from '../theme/context'
 const defaultRunAt = () => new Date(Date.now() + 5 * 60_000).toISOString()
 const defaultTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 
-export function AutomationsScreen({ settings, section = 'cron' }: { settings: AppSettings; section?: 'health' | 'cron' }) {
-    return <AccountAutomations key={`${workspaceAccountKey(settings)}:${section}`} settings={settings} section={section} />
+export function AutomationsScreen({ settings, section = 'cron', initialAutomationId }: { settings: AppSettings; section?: 'health' | 'cron'; initialAutomationId?: string }) {
+    return <AccountAutomations key={JSON.stringify([workspaceAccountKey(settings), settings.authToken, settings.impersonationToken, section, initialAutomationId || ''])} settings={settings} section={section} initialAutomationId={initialAutomationId} />
 }
 
-function AccountAutomations({ settings, section }: { settings: AppSettings; section: 'health' | 'cron' }) {
+function AccountAutomations({ settings, section, initialAutomationId }: { settings: AppSettings; section: 'health' | 'cron'; initialAutomationId?: string }) {
     const theme = useAppTheme()
     const styles = useMemo(() => createStyles(theme), [theme])
     const [automations, setAutomations] = useState<AgentAutomation[]>([])
@@ -33,7 +33,7 @@ function AccountAutomations({ settings, section }: { settings: AppSettings; sect
     const active = useRef(true)
     const detailsSequence = useRef(0)
     const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const [selectedId, setSelectedId] = useState('')
+    const [selectedId, setSelectedId] = useState(initialAutomationId || '')
     const [busy, setBusy] = useState('')
     const [draft, setDraft] = useState<AgentAutomationPayload>(() => newAutomationDraft(section, defaultTimezone()))
 
@@ -43,7 +43,7 @@ function AccountAutomations({ settings, section }: { settings: AppSettings; sect
         active.current = true
         void load()
         if (section === 'cron') void loadCronJobs()
-        return () => { active.current = false; if (retryTimer.current) clearTimeout(retryTimer.current) }
+        return () => { active.current = false; detailsSequence.current += 1; if (retryTimer.current) clearTimeout(retryTimer.current) }
     }, [])
 
     async function loadCronJobs(attempt = 0) {
@@ -63,31 +63,50 @@ function AccountAutomations({ settings, section }: { settings: AppSettings; sect
     }
 
     async function load(selectId = selectedId) {
+        if (!active.current) return
+        const request = ++detailsSequence.current
         setBusy('load')
         setAutomationError('')
         try {
             const overview = await fetchAutomationOverview(settings, section === 'cron' ? 'personal' : undefined)
             const next = overview.automations
-            if (!active.current) return
+            if (!automationReadCurrent(active.current, request, detailsSequence.current)) return
             setCanManageSystem(overview.canManageSystem)
             setAutomations(next)
-            const nextSelected = next.find(item => item.id === selectId)?.id || next[0]?.id || ''
+            const selection = automationSelection(next, selectId, !!initialAutomationId)
+            const nextSelected = selection.id
             setSelectedId(nextSelected)
+            setRuns([])
+            setRunsError('')
+            if (selection.missing) {
+                setShowEditor(false)
+                setAutomationError(`Requested health check ${selectId} is unavailable for this account.`)
+                return
+            }
             if (nextSelected) {
                 const details = await fetchAutomationDetails(settings, nextSelected)
-                if (!active.current) return
+                if (!automationReadCurrent(active.current, request, detailsSequence.current)) return
+                if (initialAutomationId && (!details.automation || details.automation.id !== nextSelected)) {
+                    setShowEditor(false)
+                    setAutomationError(`Requested health check ${nextSelected} is unavailable for this account.`)
+                    return
+                }
                 setRuns(details.runs)
                 if (details.automation) {
                     setDraft(toAutomationDraft(details.automation))
+                    if (initialAutomationId) setShowEditor(true)
                     setAutomations(rows => rows.map(row => row.id === details.automation!.id ? details.automation! : row))
                 }
             } else {
                 setRuns([])
             }
         } catch (error) {
-            if (active.current) setAutomationError(error instanceof Error ? error.message : section === 'health' ? 'Unable to load health checks.' : 'Unable to load personal jobs.')
+            if (automationReadCurrent(active.current, request, detailsSequence.current)) {
+                if (initialAutomationId) setShowEditor(false)
+                setAutomationError(error instanceof Error ? error.message : section === 'health' ? 'Unable to load health checks.' : 'Unable to load personal jobs.')
+            }
         } finally {
-            if (active.current) setBusy('')
+            if (automationReadCurrent(active.current, request, detailsSequence.current)) setBusy('')
         }
     }
 
@@ -101,7 +120,7 @@ function AccountAutomations({ settings, section }: { settings: AppSettings; sect
         setBusy(`select-${automation.id}`)
         try {
             const details = await fetchAutomationDetails(settings, automation.id)
-            if (active.current && request === detailsSequence.current) {
+            if (automationReadCurrent(active.current, request, detailsSequence.current)) {
                 setRuns(details.runs)
                 if (details.automation) {
                     setDraft(toAutomationDraft(details.automation))
@@ -109,9 +128,9 @@ function AccountAutomations({ settings, section }: { settings: AppSettings; sect
                 }
             }
         } catch (error) {
-            if (active.current && request === detailsSequence.current) setRunsError(error instanceof Error ? error.message : 'Unable to load runs.')
+            if (automationReadCurrent(active.current, request, detailsSequence.current)) setRunsError(error instanceof Error ? error.message : 'Unable to load runs.')
         } finally {
-            if (active.current) setBusy('')
+            if (automationReadCurrent(active.current, request, detailsSequence.current)) setBusy('')
         }
     }
 
@@ -176,6 +195,9 @@ function AccountAutomations({ settings, section }: { settings: AppSettings; sect
 
     function newAutomation() {
         detailsSequence.current += 1
+        setBusy(value => value === 'load' || value.startsWith('select-') ? '' : value)
+        setAutomationError('')
+        setRunsError('')
         setShowEditor(true)
         setSelectedId('')
         setRuns([])
@@ -286,7 +308,7 @@ function AccountAutomations({ settings, section }: { settings: AppSettings; sect
                                 : <Text style={styles.cardBody}>{run.result || 'Running...'}</Text>}
                         </View>
                     ))}
-                    {!runs.length && <Text style={styles.cardBody}>No runs recorded yet.</Text>}
+                    {!runs.length && !runsError && (!initialAutomationId || showEditor) && <Text style={styles.cardBody}>No runs recorded yet.</Text>}
                 </GlassCard>
             </>}
         </Screen>
