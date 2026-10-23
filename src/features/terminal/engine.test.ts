@@ -118,6 +118,7 @@ describe('actual xterm parser and channel lifecycle', () => {
         expect(source).toContain('engine.current?.dispose(); engine.current = null')
         expect(source).toContain('current.current.visible = false')
         expect(source).toContain('key={`composer:${host}:${visible}`}')
+        expect(source).toContain('key={`viewport:${context}`}')
         expect(source).toContain('current.current.host = \'retired\'')
         expect(source).toContain('live.context === context')
         expect(source).not.toContain('Linking')
@@ -186,4 +187,51 @@ test('queued output pressure, transport rejection and resize failure close once'
     resized.resize(40, 10)
     expect(failures).toHaveLength(2)
     engine.dispose(); resized.dispose()
+})
+
+
+test('native pointer target retires across channel and connection generation, not output frames', async () => {
+    const a = fixture(), b = fixture()
+    try {
+        await output(a, '\x1b[?1000h\x1b[?1006h')
+        await output(b, '\x1b[?1000h\x1b[?1006h')
+        const listeners = new Map<number, () => void>()
+        let serial = 0, nativeTarget = 0, renderedKey = '', currentContext = ''
+        const render = (context: string, engine: TerminalEngine) => {
+            const key = `viewport:${context}`
+            if (key !== renderedKey) {
+                listeners.delete(nativeTarget)
+                nativeTarget = ++serial; renderedKey = key
+            }
+            const generation = engine.snapshot().generation
+            listeners.set(nativeTarget, () => {
+                if (currentContext === context) engine.mouse(0, 0, 'press', generation)
+            })
+            return nativeTarget
+        }
+        currentContext = 'A:1'
+        const oldTarget = render(currentContext, a.engine)
+        expect(render(currentContext, a.engine)).toBe(oldTarget) // ordinary redraw
+        const oldListener = listeners.get(oldTarget)!
+        currentContext = 'B:1'
+        oldListener() // queued JS callback before commit
+        expect(a.sent).toEqual([]); expect(b.sent).toEqual([])
+        const newTarget = render(currentContext, b.engine)
+        expect(newTarget).not.toBe(oldTarget)
+        // RN resolves current props by the retained native target, not an old JS closure.
+        listeners.get(oldTarget)?.()
+        expect(b.sent).toEqual([])
+        listeners.get(newTarget)!()
+        expect(b.sent).toEqual(['\x1b[<0;1;1M'])
+        b.event({ type: 'state', state: 'connecting' })
+        b.event({ type: 'state', state: 'ready' })
+        currentContext = `B:${b.engine.snapshot().generation}`
+        const generationTarget = render(currentContext, b.engine)
+        expect(generationTarget).not.toBe(newTarget)
+        listeners.get(newTarget)?.()
+        expect(b.sent).toHaveLength(1)
+        const source = readFileSync(`${import.meta.dir}/TerminalSurface.tsx`, 'utf8')
+        expect(source).toContain('key={`viewport:${context}`}')
+        expect(source).toContain('const context = `${channel.id}:${snapshot?.generation ?? -1}`')
+    } finally { a.engine.dispose(); b.engine.dispose() }
 })

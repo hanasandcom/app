@@ -132,6 +132,7 @@ export function TerminalSurface({ channel, active, onFailure }: TerminalSurfaceP
                 }}
             >MMMMMMMMMM</Text>
             <View
+                key={`viewport:${context}`}
                 accessibilityLabel='Terminal output'
                 style={styles.viewport}
                 onLayout={event => setBounds({ width: event.nativeEvent.layout.width, height: event.nativeEvent.layout.height })}
