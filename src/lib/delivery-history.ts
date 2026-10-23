@@ -113,6 +113,10 @@ export function filterDeliveryAlerts(alerts: DeliveryAlert[], query: string, rev
     const q = query.trim().toLowerCase()
     return alerts.filter(row => (!reviewOnly || !['resolved', 'closed', 'false_positive', 'suppressed'].includes(row.reviewState) && row.deliveryState !== 'muted') && [row.title, row.actor, row.matchedTerm].some(value => value.toLowerCase().includes(q)))
 }
+export function deliveryHistorySelection(page: DeliveryHistoryPage, alertId: string) {
+    // An empty selection is the complete retained history, including receipts whose findings are no longer listed.
+    return page.alerts.some(row => row.id === alertId) ? alertId : ''
+}
 export function selectedDeliveryAttempts(page: DeliveryHistoryPage, alertId: string) {
     return !alertId ? page.attempts : page.attempts.filter(row => row.alertId === alertId || row.alertId === 'webhook_test')
 }

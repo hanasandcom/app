@@ -5,7 +5,7 @@ let handle: (url: URL, init: RequestInit) => Response | Promise<Response>
 mock.module('./api', () => ({ apiFetch: async (settings: AppSettings, input: string, init: RequestInit) => {
     const url = new URL(input); calls.push({ url, init, settings }); return handle(url, init)
 } }))
-const { loadDeliveryHistory, performDeliveryAction, deliveryCaseRef, deliveryRetryTarget, deliveryHistoryScope, filterDeliveryAlerts, selectedDeliveryAttempts, DeliveryHistoryError } = await import('./delivery-history')
+const { loadDeliveryHistory, performDeliveryAction, deliveryCaseRef, deliveryHistorySelection, deliveryRetryTarget, deliveryHistoryScope, filterDeliveryAlerts, selectedDeliveryAttempts, DeliveryHistoryError } = await import('./delivery-history')
 const settings = { apiBaseUrl: 'https://api.synthetic.invalid/api', userId: 'user', authToken: 'synthetic-token', selectedOrganizationId: 'org', impersonationToken: '', impersonatingUserId: '' } as AppSettings
 const sourceAlert = (change = {}) => ({ id: 'alert', organizationId: 'org', tenantId: 'org', company: 'Example', actor: 'Actor', matchedTerm: { value: 'example.test' }, reviewState: 'new', deliveryState: 'pending', evidence: [{ id: 'capture', provenance: { retained: true } }], workflowContext: { caseId: 'case', organizationId: 'org' }, ...change })
 const receipt = (change = {}) => ({ id: 'attempt', alertId: 'alert', orgId: 'org', status: 'failed', attemptedAt: '2026-10-23T02:00:00Z', dryRun: false, responseStatus: 503, auditEventId: 'audit', idempotencyKey: 'dedup', error: 'Service unavailable', ...change })
@@ -222,4 +222,28 @@ test('retry UI resolves target from the receipt, and does not use new-send avail
     expect(source).toContain('action === \'retry\' ? deliveryRetryTarget(page, deliveryId)?.alertId : selected?.id')
     expect(source).toContain('attempt={attempt} disabled={disabled || !page.canRetry}')
     expect(source).not.toContain('attempt={attempt} disabled={disabled || !page.canSend}')
+})
+
+test('all retained history is the initial view and exposes orphan receipt B beside finding A', async () => {
+    handle = url => url.pathname.endsWith('/webhook-deliveries') ? Response.json(history({
+        deliveries: [receipt(), receipt({ id: 'orphan-attempt', alertId: 'orphan-alert' })],
+        deliveryRetryRequest: { access: { canRetry: true }, entries: [{ orgId: 'org', alertId: 'orphan-alert', deliveryId: 'orphan-attempt', liveRequest: { canSend: true, externalSendEnabled: true, blockers: [] } }] },
+    })) : defaults(url)
+    const page = await loadDeliveryHistory(settings)
+    expect(page.alerts.map(row => row.id)).toEqual(['alert'])
+    expect(deliveryHistorySelection(page, '')).toBe('')
+    expect(selectedDeliveryAttempts(page, deliveryHistorySelection(page, '')).map(row => row.id)).toEqual(['attempt', 'orphan-attempt'])
+    expect(selectedDeliveryAttempts(page, deliveryHistorySelection(page, 'alert')).map(row => row.id)).toEqual(['attempt'])
+    expect(deliveryHistorySelection(page, 'removed-finding')).toBe('')
+    expect(deliveryRetryTarget(page, 'orphan-attempt')).toEqual({ alertId: 'orphan-alert', deliveryId: 'orphan-attempt' })
+    calls.length = 0
+    handle = () => Response.json({ deliveries: [receipt({ id: 'orphan-retry', alertId: 'orphan-alert', status: 'delivered', error: null })] }, { status: 202 })
+    await performDeliveryAction(settings, page, 'retry', 'orphan-alert', 'orphan-attempt')
+    expect(JSON.parse(String(calls[0].init.body)).deliveryId).toBe('orphan-attempt')
+    const source = await Bun.file(new URL('../screens/DeliveryHistoryScreen.tsx', import.meta.url)).text()
+    expect(source).toContain('setSelectedId(id => deliveryHistorySelection(value, id))')
+    expect(source).toContain('label=\'All retained attempts\'')
+    expect(source).toContain('onPress={() => choose(\'\')}')
+    expect(source).toContain('{pickerOpen && <>')
+    expect(source).not.toContain('value.alerts[0]')
 })

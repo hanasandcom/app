@@ -6,7 +6,7 @@ import { GlassCard, InlineNotice, PillButton, Screen, SectionTitle } from '../co
 import { DeliveryAttempt } from '../components/DeliveryAttempt'
 import { useAppTheme } from '../theme/context'
 import {
-    deliveryCaseRef, deliveryHistoryScope, deliveryRetryTarget, DeliveryHistoryError, filterDeliveryAlerts,
+    deliveryCaseRef, deliveryHistoryScope, deliveryHistorySelection, deliveryRetryTarget, DeliveryHistoryError, filterDeliveryAlerts,
     loadDeliveryHistory, orderDeliveryAttempts, performDeliveryAction, selectedDeliveryAttempts,
     type DeliveryAction, type DeliveryCaseRef, type DeliveryHistoryPage,
 } from '../lib/delivery-history'
@@ -54,7 +54,7 @@ function WorkspaceDelivery({ settings, onConfigure, onOpenCase }: Props) {
         void loadDeliveryHistory(settings, controller.signal).then(value => {
             if (controller.signal.aborted || current !== epoch.current || !active.current) return
             setPage(value)
-            setSelectedId(id => value.alerts.some(row => row.id === id) ? id : value.alerts[0]?.id || '')
+            setSelectedId(id => deliveryHistorySelection(value, id))
             if (allowReconcile.current) { review.current = false; setMustRefresh(false) }
         }).catch(cause => {
             if (!controller.signal.aborted && current === epoch.current) { setError(message(cause)); setPage(null) }
@@ -135,8 +135,11 @@ function WorkspaceDelivery({ settings, onConfigure, onOpenCase }: Props) {
             {!!page?.notice && <Text style={meta}>{page.notice}</Text>}
             {mustRefresh && <InlineNotice message='Refresh and review the latest history before another action. A previous request may already have been recorded.' />}
             {!!page && <>
-                <PillButton label={pickerOpen ? 'Close finding picker' : 'Choose finding'} disabled={busy} onPress={() => setPickerOpen(value => !value)} />
-                {(pickerOpen || !selected) && <>
+                <View style={row}>
+                    <PillButton label='All retained attempts' tone={!selected ? 'accent' : 'default'} disabled={busy || loading} onPress={() => choose('')} />
+                    <PillButton label={pickerOpen ? 'Close finding picker' : 'Choose finding'} disabled={busy || loading} onPress={() => setPickerOpen(value => !value)} />
+                </View>
+                {pickerOpen && <>
                     <Input label='Search findings' value={query} onChangeText={value => { setQuery(value); setPickerPage(0) }} />
                     <View style={row}>
                         <PillButton small label='All findings' tone={!reviewOnly ? 'accent' : 'default'} onPress={() => { setReviewOnly(false); setPickerPage(0) }} />
@@ -149,17 +152,18 @@ function WorkspaceDelivery({ settings, onConfigure, onOpenCase }: Props) {
                     <Pages page={currentPickerPage} total={filtered.length} size={20} disabled={busy} onChange={setPickerPage} />
                 </>}
                 <Text style={meta}>{page.attempts.length} retained attempts (latest 100 maximum)</Text>
-                {selected && <GlassCard style={{ gap: 10 }}>
-                    <SectionTitle eyebrow='Selected finding' title={selected.title} body={`${selected.actor || 'Actor not recorded'} · ${selected.reviewState || 'Review state not recorded'}`} />
+                <GlassCard style={{ gap: 10 }}>
+                    <SectionTitle eyebrow={selected ? 'Selected finding' : 'History'} title={selected?.title || 'All retained attempts'}
+                        body={selected ? `${selected.actor || 'Actor not recorded'} · ${selected.reviewState || 'Review state not recorded'}` : 'Latest retained attempts across this organization, including findings no longer listed.'} />
                     <Text style={meta}>Last attempt: {attempts[0]?.status || 'No delivery yet'}</Text>
                     <Text style={meta}>Last success: {lastSuccess ? time(lastSuccess.attemptedAt) : 'Not recorded'}</Text>
                     <Text style={meta}>Needs review: {lastFailure ? time(lastFailure.attemptedAt) : 'No failed attempt'}</Text>
-                    <View style={row}>
+                    {selected && <View style={row}>
                         <PillButton label='Test delivery' disabled={disabled || !page.canTest} onPress={() => confirm('test')} />
                         <PillButton label='Send finding' disabled={disabled || !page.canSend} onPress={() => confirm('send')} />
                         {caseRef && <PillButton label='Open case on website' disabled={busy} onPress={() => { if (active.current && !saving.current) onOpenCase(caseRef) }} />}
-                    </View>
-                </GlassCard>}
+                    </View>}
+                </GlassCard>
                 {!attempts.length && <Text style={meta}>{selected ? 'No delivery attempt yet for this finding.' : 'No delivery attempts available.'}</Text>}
                 {attempts.slice(currentHistoryPage * 10, (currentHistoryPage + 1) * 10).map(attempt => <DeliveryAttempt key={attempt.id} attempt={attempt} disabled={disabled || !page.canRetry} onRetry={() => confirm('retry', attempt.id)} />)}
                 <Pages page={currentHistoryPage} total={attempts.length} size={10} disabled={busy} onChange={setHistoryPage} />
