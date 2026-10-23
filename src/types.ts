@@ -19,7 +19,7 @@ export type RootTabParamList = {
     Organizations: { section?: OrganizationSection } | undefined
     Watchlists: undefined
     WorkspacePage: { path: string; title: string }
-    Tools: { query?: string; tool: 'thesis' | 'load-tests' | 'user-management' | 'findings' | 'rule-tuning' | 'api-reference' | 'openapi-json' | 'support-desk' | 'organization-directory' | 'delivery-history' | 'integrations' | 'ai-metrics' | 'traffic-map' | 'traffic-overview' | 'traffic-recent' | 'rate-limits' | 'database' | 'backups' | 'threat-search' | 'password-check' | 'subscription' | 'host-updates' | 'hosts' | 'intel-profiles' | 'delivery-health' | 'api-keys' | 'rules-match' | 'rules-analysis' | 'rules-detection' }
+    Tools: { query?: string; tool: 'organization-privacy' | 'thesis' | 'load-tests' | 'user-management' | 'findings' | 'rule-tuning' | 'api-reference' | 'openapi-json' | 'support-desk' | 'organization-directory' | 'delivery-history' | 'integrations' | 'ai-metrics' | 'traffic-map' | 'traffic-overview' | 'traffic-recent' | 'rate-limits' | 'database' | 'backups' | 'threat-search' | 'password-check' | 'subscription' | 'host-updates' | 'hosts' | 'intel-profiles' | 'delivery-health' | 'api-keys' | 'rules-match' | 'rules-analysis' | 'rules-detection' }
 }
 
 export type AppSettings = {

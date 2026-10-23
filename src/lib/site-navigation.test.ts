@@ -145,3 +145,10 @@ it('opens Thesis in its native shared document workflow', () => {
     expect(item?.disabledReason).toBeUndefined()
     expect(nativeToolForPath(item?.path)).toBe('thesis')
 })
+
+it('opens organization privacy in its native retention workflow', () => {
+    const item = leaves(siteNavigation('synthetic-user')).find(row => row.path === '/organizations/privacy')
+    expect(item?.tab).toBe('Tools')
+    expect(item?.disabledReason).toBeUndefined()
+    expect(nativeToolForPath(item?.path)).toBe('organization-privacy')
+})

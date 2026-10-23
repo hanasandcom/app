@@ -48,6 +48,8 @@ Thesis opens the shared Hanasand document in a native editor with sheet switchin
 
 TI administration website links open the owning `ti.hanasand.com/dashboard/ti/` pages. The old Core `/ti/` aliases can resolve as public search queries after redirecting. Custom website origins remain configurable; `EXPO_PUBLIC_TI_SITE_URL` selects the TI website when needed. Native TI operator parity still needs compatible service authentication and full snapshot endpoints.
 
+Privacy & Retention uses the selected organization’s existing Core privacy API directly. It shows protection, recent runs and requests, paged records, and reviewed export, purge and deletion actions. Export files are checksum-checked and temporary. Deletion requires the current organization name and password. A missing request in the limited history or loss of organization access does not establish that a change failed or completed. Device sharing, production authorization and backend latency remain unverified.
+
 ## Mobile releases
 
 Mobile builds use [EAS Build](https://docs.expo.dev/build/introduction/) and the manual GitHub Actions workflow at **Actions → Mobile EAS build → Run workflow**. It supports iOS, Android, or both, with a `preview` (internal distribution) or `production` (store-signed artifact) profile. The workflow only builds artifacts; it does not submit them to either app store or publish an update. Preview builds are the default.

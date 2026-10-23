@@ -1,6 +1,6 @@
 // Opt-in synthetic entry. Normal startup never imports this file.
 import { useState } from 'react'
-import { Text, View } from 'react-native'
+import { Alert, Text, View } from 'react-native'
 import { registerRootComponent } from 'expo'
 import { NavigationContainer } from '@react-navigation/native'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
@@ -9,6 +9,9 @@ import { AppThemeProvider } from '../src/theme/context'
 import { PillButton } from '../src/components/ui'
 import { UserManagementScreen } from '../src/screens/UserManagementScreen'
 import { LoadTestsScreen } from '../src/screens/LoadTestsScreen'
+import { OrganizationPrivacyScreen } from '../src/screens/OrganizationPrivacyScreen'
+import * as Crypto from 'expo-crypto'
+import type { PrivacyTransport } from '../src/features/privacy/api'
 import ThesisScreen from '../src/screens/ThesisScreen'
 import { ThesisError, type SourceNode } from '../src/features/thesis/api'
 import type { ThesisServices } from '../src/features/thesis/useThesis'
@@ -33,6 +36,15 @@ const tests = [{ id: 'fixture-scan', url: 'https://target.synthetic.invalid/chec
 let hold = false, fail = false, release: (() => void) | undefined
 const sockets = new Set<LoadSocket>()
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
+const privacyRuns: Record<string, unknown>[] = [], privacyRequests: Record<string, unknown>[] = []
+let privacyDeleted = false
+const privacyItems = Array.from({ length: 65 }, (_, index) => ({ id: `fixture-record-${index}`, organization_id: org.id, run_id: 'fixture-run', source_service: 'synthetic', record_type: 'synthetic_record', record_id: `record-${index}`, action: 'retain', status: 'protected', reason: 'Synthetic legal hold', attempt_count: 1, processed_at: at }))
+function privacyState(offset = 0, limit = 50) {
+    return { schemaVersion: 'organization.privacy_state.v1', organization: { id: org.id, name: org.name, status: privacyDeleted ? 'deleted' : 'active', retention_days: 365 },
+        permissions: { canExport: true, canRunRetention: true, canRequestDeletion: true }, runs: privacyRuns.slice(0, 20), requests: privacyRequests.slice(0, 20),
+        items: privacyItems.slice(offset, offset + limit), itemPage: { offset, limit, nextOffset: offset + limit < privacyItems.length ? offset + limit : null },
+        protection: { protected_events: 65, access_recovery_holds: 1, immutable_system_events: 2, immutable_webhook_audit_events: 3, immutable_log_events: 4, explanation: 'Synthetic protected evidence remains.' } }
+}
 async function finishWrite(value: unknown) {
     if (hold) await new Promise<void>(resolve => { release = resolve })
     return fail ? json({ error: 'Synthetic response lost after the change was saved.' }, 500) : json(value)
@@ -43,6 +55,25 @@ globalThis.fetch = Object.assign(async (...[input, init]: Parameters<typeof fetc
     const headers = new Headers(init?.headers)
     if (headers.get('authorization') !== 'Bearer synthetic-token' || headers.get('id') !== settings.userId) return json({ error: 'Synthetic actor headers missing.' }, 401)
     const method = init?.method || 'GET', body = init?.body ? JSON.parse(String(init.body)) : {}
+    if (url.pathname === '/api/organizations/fixture-org/privacy') {
+        if (method === 'GET') return privacyDeleted ? json({ error: 'Synthetic membership removed.' }, 404) : json(privacyState(Number(url.searchParams.get('itemOffset') || 0), Number(url.searchParams.get('itemLimit') || 50)))
+        if (method === 'POST' && ['export', 'run_retention', 'delete'].includes(body.action)) {
+            const request = { id: `privacy-${body.requestId}`, organization_id: org.id, request_id: body.requestId, request_type: body.action === 'delete' ? 'deletion' : 'export', status: 'completed', requested_at: at }
+            if (body.action === 'export') {
+                const data = { public: { organization: { id: org.id, name: org.name }, members: [] }, threatIntelligence: { schemaVersion: 'organization.privacy_export.ti.v1', organizationId: org.id, tenantId: org.id, records: [] } }
+                const checksum = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, JSON.stringify(data))
+                privacyRequests.unshift(request)
+                return finishWrite({ export: { schemaVersion: 'organization.privacy_export.v1', organizationId: org.id, tenantId: org.id, exportedAt: at, data, checksum }, request: { id: request.id, status: 'completed' } })
+            }
+            if (body.action === 'delete') {
+                if (body.confirmation !== org.name || body.currentPassword !== 'synthetic-password') return json({ error: 'Synthetic confirmation rejected.' }, 403)
+                privacyRequests.unshift(request); privacyDeleted = true
+            }
+            const run = { id: `run-${body.requestId}`, organization_id: org.id, request_id: body.requestId, trigger_type: body.action === 'delete' ? 'privacy_deletion' : 'manual', privacy_request_id: body.action === 'delete' ? request.id : null, status: 'completed', created_at: at, completed_at: at, deleted_count: 0, redacted_count: 0, protected_count: 65, failed_count: 0, retried_count: 0 }
+            privacyRuns.unshift(run)
+            return finishWrite({ ...privacyState(0, 100), worker: { claimed: true, runId: run.id, hasMore: false } })
+        }
+    }
     if (method === 'GET') {
         if (url.pathname === '/api/management/organizations') return json({ allowed: true, canEdit: true, organizations: [org] })
         if (url.pathname === '/api/users') return json(users.filter(user => !user.deletion_scheduled_at))
@@ -130,6 +161,11 @@ const thesisServices: ThesisServices = {
     recovery: async () => ({ load: async () => recovered, save: async (draft, uncertain = false) => { recovered = { version: 1, scope: 'synthetic', sequence: (recovered?.sequence ?? 0) + 1, savedAt: Date.now(), draft, uncertain } } }),
 }
 const Stack = createNativeStackNavigator()
+const privacyTransport: PrivacyTransport = (_settings, url, init) => fetch(url, init)
+// No device files or share sheet are used by this synthetic callback.
+const privacyShare: typeof import('../src/features/privacy/export').sharePrivacyExport = async (_exported, isCurrent) => {
+    if (isCurrent()) Alert.alert('Synthetic export', 'The verified archive reached the synthetic share callback.')
+}
 function Fixture() {
     const [mode, setMode] = useState('Users'), [event, setEvent] = useState('No synthetic operations yet')
     return <View style={{ flex: 1 }}>
@@ -137,7 +173,7 @@ function Fixture() {
             <Text style={{ color: '#b2b9c2' }}>Synthetic only · no external requests</Text>
             <Text style={{ color: '#b2b9c2' }}>{event}</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                {['Users', 'Load testing', 'Thesis'].map(name => <PillButton key={name} small label={`Fixture ${name}`} onPress={() => setMode(name)} />)}
+                {['Users', 'Load testing', 'Thesis', 'Privacy'].map(name => <PillButton key={name} small label={`Fixture ${name}`} onPress={() => setMode(name)} />)}
                 <PillButton small label='Toggle held response' onPress={() => { hold = !hold; setEvent(`Hold: ${hold}`) }} />
                 <PillButton small label='Release response' onPress={() => { release?.(); release = undefined; setEvent('Released synthetic response') }} />
                 <PillButton small label='Toggle saved-but-error' onPress={() => { fail = !fail; setEvent(`Saved then error: ${fail}`) }} />
@@ -145,7 +181,7 @@ function Fixture() {
                 <PillButton small label='Emit shared document change' onPress={() => { shared = { ...shared, revision: shared.revision + 1, body: shared.body + '\n\nSynthetic other-editor change.' }; versions.unshift(clone(shared)); for (const receive of thesisListeners) receive(clone(shared)) }} />
             </View>
         </View>
-        {mode === 'Users' ? <UserManagementScreen settings={settings} onSelectOrganization={id => setEvent(`Open organization: ${id}`)} /> : mode === 'Thesis' ? <ThesisScreen settings={settings} services={thesisServices} /> : <LoadTestsScreen settings={settings} liveTransport={liveTransport} />}
+        {mode === 'Users' ? <UserManagementScreen settings={settings} onSelectOrganization={id => setEvent(`Open organization: ${id}`)} /> : mode === 'Privacy' ? <OrganizationPrivacyScreen settings={settings} transport={privacyTransport} exportFile={privacyShare} /> : mode === 'Thesis' ? <ThesisScreen settings={settings} services={thesisServices} /> : <LoadTestsScreen settings={settings} liveTransport={liveTransport} />}
     </View>
 }
 registerRootComponent(() => <GestureHandlerRootView style={{ flex: 1 }}><AppThemeProvider mode='obsidian'><NavigationContainer><Stack.Navigator screenOptions={{ headerShown: false }}><Stack.Screen name='SyntheticRemainingMenu' component={Fixture} /></Stack.Navigator></NavigationContainer></AppThemeProvider></GestureHandlerRootView>)
