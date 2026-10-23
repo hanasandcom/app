@@ -35,6 +35,7 @@ describe('native website navigation', () => {
         expect(nativeToolForPath('/ti/profiles')).toBe('intel-profiles')
         expect(nativeToolForPath('/ti/timeliness')).toBe('delivery-health')
         expect(nativeToolForPath('/organizations/api-keys')).toBe('api-keys')
+        expect(nativeToolForPath('/management/service-accounts')).toBe('service-accounts')
         for (const category of ['match', 'analysis', 'detection'] as const) {
             expect(nativeToolForPath(`/rules/${category}`)).toBe(`rules-${category}`)
             expect(leaves(siteNavigation('synthetic-user')).find(item => item.path === `/rules/${category}`)?.tab).toBe('Tools')

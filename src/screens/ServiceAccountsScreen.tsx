@@ -12,17 +12,17 @@ export function ServiceAccountsScreen(props: ServiceAccountsScreenProps) { retur
 function AccountWorkspace({ settings, services: injected }: ServiceAccountsScreenProps) {
     const services = useMemo(() => injected || serviceAccountServices, [injected]), w = useAccounts(settings, services)
     const [query, setQuery] = useState(''), [order, setOrder] = useState<'asc' | 'desc'>('asc'), [revoked, setRevoked] = useState(false)
-    const [selected, setSelected] = useState(''), [creating, setCreating] = useState(false), [limit, setLimit] = useState(30)
+    const [selected, setSelected] = useState(''), [limit, setLimit] = useState(30)
     const g = w.controller.generation, current = w.directory?.accounts.find(account => account.id === selected)
     const visible = w.directory ? accountRows(w.directory, query, order, revoked) : []
     const change = (run: () => void) => { if (w.controller.idle(g)) run() }
-    const navigate = (id: string, create = false) => { if (w.controller.navigate(g)) { setSelected(id); setCreating(create); w.clearPrivate(); w.publish() } }
+    const navigate = (id: string) => { if (w.controller.navigate(g)) { setSelected(id); w.clearPrivate(); w.publish() } }
     return <Screen title='Service accounts' subtitle='Hanasand administration · global accounts'>
         <View key={`account-controls:${g}`} style={{ gap: 12 }}>
             <AccountRow>
                 <PillButton label={w.controller.reading ? 'Refreshing…' : 'Refresh current accounts'} disabled={!w.visible || !w.controller.idle(g)} onPress={() => { void w.refresh(g, true) }} />
-                <PillButton label='Add service account' disabled={!w.writable} onPress={() => navigate('', true)} />
             </AccountRow>
+            <InlineNotice tone='info' message='New account creation is paused until API storage defaults are repaired. You can still review, edit, and revoke existing accounts.' />
             {!!w.error && <InlineNotice message={w.error} tone='error' />}{!!w.message && <InlineNotice message={w.message} />}
             {!own(settings) && <InlineNotice message='Changing service accounts is unavailable during impersonation.' />}
             {w.access?.canRead && !w.access.canWrite && <InlineNotice message='Read-only access. Current Hanasand owner, admin or editor access is required for changes.' />}
@@ -56,7 +56,6 @@ function AccountWorkspace({ settings, services: injected }: ServiceAccountsScree
                 {current.active && <PillButton label='Review revocation' tone='danger' disabled={!w.writable} onPress={() => w.request(g, 'revoke', current.id, `Revoke ${current.name} (${current.id})? All its API keys and sessions will be revoked. Usage history is retained.`, async (op, grant) => (await services.revokeAccount(settings, grant.access, current.id, op.signal)).message)} />}
             </GlassCard>}
         </View>
-        {creating && <AccountEditor key='create' settings={settings} services={services} workspace={w} />}
         {!!selected && <AccountEditor key={selected} settings={settings} services={services} workspace={w} account={current} target={selected} />}
         {!!selected && !current && <InlineNotice message='The selected account is unavailable in the current list. Refresh before changing it.' />}
         {!!w.secret && <GlassCard key={`once-key:${g}`}>

@@ -174,3 +174,14 @@ test('actual screen wiring uses generation/native host keys, operation-bound sec
     expect(hook).toContain('controller.beginRead(generation, manual)'); expect(hook).toContain('acceptsAccountResult(settings, controller, op)) setSecret(value)')
     expect(hook).toContain('controller.hide(); setVisible(false); setSecret(\'\')'); expect(hook).toContain('controller.finish(operation, definite)')
 })
+test('the website menu route opens the native workflow and does not offer broken account creation', async () => {
+    const [navigation, native, screen] = await Promise.all([
+        Bun.file(new URL('../../lib/native-tool-navigation.ts', import.meta.url)).text(),
+        Bun.file(new URL('../../screens/NativeToolsScreen.tsx', import.meta.url)).text(),
+        Bun.file(new URL('../../screens/ServiceAccountsScreen.tsx', import.meta.url)).text(),
+    ])
+    expect(navigation).toContain('\'/management/service-accounts\': \'service-accounts\'')
+    expect(native).toContain('case \'service-accounts\': return <ServiceAccountsScreen settings={settings} />')
+    expect(screen).toContain('New account creation is paused until API storage defaults are repaired.')
+    expect(screen).not.toContain('navigate(\'\', true)')
+})

@@ -36,6 +36,7 @@ const tools: Record<string, RootTabParamList['Tools']['tool']> = {
     '/ti/profiles': 'intel-profiles',
     '/ti/timeliness': 'delivery-health',
     '/organizations/api-keys': 'api-keys',
+    '/management/service-accounts': 'service-accounts',
     '/rules/match': 'rules-match',
     '/rules/analysis': 'rules-analysis',
     '/rules/detection': 'rules-detection',
