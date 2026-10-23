@@ -1,0 +1,16 @@
+import { expect, test } from 'bun:test'
+test('remaining-menu fixture is opt-in and confines HTTP, sockets and mutations to synthetic state', async () => {
+    const normal = await Bun.file(new URL('../index.ts', import.meta.url)).text()
+    const fixture = await Bun.file(new URL('./remaining-menu-fixture.tsx', import.meta.url)).text()
+    expect(normal).not.toContain('remaining-menu-fixture')
+    expect(fixture).toContain('].includes(url.origin)')
+    expect(fixture).toContain('External requests are disabled')
+    expect(fixture).toContain('Unsupported synthetic write blocked')
+    expect(fixture).toContain('External sockets are disabled')
+    expect(fixture).toContain('liveTransport={liveTransport}')
+    expect(fixture).not.toContain('https://hanasand.com')
+    expect(fixture).not.toContain('loadSettings')
+    expect(fixture).not.toContain('SecureStore')
+    expect(fixture).not.toContain('Response.json(')
+    expect(fixture).toContain('Synthetic response lost after the change was saved.')
+})
