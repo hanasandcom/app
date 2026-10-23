@@ -97,6 +97,23 @@ describe('Thesis transport and encrypted recovery', () => {
         expect(oldWrites).toEqual([])
         expect(newWrites).toHaveLength(1)
     })
+    test('a candidate matching a later current draft is still surfaced as a pending decision', async () => {
+        let finish!: (value: import('./recovery').RecoveredDraft) => void
+        let writes = 0
+        const candidate = { version: 1 as const, scope: 'synthetic', sequence: 3, savedAt: 123, uncertain: true, draft }
+        const initializing = initializeRecovery(async () => ({ load: () => new Promise(resolve => { finish = resolve }), async save() { writes++ } }), { ...draft, body: 'Old service snapshot' }, () => true)
+        await Promise.resolve()
+        // A live snapshot may now match candidate.draft. Its returned pending decision
+        // still must be shown; equality cannot silently detach the UI from the gate.
+        finish(candidate)
+        const initialized = await initializing
+        expect(initialized?.candidate).toBe(candidate)
+        await initialized!.controller.persist(null)
+        expect(writes).toBe(0)
+        initialized!.controller.decide()
+        await initialized!.controller.persist(null)
+        expect(writes).toBe(1)
+    })
     test('pre-abort sends no request and dispatched PUT deadline is uncertain with no retry', async () => {
         let calls = 0
         const api = createThesisApi(settings, async () => { calls++; return new Promise<Response>(() => {}) }, 2)

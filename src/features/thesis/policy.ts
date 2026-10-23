@@ -5,3 +5,8 @@ export function canEditThesisInput(value: { alive: boolean; generation: number; 
     return value.alive && value.generation === value.currentGeneration && value.canEdit && !value.unknown && !value.conflict && !value.recovering
 }
 export function thesisInputKey(label: string, host: number) { return `${label}:${host}` }
+export function canReadThesis(value: { alive: boolean; generation: number; currentGeneration: number; reading: boolean; saving: boolean }) {
+    return value.alive && value.generation === value.currentGeneration && !value.reading && !value.saving
+}
+export function thesisActionKey(host: number, row: number, col: number) { return `${host}:${row}:${col}` }
+export function thesisGoalKey(host: number, row: number, index: number, text: string) { return `${host}:${row}:${index}:${text}` }

@@ -6,6 +6,7 @@ import { useThesis, type ThesisServices } from '../features/thesis/useThesis'
 import { WorkspaceEditor } from '../features/thesis/WorkspaceEditor'
 import { HistoryPanel } from '../features/thesis/HistoryPanel'
 import { CodeInventory } from '../features/thesis/CodeInventory'
+import { ConflictPanel } from '../features/thesis/ConflictPanel'
 import { Actions, ThesisText } from '../features/thesis/ui'
 import type { ThesisDocument } from '../features/thesis/document'
 
@@ -44,7 +45,7 @@ export default function ThesisScreen({ settings, services }: { settings: AppSett
                     <PillButton
                         label={thesis.loading ? 'Loading…' : 'Refresh and reconcile'}
                         disabled={thesis.loading || !!model?.pending}
-                        onPress={() => void thesis.refresh()}
+                        onPress={() => void thesis.refresh(generation)}
                     />
 
                     <PillButton
@@ -83,30 +84,15 @@ export default function ThesisScreen({ settings, services }: { settings: AppSett
                     </View>
                 </GlassCard>}
 
-                {model?.conflict && <GlassCard>
-                    <View style={{ gap: 10 }}>
-
-                        <ThesisText heading>Shared changes need review</ThesisText>
-
-                        <ThesisText>Your draft: {model.draft.title} · {model.draft.body.length} characters</ThesisText>
-
-                        <ThesisText>Latest: revision {model.conflict.revision} · {model.conflict.title} · {model.conflict.body.length} characters</ThesisText>
-
-                        <Actions key={thesis.host}>
-                            <PillButton
-                                label='Use my draft'
-                                disabled={!thesis.canEdit || model.unknown}
-                                onPress={() => thesis.resolve(true)}
-                            />
-                            <PillButton
-                                label='Use latest'
-                                disabled={!thesis.canEdit || model.unknown}
-                                onPress={() => thesis.resolve(false)}
-                            />
-                        </Actions>
-                    </View>
-                </GlassCard>}
-
+                {model?.conflict && <ConflictPanel
+                    key={`conflict:${thesis.host}`}
+                    draft={model.draft}
+                    remote={model.conflict}
+                    disabled={!thesis.canEdit || model.unknown}
+                    onResolve={useLocal => {
+                        if (current.current.thesis.generation.current === generation) thesis.resolve(useLocal)
+                    }}
+                />}
                 {model && <>
 
                     <Actions key={`panels:${thesis.host}`}>

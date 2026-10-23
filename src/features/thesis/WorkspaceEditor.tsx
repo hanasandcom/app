@@ -108,7 +108,7 @@ export function WorkspaceEditor({ value, enabled, host, guard, onChange, onConte
                 host={host}
                 enabled={enabled}
                 guard={guard}
-                onChange={data => update({ ...sheet, body: replaceTableAt(sheet.body, parsed[0], data) }, false, 'plan')}
+                onChange={(data, structural) => update({ ...sheet, body: replaceTableAt(sheet.body, parsed[0], data) }, structural, 'plan')}
             />}
 
             {parsed.length > 0 && <GlassCard>

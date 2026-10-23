@@ -6,7 +6,7 @@ import { createThesisApi, ownAccount, ThesisError, type ThesisApi } from './api'
 import { sameContent, ThesisState, type ThesisDocument } from './document'
 import { nativeRecovery, initializeRecovery, type RecoveredDraft, type ThesisRecovery, type RecoveryController } from './recovery'
 import { thesisLive, type ThesisLive } from './live'
-import { canApplyThesisRead, canEditThesisInput } from './policy'
+import { canApplyThesisRead, canEditThesisInput, canReadThesis } from './policy'
 
 export type ThesisServices = { api?: ThesisApi; live?: ThesisLive; recovery?: () => Promise<ThesisRecovery> }
 export function useThesis(settings: AppSettings, services?: ThesisServices) {
@@ -43,8 +43,8 @@ export function useThesis(settings: AppSettings, services?: ThesisServices) {
         catch { if (alive.current && epoch.current === capturedEpoch) setError('The encrypted draft could not be saved on this device. Keep this screen open until your draft is saved to the service.') }
     }, [])
 
-    const refresh = useCallback(async () => {
-        if (!alive.current || pendingRead.current || state.current?.pending) return
+    const refresh = useCallback(async (capturedGeneration: number) => {
+        if (!canReadThesis({ alive: alive.current, generation: capturedGeneration, currentGeneration: generation.current, reading: pendingRead.current, saving: state.current?.pending ?? false })) return
         const currentEpoch = epoch.current
         const currentOperation = state.current?.operation ?? 0
         const authorization = authorizationVersion.current
@@ -69,7 +69,7 @@ export function useThesis(settings: AppSettings, services?: ThesisServices) {
                 if (!initialized) return
                 const { controller, candidate } = initialized
                 recovery.current = controller
-                if (candidate?.draft && !sameContent(candidate.draft, state.current.draft)) setRecovered(candidate)
+                if (candidate) setRecovered(candidate)
             }
             reconnect(v => v + 1)
             await persist()
@@ -114,7 +114,7 @@ export function useThesis(settings: AppSettings, services?: ThesisServices) {
         epoch.current++; alive.current = visible; renew()
         if (!visible) return
         setLoading(true); setCanEdit(false); setError(''); setLive('Connecting')
-        void refresh()
+        void refresh(generation.current)
         return () => {
             alive.current = false; epoch.current++; generation.current++
             readController.current?.abort(); saveController.current?.abort()

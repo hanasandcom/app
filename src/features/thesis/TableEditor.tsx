@@ -4,22 +4,24 @@ import { PillButton } from '../../components/ui'
 import { useAppTheme } from '../../theme/context'
 import { cellValue, columnName, reshape, type TableData } from './workspace'
 import { Actions, ThesisField, ThesisText } from './ui'
+import { thesisActionKey } from './policy'
 
 export function TableEditor({ data, onChange, enabled, host, guard }: { data: TableData; onChange: (value: TableData, structural?: boolean) => void; enabled: boolean; host: number; guard: () => boolean }) {
     const theme = useAppTheme()
     const [selected, select] = useState({ row: 0, col: 0 })
     const [range, setRange] = useState('A1:B2')
     const [limit, setLimit] = useState(30)
-    const current = useRef({ data, guard, enabled }); current.current = { data, guard, enabled }
     const row = Math.min(selected.row, data.cells.length - 1), col = Math.min(selected.col, data.cells[0].length - 1)
+    const context = thesisActionKey(host, row, col)
+    const current = useRef({ data, guard, enabled, context }); current.current = { data, guard, enabled, context }
     const address = `${columnName(col)}${row + 1}`
     function change(value: string) {
-        if (!current.current.enabled || !current.current.guard()) return
+        if (current.current.context !== context || !current.current.enabled || !guard()) return
         const cells = current.current.data.cells.map(line => [...line]); cells[row][col] = value
         onChange({ ...current.current.data, cells })
     }
     function structure(axis: 'row' | 'column', at: number, remove = false) {
-        if (!current.current.enabled || !current.current.guard()) return
+        if (current.current.context !== context || !current.current.enabled || !guard()) return
         if (remove && (axis === 'row' ? at === 0 || data.cells.length < 2 : data.cells[0].length < 2)) return
         if (!remove && (axis === 'row' ? data.cells.length >= 10000 : data.cells[0].length >= 100)) return
         onChange(reshape(data, axis, at, remove), true)
@@ -60,7 +62,7 @@ export function TableEditor({ data, onChange, enabled, host, guard }: { data: Ta
                 host={host}
             />
 
-            <Actions>
+            <Actions key={`navigate:${context}`}>
 
                 <PillButton
                     label='Previous cell'
@@ -73,7 +75,7 @@ export function TableEditor({ data, onChange, enabled, host, guard }: { data: Ta
                 />
             </Actions>
 
-            <Actions>
+            <Actions key={`structure:${context}`}>
 
                 <PillButton label='Row above' disabled={!enabled} onPress={() => structure('row', Math.max(1, row))} />
 

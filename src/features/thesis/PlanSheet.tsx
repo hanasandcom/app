@@ -4,8 +4,9 @@ import { GlassCard, PillButton } from '../../components/ui'
 import { planModel, statuses, subgoals, updatePlan, writeGoals } from './plan'
 import type { TableData } from './workspace'
 import { Actions, ThesisField, ThesisText } from './ui'
+import { thesisGoalKey } from './policy'
 
-export function PlanSheet({ data, enabled, host, guard, onChange }: { data: TableData; enabled: boolean; host: number; guard: () => boolean; onChange: (data: TableData) => void }) {
+export function PlanSheet({ data, enabled, host, guard, onChange }: { data: TableData; enabled: boolean; host: number; guard: () => boolean; onChange: (data: TableData, structural?: boolean) => void }) {
     const [board, setBoard] = useState(false)
     const [sprint, setSprint] = useState('')
     const [expanded, setExpanded] = useState(-1)
@@ -13,7 +14,7 @@ export function PlanSheet({ data, enabled, host, guard, onChange }: { data: Tabl
     const [limit, setLimit] = useState(30)
     const model = planModel(data), fields = model.fields
     const tasks = model.tasks.filter(({ row }) => !sprint || fields.sprint >= 0 && row[fields.sprint] === sprint)
-    function update(row: number, col: number, value: string) { if (enabled && guard()) onChange(updatePlan(data, row, col, value)) }
+    function update(row: number, col: number, value: string, structural = false) { if (enabled && guard()) onChange(updatePlan(data, row, col, value), structural) }
     const card = ({ row, index }: { row: string[]; index: number }) => (
         <GlassCard key={index}>
 
@@ -53,7 +54,7 @@ export function PlanSheet({ data, enabled, host, guard, onChange }: { data: Tabl
                     />)}
                     {fields.subgoals >= 0 && <View style={{ gap: 8 }}>
 
-                        {subgoals(row[fields.subgoals] || '').map((goal, i) => <Actions key={`${host}:${i}`}>
+                        {subgoals(row[fields.subgoals] || '').map((goal, i) => <Actions key={thesisGoalKey(host, index, i, goal.text)}>
                             <PillButton
                                 label={`${goal.done ? '☑' : '☐'} ${goal.text}`}
                                 disabled={!enabled}
@@ -62,7 +63,7 @@ export function PlanSheet({ data, enabled, host, guard, onChange }: { data: Tabl
                             <PillButton
                                 label='Remove subgoal'
                                 disabled={!enabled}
-                                onPress={() => update(index, fields.subgoals, writeGoals(subgoals(row[fields.subgoals]).filter((_, at) => at !== i)))}
+                                onPress={() => update(index, fields.subgoals, writeGoals(subgoals(row[fields.subgoals]).filter((_, at) => at !== i)), true)}
                             />
                         </Actions>)}
 
@@ -78,7 +79,7 @@ export function PlanSheet({ data, enabled, host, guard, onChange }: { data: Tabl
                             key={host}
                             label='Add subgoal'
                             disabled={!enabled || !newGoal.trim()}
-                            onPress={() => { if (!guard()) return; update(index, fields.subgoals, writeGoals([...subgoals(row[fields.subgoals]), { done: false, text: newGoal.trim() }])); setNewGoal('') }}
+                            onPress={() => { if (!guard()) return; update(index, fields.subgoals, writeGoals([...subgoals(row[fields.subgoals]), { done: false, text: newGoal.trim() }]), true); setNewGoal('') }}
                         />
                     </View>}
                 </>}

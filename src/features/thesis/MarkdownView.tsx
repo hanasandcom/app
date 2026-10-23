@@ -4,10 +4,12 @@ import type { RootContent, PhrasingContent } from 'mdast'
 import { useAppTheme } from '../../theme/context'
 import { markdownTree, safeLink } from './markdown'
 import { ThesisText } from './ui'
+import { cellValue, tables } from './workspace'
 
 export function MarkdownView({ source }: { source: string }) {
     const theme = useAppTheme()
     const tree = markdownTree(source)
+    const parsedTables = tables(source)
     function inline(node: PhrasingContent, index: number): ReactNode {
         if (node.type === 'text') return node.value
         if (node.type === 'inlineCode') return <Text key={index} style={{ fontFamily: 'Courier', backgroundColor: theme.surfaceStrong }}>{node.value}</Text>
@@ -61,13 +63,16 @@ export function MarkdownView({ source }: { source: string }) {
             <ThesisText>{item.checked === null || item.checked === undefined ? node.ordered ? `${(node.start || 1) + i}.` : '•' : item.checked ? '☑' : '☐'}</ThesisText>
             <View style={{ flex: 1, gap: 6 }}>{item.children.map(block)}</View>
         </View>)}</View>
-        if (node.type === 'table') return <ScrollView key={index} horizontal>
-            <View>{node.children.map((row, r) => <View key={r} style={{ flexDirection: 'row' }}>{row.children.map((cell, c) => <Text
-                key={c}
-                selectable
-                style={{ color: theme.text, width: 180, padding: 10, borderWidth: 1, borderColor: theme.surfaceBorder, fontWeight: r === 0 ? '700' : '400' }}
-            >{cell.children.map(inline)}</Text>)}</View>)}</View>
-        </ScrollView>
+        if (node.type === 'table') {
+            const data = parsedTables.find(table => table.start === node.position?.start.offset)?.data
+            return <ScrollView key={index} horizontal>
+                <View>{node.children.map((row, r) => <View key={r} style={{ flexDirection: 'row' }}>{row.children.map((cell, c) => <Text
+                    key={c}
+                    selectable
+                    style={{ color: theme.text, width: 180, padding: 10, borderWidth: 1, borderColor: theme.surfaceBorder, fontWeight: r === 0 ? '700' : '400' }}
+                >{data ? cellValue(data.cells, r, c) : cell.children.map(inline)}</Text>)}</View>)}</View>
+            </ScrollView>
+        }
         if (node.type === 'thematicBreak') return <View key={index} style={{ height: 1, backgroundColor: theme.surfaceBorder }} />
         if (node.type === 'html') return /^<!--/.test(node.value) ? null : <ThesisText key={index}>{node.value}</ThesisText>
         return null

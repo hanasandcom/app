@@ -57,7 +57,10 @@ export class ThesisState {
     receive(value: ThesisDocument, manual = false) {
         const remote = document(value)
         if (remote.revision < this.base.revision) return
-        if (remote.revision === this.base.revision && !sameContent(remote, this.base)) throw new Error('The service returned conflicting content for one revision. Refresh before saving.')
+        if (remote.revision === this.base.revision && !sameContent(remote, this.base)) {
+            this.unknown = true
+            throw new Error('The service returned conflicting content for one revision. Refresh before saving.')
+        }
         if (manual) this.unknown = false
         if (this.pending && this.sent && sameContent(remote, this.sent)) {
             this.base = remote; this.draft = { ...this.draft, revision: remote.revision }
