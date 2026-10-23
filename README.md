@@ -27,6 +27,8 @@ Mail supports mailbox and folder switching, message actions, opening and sending
 
 Support opens your own conversations from the Menu or Profile. You can start a ticket, reply to an open conversation, and leave feedback after it is resolved. The app keeps drafts when a request fails or a conversation changes. The support agent queue, staff status controls and realtime updates remain on the website.
 
+Integrations opens a native destination manager for the selected Personal or organization workspace: search, add/edit, archive and explicitly test Discord/webhook destinations. Testing sends an example message to the configured destination after confirmation; dry-run, skipped and failed receipts are shown separately from delivered messages. URLs entered in the editor stay in memory and clear when the screen loses focus or the app backgrounds. Editing with a blank URL keeps the current server URL. Server permissions, action blockers and workspace lifecycle control changes; impersonated views are read-only. The separate Delivery queue at `/findings/actions`, agent Support queue/status/realtime, and other website fallbacks remain outside these native slices.
+
 ## Mobile releases
 
 Mobile builds use [EAS Build](https://docs.expo.dev/build/introduction/) and the manual GitHub Actions workflow at **Actions → Mobile EAS build → Run workflow**. It supports iOS, Android, or both, with a `preview` (internal distribution) or `production` (store-signed artifact) profile. The workflow only builds artifacts; it does not submit them to either app store or publish an update. Preview builds are the default.

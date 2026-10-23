@@ -22,6 +22,7 @@ import { ProfileScreen } from './screens/ProfileScreen'
 import { PendingDeletionScreen } from './screens/PendingDeletionScreen'
 import { AutomationsScreen } from './screens/AutomationsScreen'
 import { OrganizationsScreen } from './screens/OrganizationsScreen'
+import { IntegrationsScreen } from './screens/IntegrationsScreen'
 import { WatchlistsScreen } from './screens/WatchlistsScreen'
 import { WorkspacePageScreen } from './screens/WorkspacePageScreen'
 import { NativeToolsScreen } from './screens/NativeToolsScreen'
@@ -420,7 +421,7 @@ export default function App() {
                                 {() => <WatchlistsScreen settings={settings} />}
                             </Tab.Screen>
                             <Tab.Screen name='WorkspacePage'>
-                                {({ route }) => <WorkspacePageScreen key={`${route.params.path}:${settings.selectedOrganizationId}`} settings={settings} path={route.params.path} title={route.params.title} />}
+                                {({ route }) => route.params.path === '/findings/delivery' ? <IntegrationsScreen settings={settings} /> : <WorkspacePageScreen key={`${route.params.path}:${settings.selectedOrganizationId}`} settings={settings} path={route.params.path} title={route.params.title} />}
                             </Tab.Screen>
                             <Tab.Screen name='Tools'>
                                 {({ route }) => <NativeToolsScreen settings={settings} tool={route.params.tool} onManageSshKeys={() => navigation.navigate('Profile', { section: 'SSH keys' })} />}
