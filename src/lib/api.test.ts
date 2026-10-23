@@ -337,6 +337,32 @@ describe('desktop command proof', () => {
 
 
 describe('workspace transport', () => {
+    it('preserves authenticated proof and cancellation with a native streaming transport', async () => {
+        let globalCalls = 0
+        mockFetch(async () => { globalCalls++; throw new Error('The buffered fetch must not handle this stream.') })
+        const target = 'https://api.hanasand.com/api/traffic/live'
+        const controller = new AbortController()
+        const selected = { ...settings, apiBaseUrl: 'https://api.hanasand.com/api', authToken: 'synthetic-bound-token', selectedOrganizationId: 'org-123' }
+        let sent: RequestInit | undefined
+        const streaming = (async (input: RequestInfo | URL, init?: RequestInit) => {
+            expect(String(input)).toBe(target)
+            sent = init
+            return new Response('event: ready\ndata: {}\n\n', { headers: { 'content-type': 'text/event-stream' } })
+        }) as typeof fetch
+        const response = await apiFetch(selected, target, { signal: controller.signal, headers: { Accept: 'text/event-stream' } }, streaming)
+        const sentHeaders = new Headers(sent?.headers)
+        expect(sentHeaders.get('Authorization')).toBe('Bearer synthetic-bound-token')
+        expect(sentHeaders.get('dpop')).toBe('test-dpop')
+        expect(sentHeaders.get('x-device-proof-url')).toBe(target)
+        expect(sentHeaders.get('x-device-proof-method')).toBe('GET')
+        expect(sentHeaders.get('x-organization-id')).toBe('org-123')
+        expect(sentHeaders.get('Accept')).toBe('text/event-stream')
+        expect(sent?.signal).toBe(controller.signal)
+        expect(sent?.credentials).toBe('omit')
+        expect(await response.text()).toContain('event: ready')
+        expect(globalCalls).toBe(0)
+    })
+
     it('sends the selected organization only to the configured API origin', async () => {
         const requests: Headers[] = []
         mockFetch(async (_input, init) => { requests.push(new Headers(init?.headers)); return new Response('{}') })

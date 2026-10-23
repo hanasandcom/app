@@ -46,7 +46,7 @@ function headers(settings: AppSettings) {
     return next
 }
 
-export async function apiFetch(settings: AppSettings | undefined, input: RequestInfo | URL, init: RequestInit = {}) {
+export async function apiFetch(settings: AppSettings | undefined, input: RequestInfo | URL, init: RequestInit = {}, transport: typeof fetch = fetch) {
     const requestUrl = String(input)
     const url = new URL(requestUrl)
     const managed = url.protocol === 'https:' && (url.hostname === 'hanasand.com' || url.hostname.endsWith('.hanasand.com'))
@@ -57,7 +57,7 @@ export async function apiFetch(settings: AppSettings | undefined, input: Request
     if (organizationId && organizationId !== 'personal' && url.origin === new URL(settings!.apiBaseUrl).origin) {
         requestHeaders.set('x-organization-id', organizationId)
     }
-    if (!managed) return fetch(input, { ...init, headers: requestHeaders })
+    if (!managed) return transport(input, { ...init, headers: requestHeaders })
     if (settings) {
         for (const [name, value] of Object.entries(headers(settings))) {
             if (multipart && name.toLowerCase() === 'content-type') continue
@@ -74,7 +74,7 @@ export async function apiFetch(settings: AppSettings | undefined, input: Request
         requestHeaders.set('x-device-proof-method', (init.method || 'GET').toUpperCase())
     }
     // Native requests use the selected account, never a shared browser cookie jar.
-    return fetch(input, { ...init, credentials: settings?.authToken ? 'omit' : init.credentials, headers: requestHeaders })
+    return transport(input, { ...init, credentials: settings?.authToken ? 'omit' : init.credentials, headers: requestHeaders })
 }
 
 function requireAppAuth(settings: AppSettings, purpose: string) {
