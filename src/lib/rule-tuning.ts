@@ -18,6 +18,9 @@ export type ReprocessState = { jobs: ReprocessJob[]; existing: { count: number; 
 export class TuningError extends Error {
     constructor(message: string, readonly status = 0, readonly uncertain = false) { super(message) }
 }
+export function tuningNativeHostKey(contextRevision: number, operationRevision: number) {
+    return `${contextRevision}:${operationRevision}`
+}
 export type TuningInputState = { generation: number; active: boolean; pending: boolean; disabled: boolean }
 export function canEditTuningInput(current: TuningInputState, capturedGeneration: number) {
     return current.active && !current.pending && !current.disabled && current.generation === capturedGeneration

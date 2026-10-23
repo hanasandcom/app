@@ -296,3 +296,87 @@ test('reprocess confirmation and input guards reject changed job, acknowledgemen
     expect(api.canEditTuningInput(input, 1)).toBe(true)
     for (const changed of [{ generation: 2 }, { active: false }, { pending: true }, { disabled: true }]) expect(api.canEditTuningInput({ ...input, ...changed }, 1)).toBe(false)
 })
+
+// Fabric resolves a retained native target to its CURRENT listener at dispatch time.
+// This models target lookup, rather than calling the JavaScript closure captured before a render.
+function nativeTargets() {
+    const targets = new Map<number, (value: string) => void>()
+    let key = '', target = 0, next = 1
+    return {
+        commit(nextKey: string, listener: (value: string) => void) {
+            if (nextKey !== key || !target) { targets.delete(target); target = next++; key = nextKey }
+            targets.set(target, listener)
+            return target
+        },
+        dispatch(id: number, value: string) { targets.get(id)?.(value) },
+    }
+}
+test('delayed native text/JSON targets cannot edit the current draft after returning to idle', () => {
+    for (const replaceHosts of [false, true]) {
+        const host = nativeTargets()
+        let current = { generation: 1, active: true, pending: false, disabled: false }, boundary = 0, draftText = 'Current memory draft'
+        const render = () => {
+            const captured = current.generation
+            return host.commit(api.tuningNativeHostKey(0, replaceHosts ? boundary : 0), value => {
+                if (api.canEditTuningInput(current, captured)) draftText = value
+            })
+        }
+        const staleNativeTarget = render()
+        current = { ...current, generation: 2, pending: true }
+        boundary++
+        host.dispatch(staleNativeTarget, 'Before commit stale text')
+        expect(draftText).toBe('Current memory draft')
+        render()
+        current.pending = false; boundary++
+        render()
+        host.dispatch(staleNativeTarget, 'After idle stale text')
+        // The retained-host control reproduces the original failure despite a new JS generation.
+        expect(draftText).toBe(replaceHosts ? 'Current memory draft' : 'After idle stale text')
+    }
+})
+test('ordinary typing retains the same native input host and memory draft; context renewal removes old targets', () => {
+    const host = nativeTargets()
+    let draftText = '', context = 0
+    const render = () => host.commit(api.tuningNativeHostKey(context, 0), value => { draftText = value })
+    const original = render()
+    for (const value of ['a', 'ab', 'abc']) { host.dispatch(original, value); expect(render()).toBe(original) }
+    expect(draftText).toBe('abc')
+    context++
+    const replacement = render()
+    expect(replacement).not.toBe(original)
+    expect(draftText).toBe('abc')
+    host.dispatch(original, 'stale prior-context edit')
+    expect(draftText).toBe('abc')
+    host.dispatch(replacement, 'new context edit')
+    expect(draftText).toBe('new context edit')
+})
+test('acknowledgement target from a prior preview cannot acknowledge a refreshed preview after idle', () => {
+    const host = nativeTargets()
+    let previewReady = true, acknowledged = false, boundary = 0
+    const render = () => host.commit(`acknowledge:${api.tuningNativeHostKey(0, boundary)}`, () => { if (previewReady) acknowledged = !acknowledged })
+    const previousPreviewTarget = render()
+    previewReady = false; boundary++; render()
+    host.dispatch(previousPreviewTarget, '')
+    expect(acknowledged).toBe(false)
+    previewReady = true; boundary++; const currentPreviewTarget = render()
+    host.dispatch(previousPreviewTarget, '')
+    expect(acknowledged).toBe(false)
+    host.dispatch(currentPreviewTarget, '')
+    expect(acknowledged).toBe(true)
+})
+test('native host replacements are wired at operation, clear and context boundaries, not each keystroke', async () => {
+    const editor = await Bun.file(new URL('../components/RuleTuningEditor.tsx', import.meta.url)).text()
+    const panel = await Bun.file(new URL('../components/RuleReprocessPanel.tsx', import.meta.url)).text()
+    expect(editor).toContain('<TextInput key={`text:${nativeKey}`}')
+    expect(editor).toContain('context.current.signal !== signal || context.current.scope !== scope')
+    expect(editor).toContain('useTuningHostBoundary(signal, access.scope)')
+    expect(editor).toContain('if (value === null || current.current.json === null) { inputGeneration.current++; renewHosts() }')
+    const ordinaryEdit = editor.slice(editor.indexOf('function change(next:'), editor.indexOf('function changeConditions('))
+    expect(ordinaryEdit).not.toContain('renewHosts()')
+    for (const source of [editor, panel]) {
+        expect(source).toContain('renewHosts(); inputGeneration.current++; pending.current = true')
+        expect(source).toContain('if (mounted.current) { renewHosts(); setBusy(false) }')
+    }
+    expect(panel).toContain('key={`acknowledge:${hostKey}`}')
+    expect(panel).toContain('renewHosts(); epoch.current = invalidated.epoch')
+})
