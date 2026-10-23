@@ -77,7 +77,7 @@ export function AiMetricsPrompt({ clientName, epoch, disabled, busy, status, mes
             <AiMetricsText>Model output · In progress</AiMetricsText>
             <Text selectable style={{ color: theme.text, lineHeight: 21 }}>{partial}</Text>
         </View>}
-        <TextInput accessibilityLabel={`Prompt for ${clientName}`} value={prompt} onChangeText={value => edit(value, inputGeneration)} multiline maxLength={8000} editable={!disabled && !busy && !sending}
+        <TextInput key={inputGeneration} accessibilityLabel={`Prompt for ${clientName}`} value={prompt} onChangeText={value => edit(value, inputGeneration)} multiline maxLength={8000} editable={!disabled && !busy && !sending}
             autoCapitalize='sentences' autoCorrect={false} autoComplete='off' spellCheck={false} placeholder='Enter a model test prompt'
             placeholderTextColor={theme.textSoft} style={{ color: theme.text, borderColor: theme.surfaceBorderSoft, borderWidth: 1, borderRadius: 12, padding: 12, minHeight: 100 }} />
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>

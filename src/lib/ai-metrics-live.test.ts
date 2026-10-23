@@ -219,3 +219,53 @@ test('pre-send failure retains its draft but only a fresh idle callback can edit
     capture()('Corrected pre-send draft')
     expect(prompt).toBe('Corrected pre-send draft')
 })
+
+
+test('replacing the keyed native target rejects a delayed old event through current-props lookup', async () => {
+    // Model React Native dispatch by native target -> current TextInput listener, not a saved JS callback.
+    const state = { mounted: true, disabled: false, busy: false, pending: false, currentGeneration: 0 }
+    let prompt = 'Reviewed native draft', nextTarget = 0, currentTarget = 0, mountedGeneration = -1
+    const targets = new Map<number, (value: string) => void>()
+    function commit() {
+        const capturedGeneration = state.currentGeneration
+        if (mountedGeneration !== capturedGeneration) {
+            targets.delete(currentTarget)
+            currentTarget = ++nextTarget; mountedGeneration = capturedGeneration
+        }
+        targets.set(currentTarget, value => {
+            if (api.canEditAiPrompt({ ...state, generation: capturedGeneration })) prompt = value
+        })
+        return currentTarget
+    }
+    const dispatch = (target: number, value: string) => targets.get(target)?.(value)
+    const beforeSend = commit()
+    dispatch(beforeSend, 'Reviewed native draft')
+    state.pending = true; state.currentGeneration++
+    dispatch(beforeSend, 'Late event before React commits')
+    expect(prompt).toBe('Reviewed native draft')
+    commit()
+    expect(targets.has(beforeSend)).toBe(false)
+    state.currentGeneration++; prompt = '' // Acceptance keeps draft state outside the replaced native input.
+    const accepted = commit()
+    state.pending = false; state.currentGeneration++
+    const idle = commit()
+    dispatch(beforeSend, 'Old native target after idle')
+    dispatch(accepted, 'Accepted target after idle')
+    expect(prompt).toBe('')
+    dispatch(idle, 'Fresh idle draft')
+    expect(prompt).toBe('Fresh idle draft')
+    const beforeFailure = idle
+    state.pending = true; state.currentGeneration++; commit()
+    // A pre-send failure never clears the controlled draft.
+    state.pending = false; state.currentGeneration++
+    const corrected = commit()
+    dispatch(beforeFailure, 'Old target after failed submission')
+    expect(prompt).toBe('Fresh idle draft')
+    dispatch(corrected, 'Corrected retained draft')
+    expect(prompt).toBe('Corrected retained draft')
+    const component = await Bun.file(new URL('../components/AiMetricsPrompt.tsx', import.meta.url)).text()
+    expect(component).toContain('<TextInput key={inputGeneration}')
+    expect(component).toContain('value={prompt} onChangeText={value => edit(value, inputGeneration)}')
+    const edit = component.slice(component.indexOf('function edit('), component.indexOf('function review('))
+    expect(edit).not.toContain('generation.current++')
+})
