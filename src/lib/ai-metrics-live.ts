@@ -19,6 +19,11 @@ export type AiMetricsObserver = {
     error: (error: AiMetricsError) => void
 }
 export type AiTestMessage = { role: 'user' | 'assistant'; content: string }
+export type AiPromptDraft = { prompt: string; epoch: number; clientName: string; revision: number }
+export function aiPromptDraftAfterAcceptance(current: AiPromptDraft, reviewed: AiPromptDraft) {
+    return current.epoch === reviewed.epoch && current.clientName === reviewed.clientName
+        && current.revision === reviewed.revision && current.prompt === reviewed.prompt ? '' : current.prompt
+}
 export type AiTestInput = { clientName: string; conversationId: string; messages: AiTestMessage[] }
 export type AiMetricsLive = {
     observe: (settings: AppSettings, signal: AbortSignal, observer: AiMetricsObserver) => Promise<() => void>

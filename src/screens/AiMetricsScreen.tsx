@@ -115,7 +115,7 @@ function MetricsWorkspace({ settings, live, onViewLogs }: { settings: AppSetting
         setRevision(value => value + 1)
         scroll.current?.scrollTo({ y: 0, animated: false })
     }
-    async function send(prompt: string, reviewed: number) {
+    async function send(prompt: string, reviewed: number, onAccepted: () => void) {
         if (!active.current || reviewed !== epoch.current || pending.current || uncertain.current || authBlocked.current || !snapshot.current || !target.current || settings.impersonationToken || settings.impersonatingUserId || !latestClients.current.some(client => client.name === target.current)) return
         const current = epoch.current, name = target.current, input = [...history.current, { role: 'user' as const, content: prompt.trim() }]
         const cancel = new AbortController(); testController.current = cancel
@@ -123,8 +123,14 @@ function MetricsWorkspace({ settings, live, onViewLogs }: { settings: AppSetting
         try {
             const content = await live.test(settings, { clientName: name, conversationId: conversation.current, messages: input }, cancel.signal,
                 value => { if (active.current && current === epoch.current && !cancel.signal.aborted) setPartial(value) },
-                () => { if (active.current && current === epoch.current && !cancel.signal.aborted) setTestStatus('Selected client is generating…') })
+                () => {
+                    if (active.current && current === epoch.current && !cancel.signal.aborted) {
+                        onAccepted()
+                        setTestStatus('Selected client is generating…')
+                    }
+                })
             if (!active.current || current !== epoch.current || cancel.signal.aborted) return
+            onAccepted()
             history.current = [...input, { role: 'assistant', content }]; setMessages(history.current); setPartial(''); setTestStatus('Completed.')
         } catch (cause) {
             if (!active.current || current !== epoch.current) return
@@ -143,7 +149,7 @@ function MetricsWorkspace({ settings, live, onViewLogs }: { settings: AppSetting
         right={<PillButton small label='Refresh' disabled={busy || loading} onPress={manualRefresh} />}>
         {errors.map((error, index) => <InlineNotice key={`${error}:${index}`} message={error} />)}
         {needsReview && <InlineNotice message='Refresh and review before another test. A submitted prompt may still be running. No test is retried automatically.' />}
-        {selected && <AiMetricsPrompt key={selected} clientName={selected} epoch={displayEpoch} disabled={testDisabled} busy={busy} status={testStatus} messages={messages} partial={partial} onSend={(prompt, reviewed) => void send(prompt, reviewed)} onStop={stopTest} onClose={closeTest} />}
+        {selected && <AiMetricsPrompt key={selected} clientName={selected} epoch={displayEpoch} disabled={testDisabled} busy={busy} status={testStatus} messages={messages} partial={partial} onSend={send} onStop={stopTest} onClose={closeTest} />}
         <GlassCard style={{ gap: 12 }}>
             <SectionTitle title='Live model telemetry' eyebrow={connection} body={loading ? 'Refreshing telemetry…' : `Last HTTP refresh: ${lastRead || 'Unavailable'}`} />
             <AiMetricsText>Viewers: {participants ?? 'Unavailable'} · {clients.length} reported clients</AiMetricsText>
@@ -159,7 +165,7 @@ function MetricsWorkspace({ settings, live, onViewLogs }: { settings: AppSetting
             {!!containers?.unavailable && <InlineNotice message={containers.unavailable} />}
             {containers?.items.map(container => <View key={container.id || container.name} style={{ gap: 8 }}>
                 <AiMetricsText>{container.name} · {container.health}{'\n'}{container.image} · {container.status}</AiMetricsText>
-                {onViewLogs && <PillButton small label={`View logs for ${container.name}`} onPress={() => onViewLogs(container.name)} />}
+                {onViewLogs && <PillButton small label='View logs on website' onPress={() => onViewLogs(container.name)} />}
             </View>)}
             {!containers?.items.length && <AiMetricsText>No AI container telemetry is available.</AiMetricsText>}
         </GlassCard>

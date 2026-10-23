@@ -110,3 +110,53 @@ test('empty completion and model errors cannot be reported as successful complet
         expect(String(cause)).not.toContain('synthetic-secret')
     }
 })
+
+test('pre-send validation, authorization and vanished target failures retain draft without prompt_request', async () => {
+    const reviewed = { prompt: input.messages[0].content, clientName: input.clientName, epoch: 7, revision: 1 }
+    for (const failure of ['validation', '401', '403', 'vanished']) {
+        sockets.length = 0
+        let draft = { ...reviewed }, accepted = 0
+        const client = failure === '401' || failure === '403'
+            ? api.createAiMetricsLive(transport, async () => { throw new api.AiMetricsPromptError('Access rejected', false, Number(failure)) })
+            : live
+        const onAccepted = () => {
+            accepted++
+            draft = { ...draft, prompt: api.aiPromptDraftAfterAcceptance(draft, reviewed) }
+        }
+        const promise = client.test(settings, failure === 'validation' ? { ...input, messages: [] } : input,
+            new AbortController().signal, () => {}, onAccepted).then(value => { onAccepted(); return value })
+        const caught = promise.catch(cause => cause)
+        await tick()
+        if (failure === 'vanished') sockets[0].event({ type: 'snapshot', clients: [{ name: 'other' }] })
+        expect(await caught).toBeInstanceOf(api.AiMetricsPromptError)
+        expect(sockets.flatMap(socket => socket.sent)).toHaveLength(0)
+        expect(accepted).toBe(0)
+        expect(draft.prompt).toBe(reviewed.prompt)
+    }
+})
+
+test('accepted prompt clears only the matching draft and preserves edits and lifecycle changes', async () => {
+    const reviewed = { prompt: input.messages[0].content, clientName: input.clientName, epoch: 7, revision: 1 }
+    let draft = { ...reviewed }
+    const onAccepted = () => { draft = { ...draft, prompt: api.aiPromptDraftAfterAcceptance(draft, reviewed) } }
+    const promise = live.test(settings, input, new AbortController().signal, () => {}, onAccepted)
+    await tick(); sockets[0].event(snapshot)
+    expect(draft.prompt).toBe(reviewed.prompt)
+    expect(sockets[0].sent).toHaveLength(1)
+    sockets[0].event({ type: 'prompt_started', conversationId: input.conversationId })
+    expect(draft.prompt).toBe('')
+    sockets[0].event({ type: 'prompt_complete', conversationId: input.conversationId, content: 'Complete' })
+    expect(await promise).toBe('Complete')
+    for (const changed of [{ prompt: 'New draft' }, { epoch: 8 }, { clientName: 'other' }, { revision: 3 }]) {
+        const current = { ...reviewed, ...changed }
+        expect(api.aiPromptDraftAfterAcceptance(current, reviewed)).toBe(current.prompt)
+    }
+    const component = await Bun.file(new URL('../components/AiMetricsPrompt.tsx', import.meta.url)).text()
+    expect(component).toContain('aiPromptDraftAfterAcceptance(latest.current, snapshot)')
+    expect(component).toContain('if (!mounted.current) return')
+    expect(component).toContain('latest.current.revision !== snapshot.revision')
+    expect(component).not.toContain('setPrompt(\'\')')
+    const screen = await Bun.file(new URL('../screens/AiMetricsScreen.tsx', import.meta.url)).text()
+    expect(screen).toContain('onSend={send}')
+    expect(screen).toContain('onAccepted()\n                        setTestStatus(\'Selected client is generating…\')')
+})
