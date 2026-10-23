@@ -48,7 +48,7 @@ function getDashboardNavigation(access: NavigationAccess): NavigationItem[] {
             group('Monitoring', [
                 link('Watchlists', '/watchlists'),
                 link('Findings', '/findings'),
-                link('Delivery', '/findings/actions'),
+                link('Delivery', '/findings/delivery'),
                 link('Virtual Machines', '/system/virtual-machines', hasVMs),
                 link('Repositories', '/repositories'),
             ]),
@@ -140,7 +140,7 @@ function getDashboardNavigation(access: NavigationAccess): NavigationItem[] {
                 link('Service Accounts', '/management/service-accounts', isAdmin),
             ]),
             group('Integrations', [
-                link('Integrations', '/findings/delivery'),
+                link('Integrations', '/findings/actions'),
             ]),
             group('Monitoring & activity', [
                 link('Events & Cases', '/organizations/events'),
@@ -267,7 +267,7 @@ export type SiteNavigationItem = {
 }
 
 export function siteNavigation(userId: string, access?: Omit<NavigationAccess, 'id'>): SiteNavigationItem[] {
-    const tabs: Record<string, keyof RootTabParamList> = { '/': 'Home', '/mail': 'Mail', '/support': 'Profile', '/findings/delivery': 'WorkspacePage', '/notes': 'Notes', '/gallery': 'Images', '/upload': 'Images', '/scan': 'Scan', '/organizations': 'Organizations', '/organizations/team': 'Organizations', '/organizations/settings': 'Organizations', '/automation/health': 'Automations', '/automation/cron': 'Automations' }
+    const tabs: Record<string, keyof RootTabParamList> = { '/': 'Home', '/mail': 'Mail', '/notes': 'Notes', '/gallery': 'Images', '/upload': 'Images', '/scan': 'Scan', '/organizations': 'Organizations', '/organizations/team': 'Organizations', '/organizations/settings': 'Organizations', '/automation/health': 'Automations', '/automation/cron': 'Automations' }
     const convert = (item: NavigationItem): SiteNavigationItem => {
         if (item.items) return { label: item.label, items: item.items.map(convert) }
         const path = item.href || ''

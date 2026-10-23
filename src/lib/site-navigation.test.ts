@@ -91,9 +91,10 @@ describe('native website navigation', () => {
         expect(items.find(item => item.path === '/watchlists')?.disabledReason).toBeUndefined()
     })
 
-    it('reuses native Profile Support for the Support Chats menu', () => {
+    it('opens native Support queue while Profile keeps personal tickets', () => {
         const item = leaves(siteNavigation('account-id')).find(row => row.path === '/support')
-        expect(item?.tab).toBe('Profile')
+        expect(item?.tab).toBe('Tools')
+        expect(nativeToolForPath('/support')).toBe('support-desk')
         expect(item?.disabledReason).toBeUndefined()
     })
 
@@ -104,4 +105,13 @@ describe('native website navigation', () => {
             expect(item.disabledReason).toBeTruthy()
         }
     })
+})
+
+it('keeps delivery history separate from destination configuration and registers new menu jobs', () => {
+    const items = leaves(siteNavigation('synthetic-user'))
+    for (const [path, tool] of Object.entries({ '/findings/delivery': 'delivery-history', '/findings/actions': 'integrations', '/system/ai': 'ai-metrics', '/management/organizations': 'organization-directory' } as const)) {
+        expect(nativeToolForPath(path)).toBe(tool)
+        expect(items.some(item => item.path === path && item.tab === 'Tools' && !item.disabledReason)).toBe(true)
+    }
+    expect(items.find(item => item.label === 'Integrations')?.path).toBe('/findings/actions')
 })

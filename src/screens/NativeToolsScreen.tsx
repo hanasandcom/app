@@ -1,3 +1,9 @@
+import { SupportDeskScreen } from './SupportDeskScreen'
+import { OrganizationDirectoryScreen } from './OrganizationDirectoryScreen'
+import { DeliveryHistoryScreen } from './DeliveryHistoryScreen'
+import { IntegrationsScreen } from './IntegrationsScreen'
+import { AiMetricsScreen } from './AiMetricsScreen'
+import type { DeliveryCaseRef } from '../lib/delivery-history'
 import { TrafficMapScreen } from './TrafficMapScreen'
 import { TrafficScreen } from './TrafficScreen'
 import { RateLimitsScreen } from './RateLimitsScreen'
@@ -13,8 +19,17 @@ import { IntelligenceScreen } from './IntelligenceScreen'
 import { RulesScreen } from './RulesScreen'
 import { OrganizationApiKeysScreen } from './OrganizationApiKeysScreen'
 
-export function NativeToolsScreen({ settings, tool, onManageSshKeys }: { settings: AppSettings; tool: RootTabParamList['Tools']['tool']; onManageSshKeys: () => void }) {
+export function NativeToolsScreen({ settings, tool, onManageSshKeys, onSelectOrganization, onConfigureDelivery, onOpenCase, onViewAiLogs }: {
+    settings: AppSettings; tool: RootTabParamList['Tools']['tool']; onManageSshKeys: () => void
+    onSelectOrganization: (id: string) => void; onConfigureDelivery: () => void
+    onOpenCase: (ref: DeliveryCaseRef) => void; onViewAiLogs: (containerName: string) => void
+}) {
     switch (tool) {
+        case 'support-desk': return <SupportDeskScreen settings={settings} />
+        case 'organization-directory': return <OrganizationDirectoryScreen settings={settings} onSelectOrganization={onSelectOrganization} />
+        case 'delivery-history': return <DeliveryHistoryScreen settings={settings} onConfigure={onConfigureDelivery} onOpenCase={onOpenCase} />
+        case 'integrations': return <IntegrationsScreen settings={settings} />
+        case 'ai-metrics': return <AiMetricsScreen settings={settings} onViewLogs={onViewAiLogs} />
         case 'traffic-map': return <TrafficMapScreen settings={settings} />
         case 'traffic-overview': return <TrafficScreen settings={settings} mode='overview' />
         case 'traffic-recent': return <TrafficScreen settings={settings} mode='recent' />

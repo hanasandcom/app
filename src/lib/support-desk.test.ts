@@ -113,7 +113,7 @@ test('native screen retains explicit-only uncertainty reconciliation and scoped 
 })
 
 test('late native input callbacks preserve submitted drafts and cleared account fields', () => {
-    const state = { alive: true, visible: true, allowed: true, reading: false, writing: false, locked: false, ticket: id, selected: id }
+    const state = { alive: true, visible: true, allowed: true, reading: false, writing: false, locked: false, ticket: id, selected: id, generation: 1, capturedGeneration: 1 }
     let draft = 'submitted reply', password = ''
     const lateInput = () => { if (api.canEditDeskInput(state)) { draft = 'queued edit'; password = 'queued secret' } }
     for (const blocked of [ { writing: true }, { reading: true }, { locked: true }, { visible: false }, { alive: false }, { allowed: false }, { selected: messageId } ]) {
@@ -123,4 +123,17 @@ test('late native input callbacks preserve submitted drafts and cleared account 
     }
     expect(api.canEditDeskInput(state)).toBe(true)
     lateInput(); expect(draft).toBe('queued edit')
+})
+
+test('callbacks captured before clearing stay invalid after write and refresh return to idle', () => {
+    const state = { alive: true, visible: true, allowed: true, reading: false, writing: false, locked: false, ticket: id, selected: id, generation: 1, capturedGeneration: 1 }
+    let reply = 'submitted', password = 'old secret'
+    expect(reply).toBe('submitted'); expect(password).toBe('old secret')
+    const callback = () => { if (api.canEditDeskInput(state)) { reply = 'stale reply'; password = 'stale secret' } }
+    state.writing = true; state.generation++; reply = ''; password = ''
+    state.writing = false; state.reading = true; state.generation++
+    state.reading = false; state.generation++
+    callback(); expect(reply).toBe(''); expect(password).toBe('')
+    state.capturedGeneration = state.generation
+    expect(api.canEditDeskInput(state)).toBe(true)
 })

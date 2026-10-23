@@ -22,7 +22,6 @@ import { ProfileScreen } from './screens/ProfileScreen'
 import { PendingDeletionScreen } from './screens/PendingDeletionScreen'
 import { AutomationsScreen } from './screens/AutomationsScreen'
 import { OrganizationsScreen } from './screens/OrganizationsScreen'
-import { IntegrationsScreen } from './screens/IntegrationsScreen'
 import { WatchlistsScreen } from './screens/WatchlistsScreen'
 import { WorkspacePageScreen } from './screens/WorkspacePageScreen'
 import { NativeToolsScreen } from './screens/NativeToolsScreen'
@@ -152,6 +151,11 @@ export default function App() {
         }
     }
 
+    function openWebsite(path: string) {
+        if (!settings) return
+        void WebBrowser.openBrowserAsync(`${settings.siteBaseUrl.replace(/\/+$/, '')}${path}`)
+            .catch(error => Alert.alert('Unable to open page', String(error)))
+    }
     function openPage(item: SiteNavigationItem) {
         if (!navigation.isReady()) return
         if (item.disabledReason && item.path) {
@@ -421,10 +425,14 @@ export default function App() {
                                 {() => <WatchlistsScreen settings={settings} />}
                             </Tab.Screen>
                             <Tab.Screen name='WorkspacePage'>
-                                {({ route }) => route.params.path === '/findings/delivery' ? <IntegrationsScreen settings={settings} /> : <WorkspacePageScreen key={`${route.params.path}:${settings.selectedOrganizationId}`} settings={settings} path={route.params.path} title={route.params.title} />}
+                                {({ route }) => <WorkspacePageScreen key={`${route.params.path}:${settings.selectedOrganizationId}`} settings={settings} path={route.params.path} title={route.params.title} />}
                             </Tab.Screen>
                             <Tab.Screen name='Tools'>
-                                {({ route }) => <NativeToolsScreen settings={settings} tool={route.params.tool} onManageSshKeys={() => navigation.navigate('Profile', { section: 'SSH keys' })} />}
+                                {({ route }) => <NativeToolsScreen settings={settings} tool={route.params.tool} onManageSshKeys={() => navigation.navigate('Profile', { section: 'SSH keys' })}
+                                    onSelectOrganization={id => void selectWorkspace(id)}
+                                    onConfigureDelivery={() => navigation.navigate('Tools', { tool: 'integrations' })}
+                                    onOpenCase={ref => openWebsite(`/cases/${encodeURIComponent(ref.caseId)}?organizationId=${encodeURIComponent(ref.organizationId)}&alertId=${encodeURIComponent(ref.alertId)}&route=delivery_history`)}
+                                    onViewAiLogs={name => openWebsite(`/logs?service=${encodeURIComponent(name)}`)} />}
                             </Tab.Screen>
                         </Tab.Navigator>
                         {!!settings.impersonatingUserId && (

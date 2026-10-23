@@ -457,7 +457,7 @@ it('membership discovery distinguishes verified empty membership from unavailabl
 })
 
 it('model discovery rejects malformed envelopes without replacing them with zero clients', async () => {
-    for (const body of ['{', 'null', '{}', '{"error":"unavailable"}', '{"connected":{}}', '{"connected":null}']) {
+    for (const body of ['{', 'null', '{}', '{"error":"unavailable"}', '{"connected":{}}', '{"connected":null}', '{"connected":[{}]}', '{"connected":[null]}']) {
         mockFetch(async () => new Response(body))
         await expect(fetchAiModels(settings)).rejects.toThrow('invalid response')
     }

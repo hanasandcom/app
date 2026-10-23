@@ -1053,8 +1053,9 @@ export async function fetchAiModels(settings: AppSettings, signal?: AbortSignal)
     }
     if (!Array.isArray(body.connected)) throw new Error('Model status returned an invalid response.')
 
-    const connected = body.connected.map(normalizeGptClient).filter(Boolean) as GptClient[]
-    return connected
+    const connected = body.connected.map(normalizeGptClient)
+    if (connected.some((client: GptClient | null) => !client)) throw new Error('Model status returned an invalid response.')
+    return connected as GptClient[]
 }
 
 export async function fetchUserShares(settings: AppSettings) {

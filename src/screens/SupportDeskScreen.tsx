@@ -33,20 +33,21 @@ function SupportDeskWorkspace({ settings, liveAdapter }: { settings: AppSettings
     const reading = useRef<AbortController | null>(null), writing = useRef<AbortController | null>(null), queued = useRef(false)
     const selectedId = useRef(''), applied = useRef<DeskFilters>({ ...emptyDeskFilters })
     const drafts = useRef<Record<string, string>>({}), requestId = useRef<{ ticket: string; body: string; id: string } | null>(null)
-    const sync = useRef<() => void>(() => {}), inputAllowed = useRef(false)
+    const sync = useRef<() => void>(() => {}), inputAllowed = useRef(false), inputEpoch = useRef(0)
     visible.current = focused && foreground
     const ticket = desk?.tickets.find(row => row.id === selected)
     const writable = verified && desk?.isSupport === true && !settings.impersonationToken
         && !settings.impersonatingUserId && !busy && !loading && !uncertain && visible.current
     inputAllowed.current = writable
+    const inputGeneration = inputEpoch.current
     function editAllowed(id: string) {
         return canEditDeskInput({ alive: live.current, visible: visible.current, allowed: inputAllowed.current,
-            reading: !!reading.current, writing: !!writing.current, locked: locked.current, ticket: id, selected: selectedId.current })
+            reading: !!reading.current, writing: !!writing.current, locked: locked.current, ticket: id, selected: selectedId.current, generation: inputEpoch.current, capturedGeneration: inputGeneration })
     }
     const meta = { color: theme.textMuted, fontSize: 13, lineHeight: 20 }
     const row = { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: 8 }
     function hide() {
-        epoch.current++; review.current++; queued.current = false
+        epoch.current++; review.current++; inputEpoch.current++; queued.current = false
         reading.current?.abort(); reading.current = null
         if (writing.current) {
             locked.current = true; setUncertain(true)
@@ -85,7 +86,7 @@ function SupportDeskWorkspace({ settings, liveAdapter }: { settings: AppSettings
         if (!live.current || !visible.current) return
         if (writing.current || reading.current) { if (!explicit) queued.current = true; return }
         const controller = new AbortController(), own = ++epoch.current
-        reading.current = controller; review.current++; setLoading(true); setVerified(false)
+        reading.current = controller; review.current++; inputEpoch.current++; setLoading(true); setVerified(false)
         const current = () => live.current && visible.current && epoch.current === own && !controller.signal.aborted
         try {
             const next = await loadSupportDesk(settings, applied.current, controller.signal)
@@ -94,7 +95,7 @@ function SupportDeskWorkspace({ settings, liveAdapter }: { settings: AppSettings
             const rows = id ? await loadDeskMessages(settings, id, controller.signal) : []
             if (!current()) return
             setDesk(next); setMessages(rows); selectedId.current = id; setSelected(id)
-            setDraft(drafts.current[id] || ''); setVerified(true)
+            inputEpoch.current++; setDraft(drafts.current[id] || ''); setVerified(true)
             if (explicit) { locked.current = false; setUncertain(false); setError(''); setReconnect(value => value + 1) }
             else if (!locked.current) setError('')
         } catch (cause) { if (current()) setError(message(cause)) }
@@ -107,7 +108,7 @@ function SupportDeskWorkspace({ settings, liveAdapter }: { settings: AppSettings
     }
     function select(next: DeskTicket) {
         if (busy || loading) return
-        drafts.current[selectedId.current] = draft
+        inputEpoch.current++; drafts.current[selectedId.current] = draft
         selectedId.current = next.id; setSelected(next.id); setDraft(drafts.current[next.id] || '')
         setMessages([]); setAccountOpen(false); setNotice(''); review.current++
         scroll.current?.scrollTo({ y: 0, animated: false }); void load(false, next.id)
@@ -126,7 +127,7 @@ function SupportDeskWorkspace({ settings, liveAdapter }: { settings: AppSettings
         if (!visible.current || writing.current || reading.current || locked.current || !desk?.isSupport
             || settings.impersonationToken || settings.impersonatingUserId) return
         const controller = new AbortController(), own = ++epoch.current
-        writing.current = controller; review.current++; setBusy(true); setError(''); setNotice(''); setAccountClear(value => value + 1)
+        writing.current = controller; review.current++; inputEpoch.current++; setBusy(true); setError(''); setNotice(''); setAccountClear(value => value + 1)
         const current = () => live.current && visible.current && epoch.current === own && !controller.signal.aborted
         let succeeded = false
         try {
@@ -137,7 +138,7 @@ function SupportDeskWorkspace({ settings, liveAdapter }: { settings: AppSettings
             if (current()) { locked.current = true; setUncertain(true); setVerified(false); setError(message(cause)) }
         } finally {
             if (writing.current === controller) {
-                writing.current = null
+                writing.current = null; inputEpoch.current++
                 if (current()) { setBusy(false); if (succeeded) void load(false) }
             }
         }
