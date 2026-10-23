@@ -5,6 +5,7 @@ import ThesisScreen from './ThesisScreen'
 import { OrganizationPrivacyScreen } from './OrganizationPrivacyScreen'
 import ArticlesScreen from './ArticlesScreen'
 import ThoughtsScreen from './ThoughtsScreen'
+import { SystemScreen } from './SystemScreen'
 import { RuleTuningScreen } from './RuleTuningScreen'
 import { ApiReferenceScreen } from './ApiReferenceScreen'
 import { SupportDeskScreen } from './SupportDeskScreen'
@@ -28,14 +29,16 @@ import { IntelligenceScreen } from './IntelligenceScreen'
 import { RulesScreen } from './RulesScreen'
 import { OrganizationApiKeysScreen } from './OrganizationApiKeysScreen'
 
-export function NativeToolsScreen({ settings, tool, onManageSshKeys, onSelectOrganization, onConfigureDelivery, onOpenCase, onViewAiLogs, onOpenActor, onOpenMonitoredActors, onOpenApiJson, onOpenGuide, initialQuery }: {
+export function NativeToolsScreen({ settings, tool, onManageSshKeys, onSelectOrganization, onConfigureDelivery, onOpenCase, onViewAiLogs, onOpenVms, onOpenActor, onOpenMonitoredActors, onOpenApiJson, onOpenGuide, initialQuery }: {
     settings: AppSettings; tool: RootTabParamList['Tools']['tool']; onManageSshKeys: () => void
     onSelectOrganization: (id: string) => void; onConfigureDelivery: () => void
-    onOpenCase: (ref: WebsiteCaseRef) => void; onViewAiLogs: (containerName: string) => void
+    onOpenCase: (ref: WebsiteCaseRef) => void; onViewAiLogs: (containerName?: string) => void; onOpenVms: () => void
     onOpenActor: (name: string) => void; onOpenMonitoredActors: (organizationId: string) => void
     onOpenApiJson: () => void; onOpenGuide: () => void; initialQuery?: string
 }) {
     switch (tool) {
+        case 'system-overview': return <SystemScreen settings={settings} mode='overview' onOpenLogs={onViewAiLogs} onOpenVms={onOpenVms} />
+        case 'system-containers': return <SystemScreen settings={settings} mode='containers' onOpenLogs={onViewAiLogs} onOpenVms={onOpenVms} />
         case 'articles': return <ArticlesScreen settings={settings} />
         case 'thoughts': return <ThoughtsScreen settings={settings} />
         case 'organization-privacy': return <OrganizationPrivacyScreen settings={settings} />

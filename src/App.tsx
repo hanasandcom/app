@@ -474,7 +474,8 @@ export default function App() {
                                     onSelectOrganization={id => void openOrganizationWorkspace(id)}
                                     onConfigureDelivery={() => navigation.navigate('Tools', { tool: 'integrations' })}
                                     onOpenCase={openCase}
-                                    onViewAiLogs={name => openWebsite(`/logs?service=${encodeURIComponent(name)}`)}
+                                    onViewAiLogs={name => openWebsite(name ? `/logs?service=${encodeURIComponent(name)}` : '/logs')}
+                                    onOpenVms={() => navigation.navigate('WorkspacePage', { path: '/vms', title: 'Virtual Machines' })}
                                     onOpenActor={name => navigation.navigate('Tools', { tool: 'threat-search', query: name })}
                                     onOpenMonitoredActors={openMonitoredActors}
                                     onOpenApiJson={() => navigation.navigate('Tools', { tool: 'openapi-json' })}

@@ -162,3 +162,11 @@ it('opens Articles and Thoughts in their native editorial workflows', () => {
         expect(nativeToolForPath(item?.path)).toBe(tool)
     }
 })
+
+it('opens System and Containers in their native runtime workflows', () => {
+    const items = leaves(siteNavigation('synthetic-user'))
+    for (const [path, tool] of Object.entries({ '/system': 'system-overview', '/system/containers': 'system-containers' } as const)) {
+        expect(nativeToolForPath(path)).toBe(tool)
+        expect(items.find(item => item.path === path)?.tab).toBe('Tools')
+    }
+})

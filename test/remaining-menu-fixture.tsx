@@ -12,6 +12,8 @@ import { LoadTestsScreen } from '../src/screens/LoadTestsScreen'
 import { OrganizationPrivacyScreen } from '../src/screens/OrganizationPrivacyScreen'
 import ArticlesScreen from '../src/screens/ArticlesScreen'
 import ThoughtsScreen from '../src/screens/ThoughtsScreen'
+import { SystemScreen } from '../src/screens/SystemScreen'
+import { systemServices, type SystemServices } from '../src/features/system/services'
 import { createPublishingApi } from '../src/features/publishing/api'
 import * as Crypto from 'expo-crypto'
 import type { PrivacyTransport } from '../src/features/privacy/api'
@@ -38,6 +40,16 @@ const tests = [{ id: 'fixture-scan', url: 'https://target.synthetic.invalid/chec
     previous_run_summary: { requests: 30, duration: { p95: 35 } }, p95_delta_ms: 5 }]
 const articles = Array.from({ length: 24 }, (_, index) => ({ id: `fixture-article-${index}.md`, organization_id: org.id, title: `Synthetic article ${index}`, content: `# Synthetic article ${index}\n\n**Public synthetic text**, [a link](https://synthetic.invalid) and a table.\n\n| Topic | State |\n| --- | --- |\n| Native editor | Ready |`, created: at, modified: at, metadata: { wordCount: 20, estimatedMinutes: 1 } }))
 const thoughts = Array.from({ length: 24 }, (_, index) => ({ id: index + 1, organization_id: org.id, title: `Synthetic thought ${index}`, created_by: settings.userId, created_at: at }))
+const containers = Array.from({ length: 32 }, (_, index) => ({ id: (index + 1).toString(16).padStart(64, '0'), name: `synthetic-container-${index}`, image: 'synthetic/image:fixture', state: 'running', health: 'healthy', restart_count: 0, uptime_seconds: 60, ports: [{ ip: '127.0.0.1', private_port: 8080, public_port: 18080 + index, type: 'tcp' }], stats: { cpu_percent: index, memory_bytes: 1024 * 1024, memory_limit_bytes: 1024 * 1024 * 1024, memory_percent: 0.1 } }))
+let cleanupQueued = false
+const sampleTime = () => new Date().toISOString()
+function systemSnapshot() {
+    const sampled = sampleTime()
+    return { generated_at: sampled, systemTelemetry: { system: { load: [0, 1, 2], memory: { used: 0, total: 1024 ** 3, percent: 0 } } }, dockerTelemetry: { containers, source: 'synthetic Docker', generated_at: sampled }, vms: [] }
+}
+function systemStorage() {
+    return { cacheBytes: 1024 ** 3, reclaimableCacheBytes: 512 * 1024 ** 2, cacheBudgetBytes: 2 * 1024 ** 3, checkedAt: sampleTime(), lastSuccessAt: at, lastFreedBytes: 0, running: false, queued: cleanupQueued, stale: false, error: '', schedule: '03:00', timezone: 'Europe/Oslo', phase: cleanupQueued ? 'queued' : '', unusedImages: [{ id: 'synthetic-image', names: ['synthetic/image:old'], sizeBytes: 1024 ** 2, eligible: true, retainedReason: '' }] }
+}
 let hold = false, fail = false, release: (() => void) | undefined
 const sockets = new Set<LoadSocket>()
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
@@ -50,9 +62,9 @@ function privacyState(offset = 0, limit = 50) {
         items: privacyItems.slice(offset, offset + limit), itemPage: { offset, limit, nextOffset: offset + limit < privacyItems.length ? offset + limit : null },
         protection: { protected_events: 65, access_recovery_holds: 1, immutable_system_events: 2, immutable_webhook_audit_events: 3, immutable_log_events: 4, explanation: 'Synthetic protected evidence remains.' } }
 }
-async function finishWrite(value: unknown) {
+async function finishWrite(value: unknown, status = 200) {
     if (hold) await new Promise<void>(resolve => { release = resolve })
-    return fail ? json({ error: 'Synthetic response lost after the change was saved.' }, 500) : json(value)
+    return fail ? json({ error: 'Synthetic response lost after the change was saved.' }, 500) : json(value, status)
 }
 globalThis.fetch = Object.assign(async (...[input, init]: Parameters<typeof fetch>) => {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url)
@@ -60,6 +72,16 @@ globalThis.fetch = Object.assign(async (...[input, init]: Parameters<typeof fetc
     const headers = new Headers(init?.headers)
     if (headers.get('authorization') !== 'Bearer synthetic-token' || headers.get('id') !== settings.userId) return json({ error: 'Synthetic actor headers missing.' }, 401)
     const method = init?.method || 'GET', body = init?.body ? JSON.parse(String(init.body)) : {}
+    if (method === 'GET' && url.pathname === '/api/system/snapshot') return json(systemSnapshot())
+    if (method === 'GET' && url.pathname === '/api/system/storage') return json(systemStorage())
+    if (method === 'POST' && url.pathname === '/api/system/storage/clear') { cleanupQueued = true; return finishWrite({ queued: true }, 202) }
+    if (method === 'GET' && url.pathname.startsWith('/api/restart/')) {
+        const item = containers.find(item => item.id === url.pathname.split('/').pop())
+        if (!item) return json({ error: 'Synthetic container missing.' }, 404)
+        item.restart_count += 1
+        return finishWrite({ ok: true, detail: { message: 'Synthetic restart accepted.' } })
+    }
+    if (method === 'GET' && url.pathname === '/api/logs/realtime') return json({ generated_at: sampleTime(), source: 'synthetic Docker runtime', runtime_available: true, native_available: false, logs: Array.from({ length: 30 }, (_, index) => ({ id: `synthetic-runtime-${index}`, service: url.searchParams.get('service'), level: 'info', message: `Synthetic runtime line ${index}`, created_at: at, source: 'synthetic Docker' })) })
     if (method === 'GET' && url.pathname === '/api/organizations') return json({ organizations: [{ ...org, role: 'owner', lifecycleStatus: 'active' }] })
     if (/^\/api\/(?:articles|article\/|thoughts|thought\/)/.test(url.pathname)) {
         if (headers.get('x-organization-id') !== org.id) return json({ error: 'Synthetic content scope missing.' }, 403)
@@ -221,6 +243,16 @@ const publishingTransport: import('../src/features/publishing/api').PublishingFe
 const publishingDigest = (value: string) => Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, value)
 const articleServices = { api: createPublishingApi(settings, 'articles', publishingTransport), digest: publishingDigest }
 const thoughtServices = { api: createPublishingApi(settings, 'thoughts', publishingTransport), digest: publishingDigest }
+const systemFixtureServices: SystemServices = {
+    ...systemServices(settings),
+    live: async (signal, observer) => {
+        const emit = () => { const snapshot = systemSnapshot(); observer.data({ type: 'snapshot', system: snapshot.systemTelemetry, docker: snapshot.dockerTelemetry }); observer.status('Synthetic live telemetry') }
+        const timer = setInterval(() => { if (!signal.aborted) emit() }, 1000)
+        const stop = () => { clearInterval(timer); signal.removeEventListener('abort', stop) }
+        signal.addEventListener('abort', stop, { once: true }); if (signal.aborted) stop()
+        return stop
+    },
+}
 function Fixture() {
     const [mode, setMode] = useState('Users'), [event, setEvent] = useState('No synthetic operations yet')
     return <View style={{ flex: 1 }}>
@@ -228,7 +260,8 @@ function Fixture() {
             <Text style={{ color: '#b2b9c2' }}>Synthetic only · no external requests</Text>
             <Text style={{ color: '#b2b9c2' }}>{event}</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                {['Users', 'Load testing', 'Thesis', 'Privacy', 'Articles', 'Thoughts'].map(name => <PillButton key={name} small label={`Fixture ${name}`} onPress={() => setMode(name)} />)}
+                {['Users', 'Load testing', 'Thesis', 'Privacy', 'Articles', 'Thoughts', 'System', 'Containers'].map(name => <PillButton key={name} small label={`Fixture ${name}`} onPress={() => setMode(name)} />)}
+                <PillButton small label='Finish synthetic cleanup' onPress={() => { cleanupQueued = false; setEvent('Synthetic cleanup idle') }} />
                 <PillButton small label='Toggle held response' onPress={() => { hold = !hold; setEvent(`Hold: ${hold}`) }} />
                 <PillButton small label='Release response' onPress={() => { release?.(); release = undefined; setEvent('Released synthetic response') }} />
                 <PillButton small label='Toggle saved-but-error' onPress={() => { fail = !fail; setEvent(`Saved then error: ${fail}`) }} />
@@ -236,7 +269,7 @@ function Fixture() {
                 <PillButton small label='Emit shared document change' onPress={() => { shared = { ...shared, revision: shared.revision + 1, body: shared.body + '\n\nSynthetic other-editor change.' }; versions.unshift(clone(shared)); for (const receive of thesisListeners) receive(clone(shared)) }} />
             </View>
         </View>
-        {mode === 'Users' ? <UserManagementScreen settings={settings} onSelectOrganization={id => setEvent(`Open organization: ${id}`)} /> : mode === 'Articles' ? <ArticlesScreen settings={settings} services={articleServices} /> : mode === 'Thoughts' ? <ThoughtsScreen settings={settings} services={thoughtServices} /> : mode === 'Privacy' ? <OrganizationPrivacyScreen settings={settings} transport={privacyTransport} exportFile={privacyShare} /> : mode === 'Thesis' ? <ThesisScreen settings={settings} services={thesisServices} /> : <LoadTestsScreen settings={settings} liveTransport={liveTransport} />}
+        {mode === 'Users' ? <UserManagementScreen settings={settings} onSelectOrganization={id => setEvent(`Open organization: ${id}`)} /> : mode === 'System' || mode === 'Containers' ? <SystemScreen settings={settings} mode={mode === 'System' ? 'overview' : 'containers'} services={systemFixtureServices} onOpenLogs={name => setEvent(`Synthetic Logs: ${name || 'all'}`)} onOpenVms={() => setEvent('Synthetic VM inventory handoff')} /> : mode === 'Articles' ? <ArticlesScreen settings={settings} services={articleServices} /> : mode === 'Thoughts' ? <ThoughtsScreen settings={settings} services={thoughtServices} /> : mode === 'Privacy' ? <OrganizationPrivacyScreen settings={settings} transport={privacyTransport} exportFile={privacyShare} /> : mode === 'Thesis' ? <ThesisScreen settings={settings} services={thesisServices} /> : <LoadTestsScreen settings={settings} liveTransport={liveTransport} />}
     </View>
 }
 registerRootComponent(() => <GestureHandlerRootView style={{ flex: 1 }}><AppThemeProvider mode='obsidian'><NavigationContainer><Stack.Navigator screenOptions={{ headerShown: false }}><Stack.Screen name='SyntheticRemainingMenu' component={Fixture} /></Stack.Navigator></NavigationContainer></AppThemeProvider></GestureHandlerRootView>)
