@@ -145,5 +145,11 @@ export async function createCheckout(s: AppSettings, target: string, products: A
     requireOwn(s); const product = requireCurrent(s, products)
     if (!product.plans.some(p => p.id === 'failover') || !product.containers.some(vm => vm.name === target && vm.failover_premium === false)) throw new VmError('Refresh eligible containers and products before checkout.')
     const r = await vmRequest(s, 'billing/container-checkout', 'POST', signal, options, { vmName: name(target), feature: 'failover' }, true)
-    return receipt(r, 200, result => ({ url: httpsUrl(object(result).url) }))
+    return receipt(r, 200, parseCheckout)
+}
+
+function parseCheckout(value: unknown) {
+    const url = httpsUrl(object(value).url), parsed = new URL(url)
+    if (parsed.origin !== 'https://checkout.stripe.com' || parsed.username || parsed.password || parsed.port) throw new VmError('The checkout receipt does not identify Stripe Checkout.')
+    return { url }
 }

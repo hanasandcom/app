@@ -170,3 +170,22 @@ test('unsafe service URL, traversal targets, oversize and nonJSON responses fail
     await expect(api.power(s, vm(), permission(), 'start', signal(), { transport: async () => new Response('unreadable') })).rejects.toMatchObject({ uncertain: true })
     expect(transport.utf8Size('Ø😀')).toBe(6)
 })
+
+test('checkout receipts permit only the exact HTTPS Stripe Checkout origin', async () => {
+    const products = model.scoped(s, { plans: [{ id: 'failover' as const, name: 'Failover', priceNok: 49, currency: 'NOK' as const, interval: 'month' as const }], containers: [{ name: 'synthetic-vm', primary_host: 'inspur', failover_premium: false }] })
+    for (const url of [
+        'https://checkout.stripe.com.evil.invalid/c/pay/synthetic',
+        'https://evil.invalid/checkout.stripe.com',
+        'https://checkout.stripe.com@evil.invalid/c/pay/synthetic',
+        'https://user:password@checkout.stripe.com/c/pay/synthetic',
+        'https://checkout.stripe.com:8443/c/pay/synthetic',
+        'http://checkout.stripe.com/c/pay/synthetic',
+        'https://checkout.stripe.com./c/pay/synthetic',
+    ]) {
+        respond({ url })
+        await expect(api.createCheckout(s, 'synthetic-vm', products, signal())).rejects.toMatchObject({ uncertain: true })
+    }
+    const url = 'https://checkout.stripe.com:443/c/pay/synthetic#provider-fragment'
+    respond({ url }); expect(await api.createCheckout(s, 'synthetic-vm', products, signal())).toEqual({ url })
+    expect(setup.httpsUrl('https://gallery.synthetic.invalid/photo.png')).toBe('https://gallery.synthetic.invalid/photo.png')
+})
