@@ -1,4 +1,4 @@
-import { caseWebsitePath, monitoredActorsWebsitePath, type WebsiteCaseRef } from './lib/workspace-links'
+import { caseWebsitePath, monitoredActorsWebsitePath, websitePageUrl, type WebsiteCaseRef } from './lib/workspace-links'
 import { useEffect, useRef, useState } from 'react'
 import { NavigationContainer, DarkTheme, useNavigationContainerRef } from '@react-navigation/native'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
@@ -169,8 +169,10 @@ export default function App() {
 
     function openWebsite(path: string) {
         if (!settings) return
-        void WebBrowser.openBrowserAsync(`${settings.siteBaseUrl.replace(/\/+$/, '')}${path}`)
-            .catch(error => Alert.alert('Unable to open page', String(error)))
+        try {
+            void WebBrowser.openBrowserAsync(websitePageUrl(settings.siteBaseUrl, path))
+                .catch(error => Alert.alert('Unable to open page', String(error)))
+        } catch (error) { Alert.alert('Unable to open page', String(error)) }
     }
     function openCase(ref: WebsiteCaseRef) {
         try { openWebsite(caseWebsitePath(ref)) }
@@ -183,7 +185,7 @@ export default function App() {
     function openPage(item: SiteNavigationItem) {
         if (!navigation.isReady()) return
         if (item.disabledReason && item.path) {
-            void WebBrowser.openBrowserAsync(`${settings!.siteBaseUrl.replace(/\/+$/, '')}${item.path}`).catch(error => Alert.alert('Unable to open page', String(error)))
+            openWebsite(item.path)
             return
         }
         switch (item.tab) {

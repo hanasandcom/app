@@ -46,6 +46,8 @@ Rule Tuning uses the fixed Hanasand workspace: review log patterns, edit and pre
 
 Thesis opens the shared Hanasand document in a native editor with sheet switching, Markdown and tables, Plan, Timetable and PDF sharing. It uses revision checks, explicit conflict review, version history, source inventory and review, and a dependency graph. Unsaved drafts are encrypted on the device. Editing requires fresh Thesis permissions on your own account; an interrupted save requires reconciliation before another write. These workflows have local contract and model checks; device behavior and production authorization still need verification.
 
+TI administration website links open the owning `ti.hanasand.com/dashboard/ti/` pages. The old Core `/ti/` aliases can resolve as public search queries after redirecting. Custom website origins remain configurable; `EXPO_PUBLIC_TI_SITE_URL` selects the TI website when needed. Native TI operator parity still needs compatible service authentication and full snapshot endpoints.
+
 ## Mobile releases
 
 Mobile builds use [EAS Build](https://docs.expo.dev/build/introduction/) and the manual GitHub Actions workflow at **Actions → Mobile EAS build → Run workflow**. It supports iOS, Android, or both, with a `preview` (internal distribution) or `production` (store-signed artifact) profile. The workflow only builds artifacts; it does not submit them to either app store or publish an update. Preview builds are the default.
