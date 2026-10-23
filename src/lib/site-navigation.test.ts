@@ -121,7 +121,7 @@ describe('native website navigation', () => {
         const items = leaves(siteNavigation('account-id'))
         expect(items.some(item => item.opensWebsite)).toBe(true)
         expect(items.filter(item => item.opensWebsite).map(item => item.path).sort()).toEqual([
-            '/sandbox', '/scanner', '/ti/runs', '/ti/sources', '/traffic/blocklist',
+            '/sandbox', '/scanner', '/ti/runs', '/ti/sources',
         ])
         expect(nativeToolForPath('/findings/actors')).toBe('actors')
         expect(items.find(item => item.path === '/ti/activity')?.tab).toBe('Tools')
@@ -137,12 +137,17 @@ describe('native website navigation', () => {
             '/scanner': 'https://hanasand.com/scanner',
             '/ti/runs': 'https://ti.hanasand.com/dashboard/ti/runs',
             '/ti/sources': 'https://ti.hanasand.com/dashboard/ti/sources?scope=global',
-            '/traffic/blocklist': 'https://hanasand.com/traffic/blocklist',
         }
         for (const [path, destination] of Object.entries(expected)) {
             expect(items.find(item => item.path === path)?.opensWebsite).toBe(true)
             expect(websitePageUrl('https://hanasand.com', path, '')).toBe(destination)
         }
+    })
+    it('opens the existing CDN blocklist API in the native traffic workflow', () => {
+        const item = leaves(siteNavigation('account-id')).find(row => row.path === '/traffic/blocklist')
+        expect(item?.tab).toBe('Tools')
+        expect(item?.opensWebsite).toBeUndefined()
+        expect(nativeToolForPath('/traffic/blocklist')).toBe('traffic-blocklist')
     })
 })
 

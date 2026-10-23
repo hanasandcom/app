@@ -25,6 +25,7 @@ const tools: Record<string, RootTabParamList['Tools']['tool']> = {
     '/findings/delivery': 'integrations',
     '/system/ai': 'ai-metrics',
     '/traffic/map': 'traffic-map',
+    '/traffic/blocklist': 'traffic-blocklist',
     '/traffic': 'traffic-overview',
     '/traffic/recent': 'traffic-recent',
     '/system/rates': 'rate-limits',
