@@ -16,6 +16,7 @@ const tools: Record<string, RootTabParamList['Tools']['tool']> = {
     '/findings': 'findings',
     '/findings/actors': 'actors',
     '/ti/activity': 'latest-activity',
+    '/ti/runs': 'ti-runs',
     '/rules/tuning': 'rule-tuning',
     '/api': 'api-reference',
     '/api/openapi': 'openapi-json',

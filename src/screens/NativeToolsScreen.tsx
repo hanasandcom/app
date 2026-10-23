@@ -32,6 +32,7 @@ import { RulesScreen } from './RulesScreen'
 import { OrganizationApiKeysScreen } from './OrganizationApiKeysScreen'
 import { ServiceAccountsScreen } from './ServiceAccountsScreen'
 import { TrafficBlocklistScreen } from './TrafficBlocklistScreen'
+import { TiCollectionRunsScreen } from './TiCollectionRunsScreen'
 
 export function NativeToolsScreen({ settings, tool, onManageSshKeys, onSelectOrganization, onConfigureDelivery, onOpenCase, onViewAiLogs, onOpenVms, onOpenHealthCheck, onOpenVmCheckout, onOpenIntelligenceCases, onOpenActor, onOpenMonitoredActors, onOpenApiJson, onOpenGuide, initialQuery, initialCaseId }: {
     settings: AppSettings; tool: RootTabParamList['Tools']['tool']; onManageSshKeys: () => void
@@ -65,6 +66,7 @@ export function NativeToolsScreen({ settings, tool, onManageSshKeys, onSelectOrg
         case 'ai-metrics': return <AiMetricsScreen settings={settings} onViewLogs={onViewAiLogs} />
         case 'traffic-map': return <TrafficMapScreen settings={settings} />
         case 'traffic-blocklist': return <TrafficBlocklistScreen settings={settings} />
+        case 'ti-runs': return <TiCollectionRunsScreen settings={settings} />
         case 'traffic-overview': return <TrafficScreen settings={settings} mode='overview' />
         case 'traffic-recent': return <TrafficScreen settings={settings} mode='recent' />
         case 'rate-limits': return <RateLimitsScreen settings={settings} />

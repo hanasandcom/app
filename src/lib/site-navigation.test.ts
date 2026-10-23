@@ -121,7 +121,7 @@ describe('native website navigation', () => {
         const items = leaves(siteNavigation('account-id'))
         expect(items.some(item => item.opensWebsite)).toBe(true)
         expect(items.filter(item => item.opensWebsite).map(item => item.path).sort()).toEqual([
-            '/sandbox', '/scanner', '/ti/runs', '/ti/sources',
+            '/sandbox', '/scanner', '/ti/sources',
         ])
         expect(nativeToolForPath('/findings/actors')).toBe('actors')
         expect(items.find(item => item.path === '/ti/activity')?.tab).toBe('Tools')
@@ -135,7 +135,6 @@ describe('native website navigation', () => {
         const expected: Record<string, string> = {
             '/sandbox': 'https://hanasand.com/sandbox',
             '/scanner': 'https://hanasand.com/scanner',
-            '/ti/runs': 'https://ti.hanasand.com/dashboard/ti/runs',
             '/ti/sources': 'https://ti.hanasand.com/dashboard/ti/sources?scope=global',
         }
         for (const [path, destination] of Object.entries(expected)) {
@@ -148,6 +147,12 @@ describe('native website navigation', () => {
         expect(item?.tab).toBe('Tools')
         expect(item?.opensWebsite).toBeUndefined()
         expect(nativeToolForPath('/traffic/blocklist')).toBe('traffic-blocklist')
+    })
+    it('opens the authenticated TI collection history natively', () => {
+        const item = leaves(siteNavigation('account-id')).find(row => row.path === '/ti/runs')
+        expect(item?.tab).toBe('Tools')
+        expect(item?.opensWebsite).toBeUndefined()
+        expect(nativeToolForPath('/ti/runs')).toBe('ti-runs')
     })
 })
 
