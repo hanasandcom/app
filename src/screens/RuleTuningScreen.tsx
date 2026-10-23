@@ -3,7 +3,7 @@ import { AppState, ScrollView, View } from 'react-native'
 import { useIsFocused } from '@react-navigation/native'
 import type { AppSettings } from '../types'
 import type { OrganizationRule, RuleDraft } from '../lib/organization-rules'
-import { loadTuningAccess, loadTuningSnapshot, listTuningRules, loadSavedTuningRule, refreshTuningSummary, sortTuningLogs, tuningPreset, tuningScope, TuningError, type TuningAccess, type TuningSnapshot, type TuningSort } from '../lib/rule-tuning'
+import { acknowledgeTuningRead, initialTuningReadState, invalidateTuningReconciliation, prepareTuningRead, requestTuningReconciliation, loadTuningAccess, loadTuningSnapshot, listTuningRules, loadSavedTuningRule, refreshTuningSummary, sortTuningLogs, tuningPreset, tuningScope, TuningError, type TuningAccess, type TuningSnapshot, type TuningSort } from '../lib/rule-tuning'
 import { GlassCard, InlineNotice, PillButton, Screen, SectionTitle } from '../components/ui'
 import { RuleTuningEditor, TuningChoices, TuningInput, TuningText } from '../components/RuleTuningEditor'
 import { RuleReprocessPanel } from '../components/RuleReprocessPanel'
@@ -21,14 +21,17 @@ function TuningWorkspace({ settings }: { settings: AppSettings }) {
     const [ruleQuery, setRuleQuery] = useState(''), [rulePage, setRulePage] = useState(0)
     const [error, setError] = useState(''), [notice, setNotice] = useState(''), [loading, setLoading] = useState(false), [busy, setBusy] = useState(false), [blocked, setBlocked] = useState(false)
     const [sessionSignal, setSessionSignal] = useState<AbortSignal | null>(null)
-    const active = useRef(false), epoch = useRef(0), pending = useRef(false), authBlocked = useRef(false), manual = useRef(false)
+    const active = useRef(false), epoch = useRef(0), pending = useRef(false), authBlocked = useRef(false)
+    const reconciliation = useRef(initialTuningReadState()), snapshotRef = useRef<TuningSnapshot | null>(null)
     const controller = useRef<AbortController | null>(null), mutation = useRef<AbortController | null>(null)
     useEffect(() => {
         const listener = AppState.addEventListener('change', state => {
             if (state !== 'active') {
                 active.current = false; epoch.current++; controller.current?.abort(); mutation.current?.abort()
+                reconciliation.current = invalidateTuningReconciliation(reconciliation.current); snapshotRef.current = null
                 setInitial(null); setRule(null); setSavedRules([]); setSnapshot(null); setAccess(null)
                 if (pending.current) setBlocked(true)
+                setLoading(false); setBusy(false)
             }
             setForeground(state === 'active')
         })
@@ -38,29 +41,36 @@ function TuningWorkspace({ settings }: { settings: AppSettings }) {
         if (!focused || !foreground) {
             active.current = false; epoch.current++; controller.current?.abort(); mutation.current?.abort()
             if (pending.current) setBlocked(true)
+            setLoading(false); setBusy(false)
+            reconciliation.current = invalidateTuningReconciliation(reconciliation.current); snapshotRef.current = null
             setInitial(null); setRule(null); setSnapshot(null); setSavedRules([]); setAccess(null)
             return
         }
-        if (authBlocked.current && !manual.current) return
-        const explicit = manual.current; manual.current = false
+        if (authBlocked.current && !reconciliation.current.pending) return
         const current = ++epoch.current, abort = new AbortController()
         controller.current = abort; active.current = true; setSessionSignal(abort.signal)
         let timer: ReturnType<typeof setTimeout> | undefined
         async function read() {
             if (abort.signal.aborted || !active.current || current !== epoch.current) return
             if (pending.current) { timer = setTimeout(() => void read(), 10000); return }
-            if (!snapshot) setLoading(true)
+            const readPlan = prepareTuningRead(reconciliation.current, snapshotRef.current !== null)
+            reconciliation.current = readPlan.state
+            if (readPlan.loading) setLoading(true)
             try {
                 const verified = await loadTuningAccess(settings, abort.signal)
                 if (!verified.canRead) throw new TuningError('Active Hanasand membership is required.', 403)
                 const [data, rules] = await Promise.all([loadTuningSnapshot(settings, verified, abort.signal), listTuningRules(settings, verified, abort.signal)])
                 if (abort.signal.aborted || !active.current || current !== epoch.current) return
+                snapshotRef.current = data
                 setAccess(verified); setSnapshot(data); setSavedRules(rules); setError('')
-                if (explicit) { setBlocked(false); authBlocked.current = false }
+                const acknowledgement = acknowledgeTuningRead(reconciliation.current, readPlan.ticket)
+                reconciliation.current = acknowledgement.state
+                if (acknowledgement.accepted) { setBlocked(false); authBlocked.current = false }
                 timer = setTimeout(() => void read(), data.pending || data.refreshing ? 15000 : 10000)
             } catch (cause) {
                 if (!abort.signal.aborted && active.current && current === epoch.current) {
                     setError(message(cause)); setBlocked(true)
+                    reconciliation.current = invalidateTuningReconciliation(reconciliation.current)
                     if (cause instanceof TuningError && [401, 403].includes(cause.status)) { authBlocked.current = true; setBlocked(true) }
                 }
             } finally { if (current === epoch.current && !abort.signal.aborted) setLoading(false) }
@@ -70,19 +80,24 @@ function TuningWorkspace({ settings }: { settings: AppSettings }) {
     }, [focused, foreground, revision, settings])
     function refresh() {
         if (pending.current) return
-        controller.current?.abort(); epoch.current++; manual.current = true; setRevision(value => value + 1)
+        reconciliation.current = requestTuningReconciliation(reconciliation.current)
+        controller.current?.abort(); epoch.current++; setRevision(value => value + 1)
     }
-    function denied() { authBlocked.current = true; setBlocked(true); setError('Access could not be verified. Refresh manually before continuing.') }
-    function uncertain() { setBlocked(true); setNotice('An operation may already have been saved. Refresh and review saved rules and job status before any further action.') }
+    function denied() { reconciliation.current = invalidateTuningReconciliation(reconciliation.current); authBlocked.current = true; setBlocked(true); setError('Access could not be verified. Refresh manually before continuing.') }
+    function uncertain() { reconciliation.current = invalidateTuningReconciliation(reconciliation.current); setBlocked(true); setNotice('An operation may already have been saved. Refresh and review saved rules and job status before any further action.') }
+    function childBusy(value: boolean) {
+        if (value) reconciliation.current = invalidateTuningReconciliation(reconciliation.current)
+        pending.current = value; setBusy(value)
+    }
     const complete = useCallback(() => { setNotice('A reprocessing run completed. Review its results, then refresh the summary.') }, [])
     async function refreshSummary() {
         if (!access || blocked || pending.current || !active.current || !sessionSignal) return
         const current = epoch.current, abort = new AbortController(); mutation.current = abort
         const cancel = () => abort.abort(); sessionSignal.addEventListener('abort', cancel, { once: true })
-        pending.current = true; setBusy(true)
+        childBusy(true)
         try {
             await refreshTuningSummary(settings, access, abort.signal)
-            if (active.current && !abort.signal.aborted && current === epoch.current) { setNotice('Summary refresh queued. The stored snapshot remains visible while it updates.'); setBlocked(false) }
+            if (active.current && !abort.signal.aborted && current === epoch.current) { setNotice('Summary refresh queued. The stored snapshot remains visible while it updates.') }
         } catch (cause) {
             if (active.current && current === epoch.current) { setError(message(cause)); if (cause instanceof TuningError && [401, 403].includes(cause.status)) denied(); if (!(cause instanceof TuningError) || cause.uncertain) uncertain() }
         } finally {
@@ -93,7 +108,7 @@ function TuningWorkspace({ settings }: { settings: AppSettings }) {
     async function selectSaved(id: string) {
         if (!access || !sessionSignal || pending.current || !active.current) return
         const current = epoch.current
-        pending.current = true; setBusy(true)
+        childBusy(true)
         try {
             const value = await loadSavedTuningRule(settings, access, id, sessionSignal)
             if (active.current && current === epoch.current && !sessionSignal.aborted) { setRule(value); setInitial(null); scroll.current?.scrollTo({ y: 0, animated: false }) }
@@ -113,14 +128,14 @@ function TuningWorkspace({ settings }: { settings: AppSettings }) {
         {access && !access.canWrite && <InlineNotice message='Read-only view. Changes require verified active Hanasand editing access in your own account.' />}
         {focused && foreground && initial && access && sessionSignal && <RuleTuningEditor key={editorKey} settings={settings} access={access} initial={initial} signal={sessionSignal} disabled={disabled}
             onCreated={value => { setRule(value); setInitial(null); setNotice('Rule saved. Existing logs have not been reprocessed.'); scroll.current?.scrollTo({ y: 0, animated: false }) }}
-            onBusy={value => { pending.current = value; setBusy(value) }} onDenied={denied} onUncertain={uncertain} onClose={() => setInitial(null)} />}
+            onBusy={childBusy} onDenied={denied} onUncertain={uncertain} onClose={() => setInitial(null)} />}
         {focused && foreground && rule && access && sessionSignal && <>
             <GlassCard style={{ gap: 10 }}>
                 <SectionTitle title='Saved rule' eyebrow={`Version ${rule.version}`} body={rule.name} />
                 <TuningText>{rule.definition.stage} · {rule.definition.action} · {rule.enabled ? 'Enabled' : 'Disabled'}</TuningText>
                 <PillButton label='Close saved rule' disabled={busy} onPress={() => { if (active.current && !pending.current) setRule(null) }} />
             </GlassCard>
-            {rule.enabled && rule.definition.stage === 'analyze' && rule.definition.action === 'drop' && <RuleReprocessPanel key={`${rule.id}:${rule.version}`} settings={settings} access={access} rule={rule} signal={sessionSignal} disabled={disabled} onBusy={value => { pending.current = value; setBusy(value) }} onDenied={denied} onUncertain={uncertain} onComplete={complete} />}
+            {rule.enabled && rule.definition.stage === 'analyze' && rule.definition.action === 'drop' && <RuleReprocessPanel key={`${rule.id}:${rule.version}`} settings={settings} access={access} rule={rule} signal={sessionSignal} disabled={disabled} onBusy={childBusy} onDenied={denied} onUncertain={uncertain} onComplete={complete} />}
         </>}
         <GlassCard style={{ gap: 12 }}>
             <SectionTitle title='Stored log patterns' eyebrow='Sampled summary' body='The 100 largest patterns grouped by message, IP and user agent. Counts and row sizes are estimates from a 1% page sample.' />

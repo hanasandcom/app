@@ -21,6 +21,27 @@ export class TuningError extends Error {
 export function tuningNativeHostKey(contextRevision: number, operationRevision: number) {
     return `${contextRevision}:${operationRevision}`
 }
+export type TuningReadTicket = { serial: number; operationRevision: number }
+export type TuningReadState = { operationRevision: number; serial: number; pending: TuningReadTicket | null; active: TuningReadTicket | null }
+export function initialTuningReadState(): TuningReadState {
+    return { operationRevision: 0, serial: 0, pending: null, active: null }
+}
+export function requestTuningReconciliation(state: TuningReadState): TuningReadState {
+    const serial = state.serial + 1
+    return { ...state, serial, pending: { serial, operationRevision: state.operationRevision }, active: null }
+}
+export function invalidateTuningReconciliation(state: TuningReadState): TuningReadState {
+    return { ...state, operationRevision: state.operationRevision + 1, pending: null, active: null }
+}
+export function prepareTuningRead(state: TuningReadState, hasSnapshot: boolean) {
+    const ticket = state.pending
+    return { state: { ...state, pending: null, active: ticket }, ticket, loading: !hasSnapshot || ticket !== null }
+}
+export function acknowledgeTuningRead(state: TuningReadState, ticket: TuningReadTicket | null) {
+    const accepted = ticket !== null && state.active?.serial === ticket.serial
+        && state.serial === ticket.serial && state.operationRevision === ticket.operationRevision
+    return { accepted, state: accepted ? { ...state, active: null } : state }
+}
 export type TuningInputState = { generation: number; active: boolean; pending: boolean; disabled: boolean }
 export function canEditTuningInput(current: TuningInputState, capturedGeneration: number) {
     return current.active && !current.pending && !current.disabled && current.generation === capturedGeneration

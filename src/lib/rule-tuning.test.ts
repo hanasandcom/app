@@ -170,7 +170,7 @@ test('pre-abort, insecure API and malformed auth stop before transport; auth rej
 })
 test('UI source guards lifecycle, confirmation epochs, manual unknown-write recovery and actual destructive disclosure', async () => {
     const screen = await Bun.file(new URL('../screens/RuleTuningScreen.tsx', import.meta.url)).text()
-    for (const required of ['key={tuningScope(settings)}', 'state !== \'active\'', 'controller.current?.abort()', 'mutation.current?.abort()', 'if (authBlocked.current && !manual.current) return', 'if (explicit) { setBlocked(false)', 'setInitial(null); setRule(null)', 'onBusy={value => { pending.current = value; setBusy(value) }}']) expect(screen).toContain(required)
+    for (const required of ['key={tuningScope(settings)}', 'state !== \'active\'', 'controller.current?.abort()', 'mutation.current?.abort()', 'if (authBlocked.current && !reconciliation.current.pending) return', 'if (acknowledgement.accepted) { setBlocked(false)', 'setInitial(null); setRule(null)', 'onBusy={childBusy}']) expect(screen).toContain(required)
     const editor = await Bun.file(new URL('../components/RuleTuningEditor.tsx', import.meta.url)).text()
     expect(editor).toContain('JSON.stringify(current.current.draft) !== snapshot')
     expect(editor).toContain('current.current.json !== null')
@@ -379,4 +379,51 @@ test('native host replacements are wired at operation, clear and context boundar
     }
     expect(panel).toContain('key={`acknowledge:${hostKey}`}')
     expect(panel).toContain('renewHosts(); epoch.current = invalidated.epoch')
+})
+
+test('manual reconciliation is one-use; later unknown operations cannot be unlocked by timer reads', () => {
+    let state = api.requestTuningReconciliation(api.initialTuningReadState())
+    const manual = api.prepareTuningRead(state, true); state = manual.state
+    const acknowledgement = api.acknowledgeTuningRead(state, manual.ticket); state = acknowledgement.state
+    expect(acknowledgement.accepted).toBe(true)
+    expect(api.acknowledgeTuningRead(state, manual.ticket).accepted).toBe(false)
+    state = api.invalidateTuningReconciliation(state) // A later create starts, then its outcome becomes unknown.
+    state = api.invalidateTuningReconciliation(state)
+    const timer = api.prepareTuningRead(state, true); state = timer.state
+    expect(timer.ticket).toBeNull()
+    expect(api.acknowledgeTuningRead(state, timer.ticket).accepted).toBe(false)
+    expect(api.acknowledgeTuningRead(state, manual.ticket).accepted).toBe(false)
+})
+test('manual read captured before a new operation cannot acknowledge its later unknown outcome', () => {
+    let state = api.requestTuningReconciliation(api.initialTuningReadState())
+    const inFlight = api.prepareTuningRead(state, true); state = inFlight.state
+    state = api.invalidateTuningReconciliation(state) // childBusy(true)
+    state = api.invalidateTuningReconciliation(state) // uncertain()
+    expect(api.acknowledgeTuningRead(state, inFlight.ticket).accepted).toBe(false)
+    state = api.requestTuningReconciliation(state)
+    const fresh = api.prepareTuningRead(state, true); state = fresh.state
+    expect(api.acknowledgeTuningRead(state, fresh.ticket).accepted).toBe(true)
+})
+test('ticket captures operation revision at Refresh click, not when the effect eventually starts', () => {
+    let state = api.requestTuningReconciliation(api.initialTuningReadState())
+    const clicked = state.pending
+    state = api.invalidateTuningReconciliation(state)
+    const laterEffect = api.prepareTuningRead(state, true)
+    expect(laterEffect.ticket).toBeNull()
+    expect(api.acknowledgeTuningRead(laterEffect.state, clicked).accepted).toBe(false)
+})
+test('only initial or explicit reads enable loading; ordinary ready polling preserves editor host state', async () => {
+    let state = api.initialTuningReadState()
+    expect(api.prepareTuningRead(state, false).loading).toBe(true)
+    expect(api.prepareTuningRead(state, true).loading).toBe(false)
+    state = api.requestTuningReconciliation(state)
+    const manual = api.prepareTuningRead(state, true)
+    expect(manual.loading).toBe(true)
+    expect(api.prepareTuningRead(api.acknowledgeTuningRead(manual.state, manual.ticket).state, true).loading).toBe(false)
+    const source = await Bun.file(new URL('../screens/RuleTuningScreen.tsx', import.meta.url)).text()
+    expect(source).toContain('prepareTuningRead(reconciliation.current, snapshotRef.current !== null)')
+    expect(source).toContain('acknowledgeTuningRead(reconciliation.current, readPlan.ticket)')
+    expect(source).toContain('if (value) reconciliation.current = invalidateTuningReconciliation')
+    expect(source).not.toContain('if (!snapshot) setLoading(true)')
+    expect(source).not.toContain('const explicit =')
 })
