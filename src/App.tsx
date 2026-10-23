@@ -35,6 +35,7 @@ import { getThemePalette, palette } from './theme/tokens'
 import { AppThemeProvider } from './theme/context'
 import { PendingDeletionError, refreshHanasandSession, startDesktopAgentCoverTraffic, stopDesktopAgentCoverTraffic, stopMobileImpersonation } from './lib/api'
 import { classifyRefreshFailure, sameSettingsSession, SessionTransition } from './lib/session'
+import { caseId as monitoringCaseId } from './features/cases/model'
 
 const Tab = createBottomTabNavigator<RootTabParamList>()
 type PendingDeletionDetails = { id: string; restoreToken: string; deletionScheduledAt: string }
@@ -62,6 +63,7 @@ async function safeLoad<T>(loader: () => Promise<T>, fallback: T) {
 
 export default function App() {
     const navigation = useNavigationContainerRef<RootTabParamList>()
+    const navigationHandoff = useRef(0)
     const [settings, setSettings] = useState<AppSettings | null>(null)
     const currentSettings = useRef(settings)
     currentSettings.current = settings
@@ -183,15 +185,25 @@ export default function App() {
         } catch (error) { Alert.alert('Unable to open page', String(error)) }
     }
     function openCase(ref: WebsiteCaseRef) {
-        try { openWebsite(caseWebsitePath(ref)) }
+        if (!sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)) return
+        try {
+            // Preserve explicit foreign-workspace context in the website handoff.
+            if (/^(HA|MON)-[1-9]\d*$/.test(ref.caseId) && (!ref.organizationId || ref.organizationId === settings?.selectedOrganizationId)) {
+                navigation.navigate('Tools', { tool: 'monitoring-cases', caseId: monitoringCaseId(ref.caseId), handoffId: ++navigationHandoff.current })
+            } else openWebsite(caseWebsitePath(ref))
+        }
         catch (error) { Alert.alert('Unable to open case', String(error)) }
+    }
+    function openHealthCheck(id: string) {
+        if (!sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)) return
+        navigation.navigate('Automations', { section: 'health', automationId: id, handoffId: ++navigationHandoff.current })
     }
     function openMonitoredActors(id: string) {
         try { openWebsite(monitoredActorsWebsitePath(id)) }
         catch (error) { Alert.alert('Unable to open actors', String(error)) }
     }
     function openPage(item: SiteNavigationItem) {
-        if (!navigation.isReady()) return
+        if (!navigation.isReady() || !sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)) return
         if (item.disabledReason && item.path) {
             openWebsite(item.path)
             return
@@ -208,10 +220,10 @@ export default function App() {
             case 'Images': navigation.navigate('Images'); break
             case 'Organizations': navigation.navigate('Organizations', { section: organizationSectionForPath(item.path) }); break
             case 'Watchlists': navigation.navigate('Watchlists'); break
-            case 'Automations': navigation.navigate('Automations', { section: item.path === '/automation/health' ? 'health' : 'cron' }); break
+            case 'Automations': navigation.navigate('Automations', { section: item.path === '/automation/health' ? 'health' : 'cron', automationId: undefined, handoffId: undefined }); break
             case 'Tools': {
                 const tool = nativeToolForPath(item.path)
-                if (tool) navigation.navigate('Tools', { tool })
+                if (tool) navigation.navigate('Tools', { tool, caseId: undefined, query: undefined, handoffId: undefined })
                 break
             }
             case 'Scan': navigation.navigate('Scan'); break
@@ -484,7 +496,7 @@ export default function App() {
                             </Tab.Screen>
                             <Tab.Screen name='Images'>{() => <ImagesScreen settings={settings} />}</Tab.Screen>
                             <Tab.Screen name='Automations'>
-                                {({ route }) => <AutomationsScreen settings={settings} section={route.params?.section} />}
+                                {({ route }) => <AutomationsScreen key={JSON.stringify([route.params?.automationId, route.params?.handoffId])} settings={settings} section={route.params?.section} initialAutomationId={route.params?.automationId} />}
                             </Tab.Screen>
                             <Tab.Screen name='Explore'>
                                 {() => <ExploreScreen settings={settings} access={navigationAccess} onOpen={openPage} />}
@@ -499,12 +511,14 @@ export default function App() {
                                 {({ route }) => <WorkspacePageScreen key={`${route.params.path}:${settings.selectedOrganizationId}`} settings={settings} path={route.params.path} title={route.params.title} />}
                             </Tab.Screen>
                             <Tab.Screen name='Tools'>
-                                {({ route }) => <NativeToolsScreen settings={settings} tool={route.params.tool} initialQuery={route.params.query} onManageSshKeys={() => navigation.navigate('Profile', { section: 'SSH keys' })}
+                                {({ route }) => <NativeToolsScreen key={JSON.stringify([route.params.tool, route.params.caseId, route.params.handoffId])} settings={settings} tool={route.params.tool} initialQuery={route.params.query} initialCaseId={route.params.caseId} onManageSshKeys={() => navigation.navigate('Profile', { section: 'SSH keys' })}
                                     onSelectOrganization={id => void openOrganizationWorkspace(id)}
                                     onConfigureDelivery={() => navigation.navigate('Tools', { tool: 'integrations' })}
                                     onOpenCase={openCase}
                                     onViewAiLogs={name => openWebsite(name ? `/logs?service=${encodeURIComponent(name)}` : '/logs')}
                                     onOpenVms={() => navigation.navigate('WorkspacePage', { path: '/vms', title: 'Virtual Machines' })}
+                                    onOpenHealthCheck={openHealthCheck}
+                                    onOpenIntelligenceCases={() => openWebsite('/cases')}
                                     onOpenActor={name => navigation.navigate('Tools', { tool: 'threat-search', query: name })}
                                     onOpenMonitoredActors={openMonitoredActors}
                                     onOpenApiJson={() => navigation.navigate('Tools', { tool: 'openapi-json' })}

@@ -13,6 +13,8 @@ import { OrganizationPrivacyScreen } from '../src/screens/OrganizationPrivacyScr
 import ArticlesScreen from '../src/screens/ArticlesScreen'
 import ThoughtsScreen from '../src/screens/ThoughtsScreen'
 import { SystemScreen } from '../src/screens/SystemScreen'
+import { CasesScreen } from '../src/screens/CasesScreen'
+import { caseServices } from '../src/features/cases/api'
 import { systemServices, type SystemServices } from '../src/features/system/services'
 import { createPublishingApi } from '../src/features/publishing/api'
 import * as Crypto from 'expo-crypto'
@@ -41,6 +43,9 @@ const tests = [{ id: 'fixture-scan', url: 'https://target.synthetic.invalid/chec
 const articles = Array.from({ length: 24 }, (_, index) => ({ id: `fixture-article-${index}.md`, organization_id: org.id, title: `Synthetic article ${index}`, content: `# Synthetic article ${index}\n\n**Public synthetic text**, [a link](https://synthetic.invalid) and a table.\n\n| Topic | State |\n| --- | --- |\n| Native editor | Ready |`, created: at, modified: at, metadata: { wordCount: 20, estimatedMinutes: 1 } }))
 const thoughts = Array.from({ length: 24 }, (_, index) => ({ id: index + 1, organization_id: org.id, title: `Synthetic thought ${index}`, created_by: settings.userId, created_at: at }))
 const containers = Array.from({ length: 32 }, (_, index) => ({ id: (index + 1).toString(16).padStart(64, '0'), name: `synthetic-container-${index}`, image: 'synthetic/image:fixture', state: 'running', health: 'healthy', restart_count: 0, uptime_seconds: 60, ports: [{ ip: '127.0.0.1', private_port: 8080, public_port: 18080 + index, type: 'tcp' }], stats: { cpu_percent: index, memory_bytes: 1024 * 1024, memory_limit_bytes: 1024 * 1024 * 1024, memory_percent: 0.1 } }))
+const caseRepoId = '12345678-abcd-1234-abcd-123456789abc'
+const caseRepositories = [{ id: caseRepoId, provider: 'forgejo', repository_url: 'https://git.synthetic.invalid/team/app', organization_id: org.id, can_manage: true }]
+const monitoringCases = Array.from({ length: 54 }, (_, index) => ({ id: `HA-${index + 1}`, source: 'monitoring', title: `Synthetic outage ${index + 1}`, summary: 'Synthetic health-check evidence', status: 'open', severity: 'high', canManage: true, organizationId: org.id, automationId: 'fixture-health', notificationsEnabled: true, occurrences: 2, assignedOwner: settings.userId, createdAt: at, updatedAt: at, lastSeenAt: at, comments: [] as Record<string, unknown>[], history: [] as Record<string, unknown>[], resolution: null as Record<string, unknown> | null, notifications: [], relatedChecks: [], currentCheck: { endpoint: 'https://target.synthetic.invalid/health', checkType: 'http' } }))
 let cleanupQueued = false
 const sampleTime = () => new Date().toISOString()
 function systemSnapshot() {
@@ -72,6 +77,40 @@ globalThis.fetch = Object.assign(async (...[input, init]: Parameters<typeof fetc
     const headers = new Headers(init?.headers)
     if (headers.get('authorization') !== 'Bearer synthetic-token' || headers.get('id') !== settings.userId) return json({ error: 'Synthetic actor headers missing.' }, 401)
     const method = init?.method || 'GET', body = init?.body ? JSON.parse(String(init.body)) : {}
+    if (url.pathname.startsWith('/api/cases/')) {
+        if (url.searchParams.get('organizationId') !== org.id) return json({ error: 'Synthetic case scope missing.' }, 403)
+        if (method === 'GET' && url.pathname === '/api/cases/monitoring') return json({ items: monitoringCases })
+        const match = /^\/api\/cases\/monitoring\/(HA-[1-9]\d*)$/.exec(url.pathname)
+        if (match) {
+            const item = monitoringCases.find(item => item.id === match[1])
+            if (!item) return json({ error: 'Synthetic case unavailable.' }, 404)
+            if (method === 'GET') {
+                const eventPage = Number(url.searchParams.get('eventsPage') || 0)
+                return json({ case: { ...item, eventPage, eventTotal: 51, eventSnapshot: url.searchParams.get('eventsAt') || at, events: Array.from({ length: eventPage === 0 ? 50 : 1 }, (_, index) => ({ id: `event-${eventPage * 50 + index}`, message: 'Synthetic failed result', outcome: 'failure', startedAt: at })) } })
+            }
+            if (method === 'PATCH') {
+                for (const field of ['status', 'severity', 'notificationsEnabled'] as const) if (body[field] !== undefined) Object.assign(item, { [field]: body[field] })
+                if (body.comment) item.comments.push({ id: `comment-${item.comments.length}`, body: body.comment, createdAt: at })
+                if (body.confirmResolutionId && item.resolution) item.resolution.confirmedAt = at
+                return finishWrite({ ok: true })
+            }
+        }
+        if (method === 'POST' && url.pathname === '/api/cases/monitoring/merge') {
+            for (const id of body.sourceIds || []) { const index = monitoringCases.findIndex(item => item.id === id); if (index >= 0) monitoringCases.splice(index, 1) }
+            return finishWrite({ ok: true, targetId: body.targetId, mergedIds: body.sourceIds })
+        }
+        if (method === 'GET' && url.pathname === '/api/cases/development') return json({ items: [{ id: 'synthetic-change', title: 'Synthetic linked commit', created_at: at }], hasMore: false })
+        if (url.pathname === '/api/cases/development/commits') {
+            if (method === 'GET') return json({ items: [{ external_id: 'a'.repeat(40), title: 'Synthetic fix', author: 'Fixture operator', created_at: at }], nextCursor: null })
+            if (method === 'POST') return finishWrite({ ok: true })
+        }
+        if (url.pathname === '/api/cases/repositories') {
+            if (method === 'GET') return json({ items: caseRepositories })
+            if (method === 'POST') return finishWrite({ id: caseRepoId, secret: 'a'.repeat(64), webhookPath: `/api/cases/repository-events/${caseRepoId}` }, 201)
+        }
+        if (method === 'DELETE' && url.pathname === `/api/cases/repositories/${caseRepoId}`) { caseRepositories.splice(0); return finishWrite({ ok: true }) }
+    }
+    if (method === 'GET' && url.pathname === '/api/organizations/fixture-org') return json({ organization: { id: org.id, lifecycleStatus: 'active', role: 'owner' } })
     if (method === 'GET' && url.pathname === '/api/system/snapshot') return json(systemSnapshot())
     if (method === 'GET' && url.pathname === '/api/system/storage') return json(systemStorage())
     if (method === 'POST' && url.pathname === '/api/system/storage/clear') { cleanupQueued = true; return finishWrite({ queued: true }, 202) }
@@ -253,6 +292,7 @@ const systemFixtureServices: SystemServices = {
         return stop
     },
 }
+const caseFixtureServices = caseServices(settings, { transport: (_settings, url, init) => fetch(url, init) })
 function Fixture() {
     const [mode, setMode] = useState('Users'), [event, setEvent] = useState('No synthetic operations yet')
     return <View style={{ flex: 1 }}>
@@ -260,7 +300,7 @@ function Fixture() {
             <Text style={{ color: '#b2b9c2' }}>Synthetic only · no external requests</Text>
             <Text style={{ color: '#b2b9c2' }}>{event}</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                {['Users', 'Load testing', 'Thesis', 'Privacy', 'Articles', 'Thoughts', 'System', 'Containers'].map(name => <PillButton key={name} small label={`Fixture ${name}`} onPress={() => setMode(name)} />)}
+                {['Users', 'Load testing', 'Thesis', 'Privacy', 'Articles', 'Thoughts', 'System', 'Containers', 'Cases'].map(name => <PillButton key={name} small label={`Fixture ${name}`} onPress={() => setMode(name)} />)}
                 <PillButton small label='Finish synthetic cleanup' onPress={() => { cleanupQueued = false; setEvent('Synthetic cleanup idle') }} />
                 <PillButton small label='Toggle held response' onPress={() => { hold = !hold; setEvent(`Hold: ${hold}`) }} />
                 <PillButton small label='Release response' onPress={() => { release?.(); release = undefined; setEvent('Released synthetic response') }} />
@@ -269,7 +309,7 @@ function Fixture() {
                 <PillButton small label='Emit shared document change' onPress={() => { shared = { ...shared, revision: shared.revision + 1, body: shared.body + '\n\nSynthetic other-editor change.' }; versions.unshift(clone(shared)); for (const receive of thesisListeners) receive(clone(shared)) }} />
             </View>
         </View>
-        {mode === 'Users' ? <UserManagementScreen settings={settings} onSelectOrganization={id => setEvent(`Open organization: ${id}`)} /> : mode === 'System' || mode === 'Containers' ? <SystemScreen settings={settings} mode={mode === 'System' ? 'overview' : 'containers'} services={systemFixtureServices} onOpenLogs={name => setEvent(`Synthetic Logs: ${name || 'all'}`)} onOpenVms={() => setEvent('Synthetic VM inventory handoff')} /> : mode === 'Articles' ? <ArticlesScreen settings={settings} services={articleServices} /> : mode === 'Thoughts' ? <ThoughtsScreen settings={settings} services={thoughtServices} /> : mode === 'Privacy' ? <OrganizationPrivacyScreen settings={settings} transport={privacyTransport} exportFile={privacyShare} /> : mode === 'Thesis' ? <ThesisScreen settings={settings} services={thesisServices} /> : <LoadTestsScreen settings={settings} liveTransport={liveTransport} />}
+        {mode === 'Cases' ? <CasesScreen settings={settings} services={caseFixtureServices} onOpenHealth={id => setEvent(`Synthetic health check: ${id}`)} onOpenIntelligence={() => setEvent('Synthetic intelligence handoff')} /> : mode === 'Users' ? <UserManagementScreen settings={settings} onSelectOrganization={id => setEvent(`Open organization: ${id}`)} /> : mode === 'System' || mode === 'Containers' ? <SystemScreen settings={settings} mode={mode === 'System' ? 'overview' : 'containers'} services={systemFixtureServices} onOpenLogs={name => setEvent(`Synthetic Logs: ${name || 'all'}`)} onOpenVms={() => setEvent('Synthetic VM inventory handoff')} /> : mode === 'Articles' ? <ArticlesScreen settings={settings} services={articleServices} /> : mode === 'Thoughts' ? <ThoughtsScreen settings={settings} services={thoughtServices} /> : mode === 'Privacy' ? <OrganizationPrivacyScreen settings={settings} transport={privacyTransport} exportFile={privacyShare} /> : mode === 'Thesis' ? <ThesisScreen settings={settings} services={thesisServices} /> : <LoadTestsScreen settings={settings} liveTransport={liveTransport} />}
     </View>
 }
 registerRootComponent(() => <GestureHandlerRootView style={{ flex: 1 }}><AppThemeProvider mode='obsidian'><NavigationContainer><Stack.Navigator screenOptions={{ headerShown: false }}><Stack.Screen name='SyntheticRemainingMenu' component={Fixture} /></Stack.Navigator></NavigationContainer></AppThemeProvider></GestureHandlerRootView>)

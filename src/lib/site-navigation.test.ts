@@ -170,3 +170,32 @@ it('opens System and Containers in their native runtime workflows', () => {
         expect(items.find(item => item.path === path)?.tab).toBe('Tools')
     }
 })
+
+it('opens the registered monitoring case workflow while keeping both collection contracts explicit', () => {
+    expect(nativeToolForPath('/cases')).toBe('monitoring-cases')
+    expect(leaves(siteNavigation('synthetic-user')).find(item => item.path === '/cases')?.tab).toBe('Tools')
+    expect(workspacePageDefinition('/cases')?.sections).toHaveLength(2)
+})
+
+it('fresh case and health handoffs remount even when the requested ID repeats', async () => {
+    // Model the native screen remount boundary: local selection B must not survive a new request for A.
+    let nonce = 0, mountedKey = '', selection = ''
+    const handoff = (id: string) => {
+        const key = JSON.stringify([id, ++nonce])
+        if (key !== mountedKey) { mountedKey = key; selection = id }
+    }
+    expect(selection).toBe('')
+    handoff('A'); expect(selection).toBe('A')
+    selection = 'B'; expect(selection).toBe('B')
+    handoff('A')
+    expect(selection).toBe('A')
+    expect(nonce).toBe(2)
+    const app = await Bun.file(new URL('../App.tsx', import.meta.url)).text()
+    expect(app).toContain('handoffId: ++navigationHandoff.current')
+    expect(app).toContain('key={JSON.stringify([route.params?.automationId, route.params?.handoffId])}')
+    expect(app).toContain('key={JSON.stringify([route.params.tool, route.params.caseId, route.params.handoffId])}')
+    const health = app.slice(app.indexOf('function openHealthCheck'), app.indexOf('function openMonitoredActors'))
+    expect(health.indexOf('sessionTransition.current')).toBeLessThan(health.indexOf('navigation.navigate'))
+    expect(app).toContain('onOpenHealthCheck={openHealthCheck}')
+    expect(app).toContain('automationId: undefined, handoffId: undefined')
+})

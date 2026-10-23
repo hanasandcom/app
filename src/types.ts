@@ -14,12 +14,12 @@ export type RootTabParamList = {
     Scan: undefined
     Notes: undefined
     Images: undefined
-    Automations: { section?: 'health' | 'cron' } | undefined
+    Automations: { section?: 'health' | 'cron'; automationId?: string; handoffId?: number } | undefined
     Explore: undefined
     Organizations: { section?: OrganizationSection } | undefined
     Watchlists: undefined
     WorkspacePage: { path: string; title: string }
-    Tools: { query?: string; tool: 'system-overview' | 'system-containers' | 'articles' | 'thoughts' | 'organization-privacy' | 'thesis' | 'load-tests' | 'user-management' | 'findings' | 'rule-tuning' | 'api-reference' | 'openapi-json' | 'support-desk' | 'organization-directory' | 'delivery-history' | 'integrations' | 'ai-metrics' | 'traffic-map' | 'traffic-overview' | 'traffic-recent' | 'rate-limits' | 'database' | 'backups' | 'threat-search' | 'password-check' | 'subscription' | 'host-updates' | 'hosts' | 'intel-profiles' | 'delivery-health' | 'api-keys' | 'rules-match' | 'rules-analysis' | 'rules-detection' }
+    Tools: { query?: string; caseId?: string; handoffId?: number; tool: 'monitoring-cases' | 'system-overview' | 'system-containers' | 'articles' | 'thoughts' | 'organization-privacy' | 'thesis' | 'load-tests' | 'user-management' | 'findings' | 'rule-tuning' | 'api-reference' | 'openapi-json' | 'support-desk' | 'organization-directory' | 'delivery-history' | 'integrations' | 'ai-metrics' | 'traffic-map' | 'traffic-overview' | 'traffic-recent' | 'rate-limits' | 'database' | 'backups' | 'threat-search' | 'password-check' | 'subscription' | 'host-updates' | 'hosts' | 'intel-profiles' | 'delivery-health' | 'api-keys' | 'rules-match' | 'rules-analysis' | 'rules-detection' }
 }
 
 export type AppSettings = {
