@@ -1,12 +1,28 @@
 import { nativeToolForPath } from './native-tool-navigation'
 import { describe, expect, it } from 'bun:test'
-import { siteNavigation, workspacePageDefinition, type SiteNavigationItem } from '../data/site-navigation'
+import { siteNavigation, toggleNavigationGroup, workspacePageDefinition, type SiteNavigationItem } from '../data/site-navigation'
+import { websitePageUrl } from './workspace-links'
 
 function leaves(items: SiteNavigationItem[]): SiteNavigationItem[] {
     return items.flatMap(item => item.items ? leaves(item.items) : [item])
 }
 
 describe('native website navigation', () => {
+    it('toggles collapsed top-level menu groups by their unique path key', () => {
+        const initial = { Workspace: true, Automation: true }
+        const expanded = toggleNavigationGroup(initial, 'Security & intelligence', false)
+        expect(expanded).toEqual({ Workspace: true, Automation: true, 'Security & intelligence': true })
+        expect(toggleNavigationGroup(expanded, 'Security & intelligence', true)['Security & intelligence']).toBe(false)
+    })
+
+    it('lets default-open groups collapse and keeps same-named nested groups independent', () => {
+        const initial = { Communication: true, 'Organization/Settings & billing': true }
+        const collapsed = toggleNavigationGroup(initial, 'Communication', initial.Communication)
+        expect(collapsed.Communication).toBe(false)
+        expect(collapsed['Organization/Settings & billing']).toBe(true)
+        expect(toggleNavigationGroup(initial, 'Organization/Settings & billing', initial['Organization/Settings & billing'])['Organization/Settings & billing']).toBe(false)
+    })
+
     it('uses both explicit case collections in every investigation and organization view', () => {
         const canonical = workspacePageDefinition('/cases')!.sections
         for (const path of ['/cases', '/organizations/events', '/organizations/activity']) {
@@ -33,6 +49,8 @@ describe('native website navigation', () => {
         expect(nativeToolForPath('/system/hosts')).toBe('hosts')
         expect(nativeToolForPath('/system/updates')).toBe('host-updates')
         expect(nativeToolForPath('/ti/profiles')).toBe('intel-profiles')
+        expect(nativeToolForPath('/findings/actors')).toBe('actors')
+        expect(nativeToolForPath('/ti/activity')).toBe('latest-activity')
         expect(nativeToolForPath('/ti/timeliness')).toBe('delivery-health')
         expect(nativeToolForPath('/organizations/api-keys')).toBe('api-keys')
         expect(nativeToolForPath('/management/service-accounts')).toBe('service-accounts')
@@ -85,50 +103,73 @@ describe('native website navigation', () => {
     it('opens account and workspace tasks in native screens', () => {
         const items = leaves(siteNavigation('account-id'))
         for (const tab of ['Profile', 'Mail', 'Notes', 'Images', 'Organizations', 'Automations']) {
-            expect(items.some(item => item.tab === tab && !item.disabledReason)).toBe(true)
+            expect(items.some(item => item.tab === tab && !item.opensWebsite)).toBe(true)
         }
         expect(items.some(item => item.label === 'Utilities')).toBe(false)
         expect(items.find(item => item.path === '/watchlists')?.tab).toBe('Watchlists')
-        expect(items.find(item => item.path === '/watchlists')?.disabledReason).toBeUndefined()
+        expect(items.find(item => item.path === '/watchlists')?.opensWebsite).toBeUndefined()
     })
 
     it('opens native Support queue while Profile keeps personal tickets', () => {
         const item = leaves(siteNavigation('account-id')).find(row => row.path === '/support')
         expect(item?.tab).toBe('Tools')
         expect(nativeToolForPath('/support')).toBe('support-desk')
-        expect(item?.disabledReason).toBeUndefined()
+        expect(item?.opensWebsite).toBeUndefined()
     })
 
     it('marks pages without a native workflow as website links', () => {
         const items = leaves(siteNavigation('account-id'))
-        expect(items.some(item => item.disabledReason)).toBe(true)
+        expect(items.some(item => item.opensWebsite)).toBe(true)
+        expect(items.filter(item => item.opensWebsite).map(item => item.path).sort()).toEqual([
+            '/sandbox', '/scanner', '/ti/runs', '/ti/sources', '/traffic/blocklist',
+        ])
+        expect(nativeToolForPath('/findings/actors')).toBe('actors')
+        expect(items.find(item => item.path === '/ti/activity')?.tab).toBe('Tools')
+        expect(items.find(item => item.path === '/ti/activity')?.opensWebsite).toBeUndefined()
         for (const item of items.filter(item => !item.tab && !workspacePageDefinition(item.path || ''))) {
-            expect(item.disabledReason).toBeTruthy()
+            expect(item.opensWebsite).toBe(true)
+        }
+    })
+    it('opens each website-owned menu route on the owning site page', () => {
+        const items = leaves(siteNavigation('account-id'))
+        const expected: Record<string, string> = {
+            '/sandbox': 'https://hanasand.com/sandbox',
+            '/scanner': 'https://hanasand.com/scanner',
+            '/ti/runs': 'https://ti.hanasand.com/dashboard/ti/runs',
+            '/ti/sources': 'https://ti.hanasand.com/dashboard/ti/sources?scope=global',
+            '/traffic/blocklist': 'https://hanasand.com/traffic/blocklist',
+        }
+        for (const [path, destination] of Object.entries(expected)) {
+            expect(items.find(item => item.path === path)?.opensWebsite).toBe(true)
+            expect(websitePageUrl('https://hanasand.com', path, '')).toBe(destination)
         }
     })
 })
 
 it('keeps delivery history separate from destination configuration and registers new menu jobs', () => {
     const items = leaves(siteNavigation('synthetic-user'))
-    for (const [path, tool] of Object.entries({ '/findings/delivery': 'delivery-history', '/findings/actions': 'integrations', '/system/ai': 'ai-metrics', '/management/organizations': 'organization-directory' } as const)) {
+    for (const [path, tool] of Object.entries({ '/findings/actions': 'delivery-history', '/findings/delivery': 'integrations', '/system/ai': 'ai-metrics', '/management/organizations': 'organization-directory' } as const)) {
         expect(nativeToolForPath(path)).toBe(tool)
-        expect(items.some(item => item.path === path && item.tab === 'Tools' && !item.disabledReason)).toBe(true)
+        expect(items.some(item => item.path === path && item.tab === 'Tools' && !item.opensWebsite)).toBe(true)
     }
-    expect(items.find(item => item.label === 'Integrations')?.path).toBe('/findings/actions')
+    expect(items.find(item => item.label === 'Delivery')?.path).toBe('/findings/actions')
+    expect(items.find(item => item.label === 'Integrations')?.path).toBe('/findings/delivery')
+    expect(items.find(item => item.label === 'Security Scanner')?.path).toBe('/scanner')
+    expect(items.some(item => item.label === 'Vulnerabilities')).toBe(false)
 })
 
 it('registers Findings investigation, Rule Tuning, API reference and complete JSON as native jobs', () => {
     const items = leaves(siteNavigation('synthetic-user'))
     for (const [path, tool] of Object.entries({ '/findings': 'findings', '/rules/tuning': 'rule-tuning', '/api': 'api-reference', '/api/openapi': 'openapi-json' } as const)) {
         expect(nativeToolForPath(path)).toBe(tool)
-        expect(items.some(item => item.path === path && item.tab === 'Tools' && !item.disabledReason)).toBe(true)
+        expect(items.some(item => item.path === path && item.tab === 'Tools' && !item.opensWebsite)).toBe(true)
     }
 })
 
 it('opens management Users in the native directory workflow', () => {
     const item = leaves(siteNavigation('synthetic-user')).find(row => row.path === '/management/users')
     expect(item?.tab).toBe('Tools')
-    expect(item?.disabledReason).toBeUndefined()
+    expect(item?.opensWebsite).toBeUndefined()
     expect(nativeToolForPath(item?.path)).toBe('user-management')
 })
 
@@ -143,14 +184,14 @@ it('shares the native load-test workflow between its public and administration m
 it('opens Thesis in its native shared document workflow', () => {
     const item = leaves(siteNavigation('synthetic-user')).find(row => row.path === '/thesis')
     expect(item?.tab).toBe('Tools')
-    expect(item?.disabledReason).toBeUndefined()
+    expect(item?.opensWebsite).toBeUndefined()
     expect(nativeToolForPath(item?.path)).toBe('thesis')
 })
 
 it('opens organization privacy in its native retention workflow', () => {
     const item = leaves(siteNavigation('synthetic-user')).find(row => row.path === '/organizations/privacy')
     expect(item?.tab).toBe('Tools')
-    expect(item?.disabledReason).toBeUndefined()
+    expect(item?.opensWebsite).toBeUndefined()
     expect(nativeToolForPath(item?.path)).toBe('organization-privacy')
 })
 
@@ -159,7 +200,7 @@ it('opens Articles and Thoughts in their native editorial workflows', () => {
     for (const [path, tool] of Object.entries({ '/content/articles': 'articles', '/content/thoughts': 'thoughts' } as const)) {
         const item = items.find(row => row.path === path)
         expect(item?.tab).toBe('Tools')
-        expect(item?.disabledReason).toBeUndefined()
+        expect(item?.opensWebsite).toBeUndefined()
         expect(nativeToolForPath(item?.path)).toBe(tool)
     }
 })

@@ -62,7 +62,7 @@ describe('organization menu navigation', () => {
         expect(screen).toContain('scrollViewRef={scrollViewRef}')
         expect(screen).toContain('useEffect(() => { if (focused) scrollViewRef.current?.scrollTo({ y: 0, animated: false }) }, [focused, tab])')
         expect(ui).toContain('scrollViewRef?: Ref<ScrollView>')
-        expect(ui).toContain('<ScrollView ref={scrollViewRef} contentContainerStyle={[styles.content, contentStyle]}>')
+        expect(ui).toContain('<ScrollView ref={scrollViewRef} keyboardShouldPersistTaps=\'handled\' contentContainerStyle={[styles.content, contentStyle]}>')
         const scrollEffect = screen.split('\n').find(line => line.includes('scrollViewRef.current?.scrollTo'))
         expect(scrollEffect).not.toMatch(/setSelectedId|setDraft|setInviteEmails|setCreateName|onSelectOrganization/)
     })

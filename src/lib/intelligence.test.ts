@@ -14,13 +14,13 @@ beforeEach(() => { calls.length = 0; payload = {}; status = 200 })
 
 describe('native intelligence routes and contracts', () => {
     it('uses the public actors collection and numbered nextPage, never the opaque backend cursor', async () => {
-        payload = { data: [{ id: 'actor-1', canonicalName: 'Synthetic actor', aliases: ['Alias'], confidence: 0.8, evidenceCount: 2, sourceIds: ['source-1'], captureIds: ['capture-1'], reviewState: 'reviewed', secret: 'do-not-render' }], pagination: { page: 2, limit: 50, total: 101, nextPage: 3, nextCursor: 'opaque-backend-cursor' } }
+        payload = { data: [{ id: 'actor-1', canonicalName: 'Synthetic actor', aliases: ['Alias'], confidence: 0.8, evidenceCount: 2, sourceIds: ['source-1'], captureIds: ['capture-1'], reviewState: 'reviewed', firstSeenAt: '2026-10-20T12:00:00Z', lastSeenAt: '2026-10-22T12:00:00Z', updatedAt: '2026-10-22T12:01:00Z', secret: 'do-not-render' }], pagination: { page: 2, limit: 50, total: 101, nextPage: 3, nextCursor: 'opaque-backend-cursor' } }
         const data = await intel.loadActorProfiles(settings, { query: '  Synthetic actor  ', page: 2 }, signal())
         expect(calls[0].url.origin).toBe('https://ti.hanasand.com')
         expect(calls[0].url.pathname).toBe('/api/v1/actors')
         expect([...calls[0].url.searchParams]).toEqual([['limit', '50'], ['page', '2'], ['q', 'Synthetic actor']])
         expect(data.nextPage).toBe(3)
-        expect(data.items[0]).toMatchObject({ name: 'Synthetic actor', confidence: 0.8, evidenceCount: 2, aliases: ['Alias'] })
+        expect(data.items[0]).toMatchObject({ name: 'Synthetic actor', confidence: 0.8, evidenceCount: 2, aliases: ['Alias'], lastSeenAt: '2026-10-22T12:00:00Z' })
         expect(JSON.stringify(data)).not.toContain('do-not-render')
         expect(calls[0].settings).toBe(settings)
         expect(calls[0].init.credentials).toBe('omit')

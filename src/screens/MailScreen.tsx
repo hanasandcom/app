@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, BackHandler, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import { Alert, BackHandler, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { ChevronDown, Mail, Paperclip, RefreshCw, Search, Star } from 'lucide-react-native'
 import * as Sharing from 'expo-sharing'
 import type { AppSettings } from '../types'
 import { addMailFolder, canSendMail, createMailComposer, editMailComposer, hasMailDraftContent, pickMailAttachments, loadMail, loadMailPage, saveMailAttachment, searchMail, sendMail, updateMail, type MailAction, type MailAttachment, type MailDraft, type MailMessage, type MailOverview, type MailScope } from '../lib/mail-api'
@@ -8,7 +9,42 @@ import { spacing, type ThemePalette } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
 
 const recipients = (items: MailMessage['from']) => items.map(item => item.name ? `${item.name} <${item.email}>` : item.email).join(', ')
-const errorMessage = (cause: unknown) => cause instanceof Error ? cause.message : 'Unable to complete this request.'
+const errorMessage = (cause: unknown) => {
+    if (!(cause instanceof Error)) return 'Unable to complete this request.'
+    if (/socket connection was closed unexpectedly|backend service is unavailable|network request failed|fetch failed/i.test(cause.message)) {
+        return 'Mail service is temporarily unavailable. Please try again shortly.'
+    }
+    return cause.message
+}
+const senderName = (message: MailMessage) => message.from[0]?.name || message.from[0]?.email || 'Unknown sender'
+const senderInitial = (message: MailMessage) => senderName(message).trim().charAt(0).toUpperCase() || '?'
+const mailExcerpt = (value: string) => value
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/(?:^|\s)(?:body|html|[.#][A-Za-z_-][\w-]*)\s*\{[^}]*(?:\}|$)/gi, ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;|&#160;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, String.fromCharCode(39))
+    .replace(/\s+/g, ' ')
+    .trim()
+
+function formatMailDate(value: string) {
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return ''
+    const now = new Date()
+    const sameDay = date.toDateString() === now.toDateString()
+    const yesterday = new Date(now)
+    yesterday.setDate(now.getDate() - 1)
+    if (sameDay) return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    if (date.toDateString() === yesterday.toDateString()) return 'Yesterday'
+    return date.getFullYear() === now.getFullYear()
+        ? date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+        : date.toLocaleDateString([], { month: 'short', day: 'numeric', year: '2-digit' })
+}
 
 export function MailScreen({ settings }: { settings: AppSettings }) {
     const theme = useAppTheme()
@@ -141,6 +177,22 @@ export function MailScreen({ settings }: { settings: AppSettings }) {
         } catch (cause) { Alert.alert('Mail action failed', errorMessage(cause)) } finally { busyRef.current = false; setBusy(false) }
     }
 
+    async function toggleFlag(message: MailMessage) {
+        if (busyRef.current || !overview) return
+        busyRef.current = true
+        setBusy(true)
+        const nextFlagged = !message.isFlagged
+        try {
+            await updateMail(settings, overview.mailboxUser, message.id, nextFlagged ? 'flag' : 'unflag')
+            setMessages(previous => previous.map(item => item.id === message.id ? { ...item, isFlagged: nextFlagged } : item))
+        } catch (cause) {
+            Alert.alert('Unable to update message', errorMessage(cause))
+        } finally {
+            busyRef.current = false
+            setBusy(false)
+        }
+    }
+
     function compose(mode: 'new' | 'reply' | 'replyAll' | 'forward') {
         if (!overview || busy) return
         const nextComposer = createMailComposer(overview.mailboxUser)
@@ -232,8 +284,8 @@ export function MailScreen({ settings }: { settings: AppSettings }) {
     const field = (name: keyof Omit<MailDraft, 'mailboxUser' | 'attachments'>, placeholder: string, multiline = false) => <TextInput accessibilityLabel={placeholder} value={draft[name]} onChangeText={value => { setComposer(current => editMailComposer(current, { [name]: value })) }} editable={!busy} placeholder={placeholder} placeholderTextColor={theme.textSoft} autoCapitalize={['to', 'cc', 'bcc'].includes(name) ? 'none' : 'sentences'} autoCorrect={!['to', 'cc', 'bcc'].includes(name)} multiline={multiline} style={[styles.input, multiline && { minHeight: 240, paddingTop: 14, textAlignVertical: 'top' }]} />
 
     return (
-        <Screen key={view} title={view === 'compose' ? 'New message' : 'Mail'} subtitle={overview?.mailboxAddress} left={view !== 'list' ? <PillButton label='Back' small onPress={closeView} disabled={busy} /> : undefined} right={view === 'list' ? <PillButton label='Compose' small tone='accent' onPress={() => compose('new')} disabled={!overview || loading || busy || !overview.canSend} /> : undefined}>
-            {!!error && <InlineNotice message={error} />}
+        <Screen key={view} appearance='quiet' title={view === 'compose' ? 'New message' : 'Mail'} left={view !== 'list' ? <PillButton label='Back' small onPress={closeView} disabled={busy} /> : undefined} right={view === 'list' ? <PillButton label='Compose' small tone='accent' onPress={() => compose('new')} disabled={!overview || loading || busy || !overview.canSend} /> : undefined}>
+            {!!error && (view !== 'list' || messages.length > 0) && <InlineNotice message={error} />}
             {!!overview?.notice && <InlineNotice message={overview.notice} />}
             {!authenticated && <InlineNotice message='Sign in to load your mail.' />}
             {view === 'compose' && <GlassCard>
@@ -249,39 +301,67 @@ export function MailScreen({ settings }: { settings: AppSettings }) {
                 </View>
             </GlassCard>}
             {view === 'list' && <>
-                <GlassCard>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
-                        {overview?.accessibleAccounts.map(account => <PillButton key={account.id} small label={`${account.name || account.address}${account.unreadCount ? ` · ${account.unreadCount}` : ''}`} tone={overview.mailboxUser === account.id ? 'accent' : 'default'} onPress={() => selectAccount(account.id)} disabled={loading || busy} />)}
+                <View style={styles.mailControls}>
+                    <View style={styles.searchField}>
+                        <Search color={theme.textMuted} size={19} />
+                        <TextInput accessibilityLabel='Search this folder' value={query} onChangeText={setQuery} onSubmitEditing={() => { setScope(currentScope()); setActiveQuery(query.trim()) }} placeholder='Search mail' placeholderTextColor={theme.textSoft} style={styles.searchInput} returnKeyType='search' editable={!busy} />
+                        {!!query.trim() && <Pressable accessibilityRole='button' accessibilityLabel='Search mail' onPress={() => { setScope(currentScope()); setActiveQuery(query.trim()) }} disabled={loading || !overview}><Text style={styles.searchAction}>Search</Text></Pressable>}
+                        {!!query && <Pressable accessibilityRole='button' accessibilityLabel='Clear search' onPress={() => { setQuery(''); setActiveQuery('') }} hitSlop={10}><Text style={styles.clearSearch}>×</Text></Pressable>}
+                    </View>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.accountStrip}>
+                        {overview?.accessibleAccounts.map(account => <Pressable key={account.id} accessibilityRole='button' accessibilityLabel={`Mailbox ${account.name || account.address}${account.unreadCount ? `, ${account.unreadCount} unread` : ''}`} accessibilityState={{ selected: overview.mailboxUser === account.id }} style={[styles.accountChip, overview.mailboxUser === account.id && styles.accountChipSelected]} onPress={() => selectAccount(account.id)} disabled={loading || busy}>
+                            <Text numberOfLines={1} style={[styles.accountLabel, overview.mailboxUser === account.id && styles.accountLabelSelected]}>{account.name || account.address}</Text>
+                            {!!account.unreadCount && <Text style={styles.accountCount}>{account.unreadCount}</Text>}
+                        </Pressable>)}
                     </ScrollView>
-                    <View style={styles.row}>
-                        <PillButton label={`${selectedFolder?.name || 'Folders'} ▾`} small onPress={() => setShowFolders(value => !value)} disabled={!overview || busy} />
-                        <PillButton label={loading ? 'Refreshing…' : 'Refresh'} small onPress={() => void refresh()} disabled={loading || busy} />
+                    <View style={styles.mailToolbar}>
+                        <Pressable accessibilityRole='button' accessibilityLabel={`Choose mailbox folder, currently ${selectedFolder?.name || 'Inbox'}`} accessibilityState={{ expanded: showFolders }} style={styles.folderButton} onPress={() => setShowFolders(value => !value)} disabled={!overview || busy}>
+                            <Text numberOfLines={1} style={styles.folderLabel}>{selectedFolder?.name || 'Inbox'}</Text><ChevronDown color={theme.textMuted} size={16} />
+                        </Pressable>
+                        <Text style={styles.mailboxAddress} numberOfLines={1}>{overview?.mailboxAddress || ''}</Text>
+                        <Pressable accessibilityRole='button' accessibilityLabel={loading ? 'Refreshing mail' : 'Refresh mail'} onPress={() => void refresh()} disabled={loading || busy} style={styles.iconButton}>
+                            <RefreshCw color={loading ? theme.textSoft : theme.textMuted} size={18} />
+                        </Pressable>
                     </View>
-                    {showFolders && <View style={styles.stack}>
-                        {overview?.mailboxes.map(box => <PillButton key={box.id} small label={`${box.name}${box.unreadEmails ? ` · ${box.unreadEmails}` : ''}`} tone={overview.selectedMailboxId === box.id ? 'accent' : 'default'} onPress={() => selectFolder(box.id)} disabled={busy || loading} />)}
-                        <TextInput accessibilityLabel='New folder name' value={folderName} onChangeText={setFolderName} placeholder='New folder name' placeholderTextColor={theme.textSoft} style={styles.input} editable={!busy} />
-                        <PillButton label='Create folder' small disabled={busy || !folderName.trim()} onPress={() => {
-                            if (!overview || busyRef.current) return
-                            busyRef.current = true; setBusy(true)
-                            void addMailFolder(settings, overview.mailboxUser, folderName.trim()).then(async () => { setFolderName(''); await refresh() }).catch(cause => Alert.alert('Unable to create folder', errorMessage(cause))).finally(() => { busyRef.current = false; setBusy(false) })
-                        }} />
+                    {showFolders && <View style={styles.folderPanel}>
+                        {overview?.mailboxes.map(box => <Pressable key={box.id} accessibilityRole='button' accessibilityState={{ selected: overview.selectedMailboxId === box.id }} style={[styles.folderOption, overview.selectedMailboxId === box.id && styles.folderOptionSelected]} onPress={() => selectFolder(box.id)} disabled={busy || loading}>
+                            <Text style={[styles.folderOptionLabel, overview.selectedMailboxId === box.id && styles.folderOptionLabelSelected]}>{box.name}</Text>
+                            {!!box.unreadEmails && <Text style={styles.folderUnread}>{box.unreadEmails}</Text>}
+                        </Pressable>)}
+                        <View style={styles.newFolderRow}>
+                            <TextInput accessibilityLabel='New folder name' value={folderName} onChangeText={setFolderName} placeholder='New folder name' placeholderTextColor={theme.textSoft} style={[styles.input, { flex: 1 }]} editable={!busy} />
+                            <PillButton label='Add' small disabled={busy || !folderName.trim()} onPress={() => {
+                                if (!overview || busyRef.current) return
+                                busyRef.current = true; setBusy(true)
+                                void addMailFolder(settings, overview.mailboxUser, folderName.trim()).then(async () => { setFolderName(''); await refresh() }).catch(cause => Alert.alert('Unable to create folder', errorMessage(cause))).finally(() => { busyRef.current = false; setBusy(false) })
+                            }} />
+                        </View>
                     </View>}
-                    <View style={styles.stack}>
-                        <TextInput accessibilityLabel='Search this folder' value={query} onChangeText={setQuery} onSubmitEditing={() => { setScope(currentScope()); setActiveQuery(query.trim()) }} placeholder='Search this folder' placeholderTextColor={theme.textSoft} style={styles.input} returnKeyType='search' />
-                        <View style={styles.row}><PillButton label='Search' small disabled={loading || !overview} onPress={() => { setScope(currentScope()); setActiveQuery(query.trim()) }} />{!!activeQuery && <PillButton label='Clear' small onPress={() => { setQuery(''); setActiveQuery('') }} />}</View>
-                    </View>
-                </GlassCard>
-                <GlassCard>
-                    <SectionTitle eyebrow='Messages' title={activeQuery ? `Results for “${activeQuery}”` : selectedFolder?.name || 'Messages'} />
-                    {!messages.length && <Text style={[styles.muted, { marginTop: spacing.md }]}>{loading ? 'Loading mail…' : 'No messages in this folder.'}</Text>}
-                    {messages.map(message => <Pressable accessibilityRole='button' accessibilityLabel={`${message.isRead ? '' : 'Unread. '}${message.subject || 'No subject'}`} key={message.id} disabled={loading || busy} style={styles.message} onPress={() => void openMessage(message)}>
-                        <Text numberOfLines={1} style={{ color: theme.text, fontWeight: message.isRead ? '500' : '800' }}>{message.isFlagged ? '★ ' : ''}{recipients(message.from)}</Text>
-                        <Text numberOfLines={2} style={{ color: theme.text, fontWeight: message.isRead ? '500' : '800' }}>{message.subject || '(No subject)'}</Text>
-                        <Text numberOfLines={2} style={styles.muted}>{message.preview}</Text>
-                        <Text style={styles.caption}>{message.hasAttachment ? 'Attachment · ' : ''}{message.receivedAt ? new Date(message.receivedAt).toLocaleString() : ''}</Text>
-                    </Pressable>)}
-                    {!!cursor && <PillButton label={loading ? 'Loading…' : 'Load more'} onPress={() => void refresh(cursor)} disabled={loading || busy} />}
-                </GlassCard>
+                </View>
+                <View style={styles.messageList}>
+                    {!messages.length && <View style={styles.emptyState}>
+                        <Mail color={theme.textSoft} size={30} strokeWidth={1.6} />
+                        <Text style={styles.emptyTitle}>{loading ? 'Loading mail…' : error ? 'Mail is temporarily unavailable' : activeQuery ? 'No matching messages' : 'You’re all caught up'}</Text>
+                        <Text style={styles.muted}>{loading ? 'Your messages will appear here.' : error ? 'Refresh to try loading this mailbox again.' : activeQuery ? 'Try another search or clear the search field.' : 'New messages in this mailbox will appear here.'}</Text>
+                        {!!error && <PillButton label={loading ? 'Retrying…' : 'Retry'} small disabled={loading || busy} onPress={() => void refresh()} />}
+                    </View>}
+                    {messages.map(message => <View key={message.id} style={[styles.messageRow, !message.isRead && styles.unreadMessageRow]}>
+                        <View style={[styles.avatar, !message.isRead && styles.unreadAvatar]}><Text style={styles.avatarText}>{senderInitial(message)}</Text></View>
+                        <Pressable accessibilityRole='button' accessibilityLabel={`${message.isRead ? '' : 'Unread. '}${senderName(message)}. ${message.subject || 'No subject'}. ${mailExcerpt(message.preview)}`} key={`open-${message.id}`} disabled={loading || busy} style={styles.messageContent} onPress={() => void openMessage(message)}>
+                            <View style={styles.messageTopline}>
+                                <Text numberOfLines={1} style={[styles.sender, !message.isRead && styles.unreadText]}>{senderName(message)}</Text>
+                                <Text style={[styles.messageTime, !message.isRead && styles.unreadText]}>{formatMailDate(message.receivedAt)}</Text>
+                            </View>
+                            <Text numberOfLines={1} style={[styles.subject, !message.isRead && styles.unreadText]}>{message.subject || '(No subject)'}</Text>
+                            <Text numberOfLines={2} style={styles.preview}>{mailExcerpt(message.preview) || 'No preview available.'}</Text>
+                            {message.hasAttachment && <View style={styles.attachmentHint}><Paperclip color={theme.textSoft} size={12} /><Text style={styles.attachmentText}>Attachment</Text></View>}
+                        </Pressable>
+                        <Pressable accessibilityRole='button' accessibilityLabel={`${message.isFlagged ? 'Remove star from' : 'Star'} ${message.subject || 'message'}`} accessibilityState={{ selected: message.isFlagged }} disabled={busy} onPress={() => void toggleFlag(message)} hitSlop={8} style={styles.starButton}>
+                            <Star color={message.isFlagged ? theme.accent : theme.textSoft} fill={message.isFlagged ? theme.accent : 'transparent'} size={19} strokeWidth={1.8} />
+                        </Pressable>
+                    </View>)}
+                    {!!cursor && <View style={styles.loadMore}><PillButton label={loading ? 'Loading…' : 'Load more messages'} onPress={() => void refresh(cursor)} disabled={loading || busy} /></View>}
+                </View>
             </>}
             {view === 'message' && !selectedMessage && <GlassCard><Text style={styles.muted}>{loading ? 'Loading message…' : 'Message unavailable.'}</Text></GlassCard>}
             {view === 'message' && selectedMessage && <>
@@ -311,12 +391,54 @@ export function MailScreen({ settings }: { settings: AppSettings }) {
 }
 
 function createStyles(theme: ThemePalette) {
-    return {
+    return StyleSheet.create({
         input: { minHeight: 46, borderRadius: 16, borderWidth: 1, borderColor: theme.surfaceBorderSoft, backgroundColor: theme.backgroundRaised, paddingHorizontal: 14, color: theme.text, fontSize: 15 } as const,
         stack: { gap: spacing.sm, marginTop: spacing.md },
         row: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md } as const,
         message: { gap: 5, paddingVertical: spacing.md, borderBottomWidth: 1, borderColor: theme.surfaceBorderSoft },
+        mailControls: { gap: spacing.sm, marginBottom: spacing.sm },
+        searchField: { minHeight: 54, borderRadius: 22, backgroundColor: theme.surfaceStrong, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
+        searchInput: { flex: 1, minHeight: 52, color: theme.text, fontSize: 16, paddingVertical: 0 },
+        searchAction: { color: theme.accent, fontSize: 13, fontWeight: '700', paddingVertical: 8 },
+        clearSearch: { color: theme.textMuted, fontSize: 26, lineHeight: 28, paddingHorizontal: 3 },
+        accountStrip: { gap: 8, paddingVertical: 2 },
+        accountChip: { height: 34, maxWidth: 190, borderRadius: 17, borderWidth: 1, borderColor: theme.surfaceBorderSoft, backgroundColor: theme.backgroundRaised, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 7 },
+        accountChipSelected: { borderColor: theme.accent, backgroundColor: theme.accentSoft },
+        accountLabel: { color: theme.textMuted, fontSize: 13, fontWeight: '600', flexShrink: 1 },
+        accountLabelSelected: { color: theme.text },
+        accountCount: { color: theme.text, fontSize: 11, fontWeight: '700' },
+        mailToolbar: { flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 38 },
+        folderButton: { minHeight: 36, maxWidth: '48%', borderRadius: 18, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: theme.surfaceStrong },
+        folderLabel: { color: theme.text, fontSize: 13, fontWeight: '600', flexShrink: 1 },
+        mailboxAddress: { flex: 1, color: theme.textSoft, fontSize: 12 },
+        iconButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19 },
+        folderPanel: { padding: 8, borderRadius: 16, borderWidth: 1, borderColor: theme.surfaceBorderSoft, backgroundColor: theme.surface },
+        folderOption: { minHeight: 42, borderRadius: 11, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+        folderOptionSelected: { backgroundColor: theme.accentSoft },
+        folderOptionLabel: { color: theme.textMuted, fontSize: 14 },
+        folderOptionLabelSelected: { color: theme.text, fontWeight: '700' },
+        folderUnread: { color: theme.accentAlt, fontSize: 12, fontWeight: '700' },
+        newFolderRow: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 6, marginTop: 4, borderTopWidth: 1, borderColor: theme.surfaceBorderSoft },
+        messageList: { marginHorizontal: -spacing.lg, gap: 2 },
+        emptyState: { minHeight: 250, justifyContent: 'center', alignItems: 'center', gap: 10, paddingHorizontal: spacing.xl },
+        emptyTitle: { color: theme.text, fontSize: 17, fontWeight: '700' },
+        messageRow: { minHeight: 88, borderRadius: 12, backgroundColor: theme.surface, flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: spacing.md, paddingTop: 12, paddingBottom: 10, gap: 11 },
+        unreadMessageRow: { backgroundColor: theme.surfaceStrong },
+        avatar: { width: 42, height: 42, borderRadius: 21, marginTop: 2, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.surfaceStrong },
+        unreadAvatar: { backgroundColor: theme.accentSoft },
+        avatarText: { color: theme.accentAlt, fontSize: 18, fontWeight: '700' },
+        messageContent: { flex: 1, minWidth: 0, gap: 3 },
+        messageTopline: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+        sender: { flex: 1, color: theme.textMuted, fontSize: 14, fontWeight: '500' },
+        messageTime: { color: theme.textSoft, fontSize: 11, fontWeight: '500' },
+        subject: { color: theme.textMuted, fontSize: 13, fontWeight: '500' },
+        unreadText: { color: theme.text, fontWeight: '700' },
+        preview: { color: theme.textSoft, fontSize: 12, lineHeight: 17 },
+        attachmentHint: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+        attachmentText: { color: theme.textSoft, fontSize: 10 },
+        starButton: { width: 32, height: 40, marginLeft: 1, alignItems: 'center', justifyContent: 'center' },
+        loadMore: { paddingVertical: spacing.md, alignItems: 'center' },
         muted: { color: theme.textMuted, lineHeight: 21 },
         caption: { color: theme.textSoft, fontSize: 12, marginTop: spacing.sm },
-    }
+    })
 }

@@ -15,6 +15,7 @@ function TrafficWorkspace({ settings, mode }: { settings: AppSettings; mode: Mod
     const [foreground, setForeground] = useState(AppState.currentState !== 'background' && AppState.currentState !== 'inactive')
     const [view, setView] = useState(mode), [domain, setDomain] = useState(''), [page, setPage] = useState(1), [revision, setRevision] = useState(0)
     const [domainsOpen, setDomainsOpen] = useState(false), [domainQuery, setDomainQuery] = useState('')
+    const [showDetailedStats, setShowDetailedStats] = useState(false)
     const [query, setQuery] = useState(''), [method, setMethod] = useState(''), [status, setStatus] = useState(''), [selected, setSelected] = useState<TrafficRecord | null>(null)
     const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
     const read = useRef<AbortController | null>(null), epoch = useRef(0)
@@ -48,7 +49,7 @@ function TrafficWorkspace({ settings, mode }: { settings: AppSettings; mode: Mod
         return () => clearTimeout(timer)
     }, [focused, foreground, loading, page, selected, key, revision])
     function top() { scroll.current?.scrollTo({ y: 0, animated: false }) }
-    function resetFilters() { setPage(1); setSelected(null); setQuery(''); setMethod(''); setStatus(''); top() }
+    function resetFilters() { setPage(1); setSelected(null); setQuery(''); setMethod(''); setStatus(''); setShowDetailedStats(false); top() }
     function refresh() { setSelected(null); setRevision(value => value + 1); top() }
     const metrics = current?.metrics, visible = filterTrafficPage(records?.result || [], query, method, status)
     return <Screen title={view === 'overview' ? 'Traffic overview' : 'Recent traffic'} subtitle='Global traffic · not limited to the selected workspace' scrollViewRef={scroll}
@@ -73,11 +74,18 @@ function TrafficWorkspace({ settings, mode }: { settings: AppSettings; mode: Mod
                 <GlassCard style={{ gap: 10 }}><SectionTitle eyebrow='Traffic' title={metrics.total_requests.toLocaleString()} body='Tracked requests across retained traffic history' />
                     <Text style={meta}>Response time: {metrics.total_requests ? `${metrics.avg_request_time.toLocaleString()} ms` : 'No requests'}</Text><Text style={meta}>4xx/5xx share: {(metrics.error_rate * 100).toFixed(1)}%</Text><Text style={meta}>Sampled: {metrics.sampled_at ? formatDate(metrics.sampled_at) : 'Not supplied'}</Text>
                 </GlassCard>
-                <Trend entries={metrics.requests_over_time} />
-                <Breakdown title='Methods' entries={metrics.top_methods} /><Breakdown title='Status codes' entries={metrics.top_status_codes} /><Breakdown title='Domains' entries={metrics.top_domains} />
-                <Breakdown title='Top paths' entries={metrics.top_paths} /><Breakdown title='Top error paths' entries={metrics.top_error_paths} />
-                <Breakdown title='Slow paths' unit='ms' entries={metrics.top_slow_paths.map(value => ({ key: value.key, count: value.avg_time }))} />
-                <Breakdown title='Operating systems' entries={metrics.top_os} /><Breakdown title='Browsers / user agents' entries={metrics.top_browsers} />
+                <Trend entries={metrics.requests_over_time} showPoints={showDetailedStats} />
+                <PillButton small label={showDetailedStats ? 'Hide detailed statistics' : 'Show detailed statistics'} onPress={() => setShowDetailedStats(value => !value)} />
+                {showDetailedStats && <GlassCard style={{ gap: 16 }}>
+                    <BreakdownRows title='Methods' entries={metrics.top_methods} />
+                    <BreakdownRows title='Status codes' entries={metrics.top_status_codes} />
+                    <BreakdownRows title='Domains' entries={metrics.top_domains} />
+                    <BreakdownRows title='Top paths' entries={metrics.top_paths} />
+                    <BreakdownRows title='Top error paths' entries={metrics.top_error_paths} />
+                    <BreakdownRows title='Slow paths' unit='ms' entries={metrics.top_slow_paths.map(value => ({ key: value.key, count: value.avg_time }))} />
+                    <BreakdownRows title='Operating systems' entries={metrics.top_os} />
+                    <BreakdownRows title='Browsers / user agents' entries={metrics.top_browsers} />
+                </GlassCard>}
             </>}
             {view === 'overview' && !loading && !metrics && <Text style={meta}>Traffic statistics are unavailable.</Text>}
             {view === 'recent' && <GlassCard style={{ gap: 10 }}><SectionTitle eyebrow='Loaded page only' title='Filter these requests' />
@@ -97,12 +105,12 @@ function Input({ label, value, onChangeText }: { label: string; value: string; o
     const theme = useAppTheme()
     return <View style={{ gap: 6 }}><Text style={{ color: theme.textMuted, fontSize: 13 }}>{label}</Text><TextInput accessibilityLabel={label} value={value} onChangeText={onChangeText} maxLength={200} autoCorrect={false} autoCapitalize='none' style={{ color: theme.text, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: theme.surfaceBorderSoft }} /></View>
 }
-function Breakdown({ title, entries, unit = 'requests' }: { title: string; entries: TrafficMetric[]; unit?: string }) {
+function BreakdownRows({ title, entries, unit = 'requests' }: { title: string; entries: TrafficMetric[]; unit?: string }) {
     const theme = useAppTheme(), max = Math.max(1, ...entries.map(value => value.count))
-    return <GlassCard style={{ gap: 12 }}><SectionTitle eyebrow='Breakdown' title={title} />{!entries.length && <Text style={{ color: theme.textMuted }}>No recorded breakdown.</Text>}{entries.map((entry, index) => <View key={`${entry.key}:${index}`} style={{ gap: 5 }}><Text selectable style={{ color: theme.text }}>{entry.key}: {entry.count.toLocaleString()} {unit}</Text><View style={{ height: 5, backgroundColor: theme.surfaceBorderSoft, borderRadius: 4 }}><View style={{ width: `${Math.max(1, entry.count / max * 100)}%`, height: 5, backgroundColor: theme.textMuted, borderRadius: 4 }} /></View></View>)}</GlassCard>
+    return <View style={{ gap: 10 }}><Text style={{ color: theme.text, fontSize: 15, fontWeight: '700' }}>{title}</Text>{!entries.length && <Text style={{ color: theme.textMuted }}>No recorded breakdown.</Text>}{entries.map((entry, index) => <View key={`${entry.key}:${index}`} style={{ gap: 5 }}><Text selectable style={{ color: theme.text }}>{entry.key}: {entry.count.toLocaleString()} {unit}</Text><View style={{ height: 5, backgroundColor: theme.surfaceBorderSoft, borderRadius: 4 }}><View style={{ width: `${Math.max(1, entry.count / max * 100)}%`, height: 5, backgroundColor: theme.textMuted, borderRadius: 4 }} /></View></View>)}</View>
 }
-function Trend({ entries }: { entries: TrafficMetric[] }) {
+function Trend({ entries, showPoints }: { entries: TrafficMetric[]; showPoints: boolean }) {
     const theme = useAppTheme(), max = Math.max(1, ...entries.map(value => value.count))
     const path = entries.map((value, index) => `${index ? 'L' : 'M'}${entries.length < 2 ? 150 : index / (entries.length - 1) * 300},${85 - value.count / max * 75}`).join(' ')
-    return <GlassCard style={{ gap: 10 }}><SectionTitle eyebrow='Hourly' title='Requests in the last 24 hours' />{entries.length ? <><Svg width='100%' height={90} viewBox='0 0 300 90' accessibilityLabel='Hourly request trend'><Path d={path} stroke={theme.textMuted} strokeWidth={2} fill='none' /></Svg>{entries.map((value, index) => <Text key={`${value.key}:${index}`} style={{ color: theme.textMuted, fontSize: 12 }}>{formatDate(value.key)} · {value.count.toLocaleString()} requests</Text>)}</> : <Text style={{ color: theme.textMuted }}>No hourly observations recorded.</Text>}</GlassCard>
+    return <GlassCard style={{ gap: 10 }}><SectionTitle eyebrow='Hourly' title='Requests in the last 24 hours' />{entries.length ? <><Svg width='100%' height={90} viewBox='0 0 300 90' accessibilityLabel='Hourly request trend'><Path d={path} stroke={theme.textMuted} strokeWidth={2} fill='none' /></Svg>{showPoints ? entries.map((value, index) => <Text key={`${value.key}:${index}`} style={{ color: theme.textMuted, fontSize: 12 }}>{formatDate(value.key)} · {value.count.toLocaleString()} requests</Text>) : <Text style={{ color: theme.textMuted, fontSize: 12 }}>{entries.length} hourly readings</Text>}</> : <Text style={{ color: theme.textMuted }}>No hourly observations recorded.</Text>}</GlassCard>
 }

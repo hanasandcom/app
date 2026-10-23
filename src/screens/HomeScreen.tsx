@@ -670,15 +670,15 @@ function createStyles(theme: ThemePalette) {
         },
         macPreview: { width: '100%', height: 118 },
         macPlaceholder: {
-            flex: 1,
             minHeight: 44,
             flexDirection: 'row',
             alignItems: 'center',
             gap: 8,
             paddingHorizontal: 14,
+            paddingVertical: 10,
         },
         conversationTitle: { color: theme.textMuted, fontSize: 12, lineHeight: 16 },
-        macStatusText: { flex: 1, color: theme.textMuted, fontSize: 12, lineHeight: 16 },
+        macStatusText: { flex: 1, flexShrink: 1, minWidth: 0, color: theme.textMuted, fontSize: 12, lineHeight: 16 },
         promptShell: {
             width: '100%',
             minHeight: 46,

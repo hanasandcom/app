@@ -38,6 +38,10 @@ function SupportDeskWorkspace({ settings, liveAdapter }: { settings: AppSettings
     const ticket = desk?.tickets.find(row => row.id === selected)
     const writable = verified && desk?.isSupport === true && !settings.impersonationToken
         && !settings.impersonatingUserId && !busy && !loading && !uncertain && visible.current
+    const queueHasOtherFilters = !!(applied.current.search || applied.current.from || applied.current.to
+        || applied.current.stars !== 'all' || applied.current.feedback !== 'all')
+    const resolvedOnlyQueue = !!desk?.tickets.length && applied.current.status === 'open' && !queueHasOtherFilters
+        && desk.tickets.every(item => item.status === 'closed')
     inputAllowed.current = writable
     const inputGeneration = inputEpoch.current
     function editAllowed(id: string) {
@@ -164,6 +168,12 @@ function SupportDeskWorkspace({ settings, liveAdapter }: { settings: AppSettings
                 return next === 'closed' ? 'Conversation resolved.' : 'Conversation reopened.'
             })
     }
+    function showResolvedQueue() {
+        const next = { ...applied.current, status: 'resolved' as const }
+        applied.current = next
+        setFilters(next)
+        void load(false, '')
+    }
     function account(field: 'password' | 'email', value: string) {
         if (!ticket || !desk) return
         try { validateSupportAccountChange(field, value) } catch (cause) { setError(message(cause)); return }
@@ -180,7 +190,7 @@ function SupportDeskWorkspace({ settings, liveAdapter }: { settings: AppSettings
         {uncertain && <InlineNotice message='Refresh and review the conversation before another change. Server work may continue after this screen closes.' />}
         {!visible.current && <Text style={meta}>Support is paused while this screen is inactive.</Text>}
         {loading && <Text accessibilityRole='progressbar' style={meta}>Loading Support…</Text>}
-        {visible.current && <Text style={meta}>{liveEnabled ? connection : desk ? 'Live updates are not active for this queue.' : 'Support connection has not been verified.'}</Text>}
+        {visible.current && !error && <Text style={meta}>{liveEnabled ? connection : desk ? 'Live updates are not active for this queue.' : 'Support connection has not been verified.'}</Text>}
         {desk?.isSupport === false && <View style={{ display: visible.current ? 'flex' : 'none' }}>
             <ProfileSupportPanel settings={settings} revision={customerRevision} />
         </View>}
@@ -225,7 +235,12 @@ function SupportDeskWorkspace({ settings, liveAdapter }: { settings: AppSettings
                 {!!item.last_message && <Text numberOfLines={2} style={meta}>{item.last_message}</Text>}
                 <PillButton small label={`Open conversation: ${item.subject}`} disabled={busy || loading} onPress={() => select(item)} />
             </GlassCard>)}
-            {!ticket && !visibleDeskTickets(desk.tickets, applied.current.status).length && <Text style={meta}>No conversations match these filters.</Text>}
+            {!ticket && !visibleDeskTickets(desk.tickets, applied.current.status).length && (resolvedOnlyQueue
+                ? <View style={{ gap: 8 }}>
+                    <Text style={meta}>No open conversations. {desk.tickets.length} recent conversations are resolved.</Text>
+                    <PillButton small label='View resolved conversations' onPress={showResolvedQueue} />
+                </View>
+                : <Text style={meta}>No conversations match these filters.</Text>)}
         </>}
     </Screen>
 }

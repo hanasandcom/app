@@ -3,6 +3,7 @@ import { createContext, type ReactNode, type Ref, useContext, useMemo } from 're
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View, type KeyboardTypeOptions } from 'react-native'
 import { AlertCircle, CheckCircle2, ChevronDown, Info, Menu, Settings2 } from 'lucide-react-native'
 import Svg, { Circle, Line, Path } from 'react-native-svg'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { radius, spacing, type ThemePalette } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
 
@@ -37,6 +38,7 @@ export function Screen({
     scroll = true,
     contentStyle,
     scrollViewRef,
+    appearance = 'quiet',
 }: {
     title: string
     subtitle?: string
@@ -46,17 +48,19 @@ export function Screen({
     scroll?: boolean
     contentStyle?: object
     scrollViewRef?: Ref<ScrollView>
+    appearance?: 'ambient' | 'quiet'
 }) {
     const settingsDrawer = useContext(SettingsDrawerContext)
     const theme = useAppTheme()
+    const insets = useSafeAreaInsets()
     const styles = useMemo(() => createStyles(theme), [theme])
     const body = scroll
-        ? <ScrollView ref={scrollViewRef} contentContainerStyle={[styles.content, contentStyle]}>{children}</ScrollView>
+        ? <ScrollView ref={scrollViewRef} keyboardShouldPersistTaps='handled' contentContainerStyle={[styles.content, contentStyle]}>{children}</ScrollView>
         : <View style={[styles.content, styles.staticContent, contentStyle]}>{children}</View>
 
     return (
-        <LinearGradient colors={[theme.backgroundRaised, theme.backgroundAlt, theme.background, '#050605']} locations={[0, 0.28, 0.72, 1]} style={styles.root}>
-            <View pointerEvents='none' style={styles.atmosphere}>
+        <LinearGradient colors={appearance === 'quiet' ? [theme.background, theme.background, theme.background, theme.background] : [theme.backgroundRaised, theme.backgroundAlt, theme.background, '#050605']} locations={[0, 0.28, 0.72, 1]} style={styles.root}>
+            {appearance !== 'quiet' && <View pointerEvents='none' style={styles.atmosphere}>
                 <LinearGradient
                     colors={['rgba(255,255,255,0.055)', 'rgba(255,255,255,0.012)', 'rgba(0,0,0,0)']}
                     locations={[0, 0.36, 1]}
@@ -83,9 +87,9 @@ export function Screen({
                 <View style={styles.cabinWrap}>
                     <FutureCabinSketch />
                 </View>
-            </View>
+            </View>}
             <View style={styles.rootEdges}>
-                <View style={styles.header}>
+                <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
                     {settingsDrawer?.openMenu && <Pressable accessibilityRole='button' accessibilityLabel='Open navigation menu' onPress={settingsDrawer.openMenu} style={styles.settingsButton}><Menu color={theme.textMuted} size={20} /></Pressable>}
                     {left ? <View style={styles.headerLeft}>{left}</View> : null}
                     <View style={{ flex: 1 }}>
@@ -479,7 +483,7 @@ function createStyles(theme: ThemePalette) {
             ...StyleSheet.absoluteFillObject,
             opacity: 0.36,
         },
-        header: { paddingHorizontal: spacing.lg, paddingTop: 84, paddingBottom: spacing.md, gap: 6, flexDirection: 'row', alignItems: 'flex-start' },
+        header: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: 6, flexDirection: 'row', alignItems: 'flex-start' },
         headerLeft: { marginRight: spacing.xs },
         headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
         content: { paddingHorizontal: spacing.lg, paddingBottom: 168, gap: spacing.md },

@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
-import { FileText, Menu, X } from 'lucide-react-native'
+import { FileText, X } from 'lucide-react-native'
 import type { AppSettings, Note } from '../types'
 import { createNote, deleteNote, fetchNotes, updateNote } from '../lib/api'
 import { workspaceAccountKey } from '../lib/workspace-data'
@@ -281,7 +281,7 @@ function AccountNotes({ settings }: { settings: AppSettings }) {
                     onPress={() => setMenuOpen(true)}
                     style={({ pressed }) => [styles.menuButton, pressed && styles.pressed]}
                 >
-                    <Menu color={theme.textMuted} size={22} strokeWidth={2.1} />
+                    <FileText color={theme.textMuted} size={21} strokeWidth={2.1} />
                 </Pressable>
             )}
         >

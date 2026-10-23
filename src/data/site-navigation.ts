@@ -48,7 +48,7 @@ function getDashboardNavigation(access: NavigationAccess): NavigationItem[] {
             group('Monitoring', [
                 link('Watchlists', '/watchlists'),
                 link('Findings', '/findings'),
-                link('Delivery', '/findings/delivery'),
+                link('Delivery', '/findings/actions'),
                 link('Virtual Machines', '/system/virtual-machines', hasVMs),
                 link('Repositories', '/repositories'),
             ]),
@@ -59,7 +59,7 @@ function getDashboardNavigation(access: NavigationAccess): NavigationItem[] {
             ]),
             group('Security tools', [
                 link('Sandbox', '/sandbox'),
-                link('Security Scanner', canManageSystem ? '/scanner' : '/solutions/scanner'),
+                link('Security Scanner', '/scanner'),
                 link('Check Password', '/pwned'),
                 link('Load test', '/test'),
             ]),
@@ -96,7 +96,6 @@ function getDashboardNavigation(access: NavigationAccess): NavigationItem[] {
             ]),
             group('Health', [
                 link('AI Metrics', '/system/ai', canManageSystem),
-                link('Vulnerabilities', '/vulnerabilities', canManageSystem),
                 link('Rate Limits', '/system/rates', isAdmin),
                 link('Load Testing', '/load-testing', canManageSystem),
             ]),
@@ -140,7 +139,7 @@ function getDashboardNavigation(access: NavigationAccess): NavigationItem[] {
                 link('Service Accounts', '/management/service-accounts', isAdmin),
             ]),
             group('Integrations', [
-                link('Integrations', '/findings/actions'),
+                link('Integrations', '/findings/delivery'),
             ]),
             group('Monitoring & activity', [
                 link('Events & Cases', '/organizations/events'),
@@ -263,7 +262,11 @@ export type SiteNavigationItem = {
     path?: string
     tab?: keyof RootTabParamList
     items?: SiteNavigationItem[]
-    disabledReason?: string
+    opensWebsite?: boolean
+}
+
+export function toggleNavigationGroup(expanded: Record<string, boolean>, key: string, isOpen: boolean) {
+    return { ...expanded, [key]: !isOpen }
 }
 
 export function siteNavigation(userId: string, access?: Omit<NavigationAccess, 'id'>): SiteNavigationItem[] {
@@ -273,8 +276,7 @@ export function siteNavigation(userId: string, access?: Omit<NavigationAccess, '
         const path = item.href || ''
         const tab = path === '/watchlists' || path === '/organizations/watchlists' ? 'Watchlists' : path.startsWith(`/profile/${userId}`) ? 'Profile' : nativeToolForPath(path) ? 'Tools' : tabs[path]
         const supported = tab || workspacePageDefinition(path)
-        const area = path.split('/').filter(Boolean)[0] || item.label
-        return { label: item.label, path, ...(tab ? { tab } : {}), ...(!supported ? { disabledReason: `${item.label} needs a native ${area} workflow before it can be opened here.` } : {}) }
+        return { label: item.label, path, ...(tab ? { tab } : {}), ...(!supported ? { opensWebsite: true } : {}) }
     }
     const fullAccess = { canManageOrganizations: true, canViewInternalPages: true, hasContentOrganization: true, hasHanasandOrganization: true, hasVMs: true, canReviewIntel: true }
     return [

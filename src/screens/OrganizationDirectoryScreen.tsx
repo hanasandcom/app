@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AppState, Text, View } from 'react-native'
+import { AppState, ScrollView, Text, View } from 'react-native'
 import { useFocusEffect } from '@react-navigation/native'
 import type { AppSettings } from '../types'
 import { GlassCard, InlineNotice, LabeledInput, PillButton, Screen } from '../components/ui'
@@ -103,19 +103,20 @@ function Directory({ settings, onSelectOrganization }: {
             <InlineNotice message={notice} tone='info' />
             <GlassCard style={{ gap: 12 }}>
                 <Text style={{ color: theme.textMuted }}>
-                    The directory lists organizations across Hanasand. You can open only organizations where your account already has an active membership.
+                    Only organizations you already belong to can be opened.
                 </Text>
                 {impersonating && <InlineNotice tone='info' message='Workspace switching is disabled while impersonating. Return to your own account first.' />}
                 <LabeledInput label='Search organizations' value={query} onChangeText={(value) => { setQuery(value); setShown(50) }} />
-                <Text style={{ color: theme.text, fontWeight: '700' }}>Sort by</Text>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                    {directorySorts.map((item) => (
-                        <PillButton key={item.key} small label={item.label} tone={sort === item.key ? 'accent' : 'default'}
-                            onPress={() => { setSort(item.key); setShown(50) }} />
-                    ))}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }} style={{ flex: 1 }}>
+                        {directorySorts.map((item) => (
+                            <PillButton key={item.key} small label={item.label} tone={sort === item.key ? 'accent' : 'default'}
+                                onPress={() => { setSort(item.key); setShown(50) }} />
+                        ))}
+                    </ScrollView>
+                    <PillButton small label={direction === 'asc' ? '↑ Asc' : '↓ Desc'}
+                        onPress={() => { setDirection(direction === 'asc' ? 'desc' : 'asc'); setShown(50) }} />
                 </View>
-                <PillButton small label={direction === 'asc' ? 'Ascending' : 'Descending'}
-                    onPress={() => { setDirection(direction === 'asc' ? 'desc' : 'asc'); setShown(50) }} />
                 {snapshot && <Text style={{ color: theme.textMuted }}>
                     {displayed.length} of {rows.length} matches shown · {organizations.length} organizations loaded
                 </Text>}

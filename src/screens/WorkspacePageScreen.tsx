@@ -127,6 +127,13 @@ export function workspaceRows(payload: unknown, definition: WorkspaceSection): R
     if (!Array.isArray(value)) throw new Error('The service returned an invalid list.')
     return value.filter(item => item && typeof item === 'object' && !Array.isArray(item)) as RecordValue[]
 }
+export function workspaceChecksNeedingAttention(rows: RecordValue[]) {
+    return rows.filter(row => ['down', 'degraded'].includes(String(row.status || '').toLowerCase()))
+        .sort((left, right) => {
+            const severity = (row: RecordValue) => String(row.status || '').toLowerCase() === 'down' ? 0 : 1
+            return severity(left) - severity(right) || Number(right.latency_ms || 0) - Number(left.latency_ms || 0)
+        })
+}
 export function workspaceFiles(value: unknown): RecordValue[] {
     if (!Array.isArray(value)) return []
     return value.flatMap(item => {
@@ -312,6 +319,18 @@ export function WorkspacePageScreen({ settings, path, title }: { settings: AppSe
     const filteredRows = section?.rows.filter(row => !query.trim() || [itemTitle(row, section.definition, ''), ...section.definition.fields.map(field => workspaceFieldValue(row, field) || '')].join(' ').toLowerCase().includes(query.trim().toLowerCase())) || []
     const selectedFields = selected?.section.detailFields || selected?.section.fields || []
     const compactStatusSummary = path === '/status' && section?.definition.label === 'Overview'
+    const statusChecks = path === '/status' ? sections.find(item => item.definition.listPath === 'checks') : undefined
+    const attentionChecks = workspaceChecksNeedingAttention(statusChecks?.rows || [])
+    const attentionColor = attentionChecks.some(check => String(check.status).toLowerCase() === 'down') ? theme.danger : theme.warning
+    const statusSummary = statusChecks?.error
+        ? 'Service checks could not be loaded.'
+        : statusChecks?.notice
+            ? 'Monitoring data may be stale.'
+            : attentionChecks.length
+                ? `${attentionChecks.length} service${attentionChecks.length === 1 ? '' : 's'} need attention`
+                : statusChecks
+                    ? 'All monitored services are healthy.'
+                    : 'Loading service checks…'
     const unsupported = !definition
     return <Screen key={`${path}:${selected ? 'detail' : 'list'}`} title={path === '/status' ? 'Status' : title} subtitle={path === '/status' ? 'Service monitoring' : selectedOrganization ? 'Organization workspace' : 'Personal workspace'}
         left={selected ? <PillButton label='Back' small onPress={() => setSelected(null)} /> : undefined}
@@ -341,7 +360,18 @@ export function WorkspacePageScreen({ settings, path, title }: { settings: AppSe
                     {!section.error && <Text style={styles.label}>{Math.min(visibleLimit, filteredRows.length)} shown · {filteredRows.length} matching · {section.rows.length} loaded</Text>}
                 </>}
                 {!section.error && !filteredRows.length && <Text style={styles.text}>{query ? 'No matching records.' : 'No records found.'}</Text>}
-                {section.definition.listPath === undefined ? section.rows.map((row, index) => <View key={index} style={[styles.card, compactStatusSummary && { flexDirection: 'row', flexWrap: 'wrap' }]}>{fields(row, section.definition.fields, undefined, compactStatusSummary)}</View>) : filteredRows.slice(0, visibleLimit).map((row, index) => {
+                {section.definition.listPath === undefined ? <>
+                    {section.rows.map((row, index) => <View key={index} style={[styles.card, compactStatusSummary && { flexDirection: 'row', flexWrap: 'wrap' }]}>{fields(row, section.definition.fields, undefined, compactStatusSummary)}</View>)}
+                    {compactStatusSummary && statusChecks && <View style={{ borderTopWidth: 1, borderColor: theme.surfaceBorderSoft, paddingTop: spacing.md, gap: spacing.sm }}>
+                        <Text style={[styles.heading, attentionChecks.length > 0 && { color: attentionColor }]}>{statusSummary}</Text>
+                        {attentionChecks.slice(0, 2).map((check, index) => <View key={`${String(check.id || check.check_name || check.service || index)}`} style={{ gap: 3 }}>
+                            <Text style={styles.text}>{String(check.check_name || check.service || 'Service')} · {String(check.status).toLowerCase()}{typeof check.latency_ms === 'number' ? ` · ${check.latency_ms.toLocaleString()} ms` : ''}</Text>
+                            {typeof check.message === 'string' && !!check.message && <Text numberOfLines={2} style={styles.label}>{check.message}</Text>}
+                        </View>)}
+                        {attentionChecks.length > 2 && <Text style={styles.label}>And {attentionChecks.length - 2} more affected services</Text>}
+                        <PillButton label='View service checks' small onPress={() => setActiveSection(sections.findIndex(item => item.definition.listPath === 'checks'))} />
+                    </View>}
+                </> : filteredRows.slice(0, visibleLimit).map((row, index) => {
                     const rowTitle = itemTitle(row, section.definition, `${section.definition.label} ${index + 1}`)
                     return <Pressable key={`${String(row.id || row.name || row.alias || index)}`} accessibilityRole='button' accessibilityLabel={`View ${rowTitle}`} style={styles.item} onPress={() => setSelected({ section: section.definition, row, title: rowTitle })}>
                         <Text numberOfLines={2} style={styles.heading}>{rowTitle}</Text>

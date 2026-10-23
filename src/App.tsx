@@ -1,8 +1,9 @@
 import { caseWebsitePath, monitoringCaseInWorkspace, monitoredActorsWebsitePath, websitePageUrl, type WebsiteCaseRef } from './lib/workspace-links'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { NavigationContainer, DarkTheme, useNavigationContainerRef } from '@react-navigation/native'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
+import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { Alert, AppState, Platform, Pressable, Text, View } from 'react-native'
 import * as WebBrowser from 'expo-web-browser'
 import { StatusBar } from 'expo-status-bar'
@@ -38,6 +39,9 @@ import { classifyRefreshFailure, sameSettingsSession, SessionTransition } from '
 import { caseId as monitoringCaseId } from './features/cases/model'
 
 const Tab = createBottomTabNavigator<RootTabParamList>()
+function AppRoot({ children, backgroundColor }: { children: ReactNode; backgroundColor: string }) {
+    return <GestureHandlerRootView style={{ flex: 1, backgroundColor }}><SafeAreaProvider>{children}</SafeAreaProvider></GestureHandlerRootView>
+}
 type PendingDeletionDetails = { id: string; restoreToken: string; deletionScheduledAt: string }
 
 const tabIcons = {
@@ -216,7 +220,7 @@ export default function App() {
     }
     function openPage(item: SiteNavigationItem) {
         if (!navigation.isReady() || !sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)) return
-        if (item.disabledReason && item.path) {
+        if (item.opensWebsite && item.path) {
             openWebsite(item.path)
             return
         }
@@ -422,7 +426,7 @@ export default function App() {
     }
 
     return (
-        <GestureHandlerRootView style={{ flex: 1, backgroundColor: activePalette.background }}>
+        <AppRoot backgroundColor={activePalette.background}>
             <StatusBar style='light' />
             <AppThemeProvider mode={settings.themeMode}>
                 <SettingsDrawerProvider openSettings={() => setSettingsOpen(true)} openMenu={() => navigation.navigate('Explore')} openWorkspace={() => setWorkspaceOpen(true)} workspaceName={activeOrganization?.name || 'Personal'}>
@@ -560,6 +564,6 @@ export default function App() {
                     />
                 </SettingsDrawerProvider>
             </AppThemeProvider>
-        </GestureHandlerRootView>
+        </AppRoot>
     )
 }

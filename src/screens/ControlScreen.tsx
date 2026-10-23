@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Linking, Share, TextInput, View } from 'react-native'
+import { Alert, Linking, ScrollView, Share, TextInput, View } from 'react-native'
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import { generateSync } from 'otplib'
 import { assignDashboardUserRole, deleteShare as deleteShareRequest, fetchAiModels, fetchDashboardRoles, fetchDashboardUserRoles, fetchDashboardUsers, fetchServerText, fetchShareTree, fetchTopDomains, fetchUserShares, runDesktopAgentCommand, setDashboardUserActive, setShareLock, triggerServerAction, createShare as createShareRequest, unassignDashboardUserRole, updateShare as updateShareRequest } from '../lib/api'
@@ -88,6 +88,7 @@ export function ControlScreen({
     const [authenticatorBusy, setAuthenticatorBusy] = useState('')
     const cameraLock = useRef(false)
     const [now, setNow] = useState(Date.now())
+    const [section, setSection] = useState<'authenticator' | 'users' | 'shares' | 'status' | 'desktop' | 'shortcuts' | 'settings'>('authenticator')
 
     useEffect(() => {
         setDraft(settings)
@@ -557,7 +558,13 @@ export function ControlScreen({
 
     return (
         <Screen title='Utilities' subtitle=''>
-            <GlassCard>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps='handled' contentContainerStyle={{ flexDirection: 'row', gap: spacing.sm }}>
+                {([
+                    ['authenticator', 'Authenticator'], ['users', 'Users & roles'], ['shares', 'Shares'],
+                    ['status', 'System status'], ['desktop', 'Desktop'], ['shortcuts', 'Shortcuts'], ['settings', 'Connection settings'],
+                ] as const).map(([value, label]) => <PillButton key={value} small label={label} tone={section === value ? 'accent' : 'default'} onPress={() => setSection(value)} />)}
+            </ScrollView>
+            {section === 'authenticator' && <GlassCard>
                 <SectionTitle eyebrow='Utilities' title='QR + authenticator' />
                 <View style={{ flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap', marginTop: spacing.md }}>
                     <PillButton label={authenticatorBusy ? 'Working...' : 'Scan QR'} onPress={async () => {
@@ -596,9 +603,9 @@ export function ControlScreen({
                         </View>
                     ))}
                 </View>
-            </GlassCard>
+            </GlassCard>}
 
-            <GlassCard>
+            {section === 'users' && <GlassCard>
                 <SectionTitle eyebrow='Admin' title='Users and roles' body='Native mobile controls for the same role assignment flow as the dashboard and Desktop app.' />
                 <View style={{ gap: spacing.md, marginTop: spacing.md }}>
                     <View style={{ flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' }}>
@@ -648,9 +655,9 @@ export function ControlScreen({
                         </View>
                     )}
                 </View>
-            </GlassCard>
+            </GlassCard>}
 
-            <GlassCard>
+            {section === 'shares' && <GlassCard>
                 <SectionTitle eyebrow='Shares' title='Create, edit, lock, and inspect shares' />
                 <View style={{ gap: spacing.md, marginTop: spacing.md }}>
                     <TextInput value={shareName} onChangeText={setShareName} placeholder='Share name' placeholderTextColor={theme.textSoft} style={styles.inlineInput} />
@@ -699,9 +706,9 @@ export function ControlScreen({
                         ))}
                     </View>
                 </View>
-            </GlassCard>
+            </GlassCard>}
 
-            <GlassCard>
+            {section === 'status' && <GlassCard>
                 <SectionTitle eyebrow='System' title='Status' />
                 <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
                     {models.slice(0, 3).map(model => (
@@ -726,9 +733,9 @@ export function ControlScreen({
                         <PillButton label={serverBusy === 'logs' ? 'Loading logs...' : 'Check logs'} onPress={() => void checkServerLogs()} disabled={!!serverBusy} />
                     </View>
                 </View>
-            </GlassCard>
+            </GlassCard>}
 
-            <GlassCard>
+            {section === 'desktop' && <GlassCard>
                 <SectionTitle eyebrow='Desktop' title='Remote control' />
                 <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
                     <NativeTile
@@ -741,9 +748,9 @@ export function ControlScreen({
                         <PillButton label={desktopBusy === 'remote_desktop_status' ? 'Checking...' : 'Status'} onPress={() => void runDesktopControlCommand('remote_desktop_status', 'Desktop status')} disabled={!!desktopBusy} />
                     </View>
                 </View>
-            </GlassCard>
+            </GlassCard>}
 
-            <GlassCard>
+            {section === 'shortcuts' && <GlassCard>
                 <SectionTitle eyebrow='Website' title='Shortcuts' />
                 <View style={{ gap: spacing.sm, marginTop: spacing.md }}>
                     {routeShortcuts.map(shortcut => (
@@ -757,9 +764,9 @@ export function ControlScreen({
                         />
                     ))}
                 </View>
-            </GlassCard>
+            </GlassCard>}
 
-            <GlassCard>
+            {section === 'settings' && <GlassCard>
                 <SectionTitle eyebrow='Remote setup' title='Settings' />
                 <View style={{ gap: spacing.md, marginTop: spacing.md }}>
                     <LabeledInput label='API URL' value={draft.apiBaseUrl} onChangeText={value => setDraft(current => ({ ...current, apiBaseUrl: value }))} autoCapitalize='none' autoCorrect={false} keyboardType='url' textContentType='URL' />
@@ -780,7 +787,7 @@ export function ControlScreen({
                         <PillButton label='Share setup' onPress={() => void shareRemoteSetup()} disabled={savingSettings} />
                     </View>
                 </View>
-            </GlassCard>
+            </GlassCard>}
         </Screen>
     )
 }

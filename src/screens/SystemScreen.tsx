@@ -160,11 +160,6 @@ function SystemWorkspace({ settings, mode, onOpenLogs, onOpenVms, services: inje
                 <PillButton label='Open virtual machines' onPress={() => { if (ops.usable(captured)) onOpenVms() }} />
             </View>
         </GlassCard> : <>
-            <SystemActions key={`telemetry:${captured}`}>
-                <PillButton label={auto ? 'Pause live telemetry' : 'Enable live telemetry'} disabled={!ops.usable(captured)} onPress={() => { if (ops.context(captured)) { setAuto(!auto); publish() } }} />
-                <PillButton label='Reconnect live' disabled={!ops.usable(captured) || !access?.canWrite || !auto} onPress={() => { if (ops.context(captured)) { setReconnect(n => n + 1); publish() } }} />{mode === 'overview' && <PillButton label={statistics ? 'Hide statistics' : 'Show statistics'} onPress={() => setStatistics(!statistics)} />}</SystemActions>
-            <SystemText>{access?.canWrite ? liveStatus : 'Live stream requires editing access; permitted reads remain available through Refresh.'}</SystemText>
-            {(settings.impersonationToken || settings.impersonatingUserId) && <InlineNotice message='Actions and live telemetry are unavailable while impersonating.' />}
             {snapshot && <>
                 {staleTelemetry(snapshot) && <InlineNotice message='The system snapshot is stale. Refresh before taking action.' />}
                 {!!snapshot.reason && <InlineNotice message={snapshot.reason} />}{!!snapshot.dockerReason && <InlineNotice message={snapshot.dockerReason} />}
@@ -175,6 +170,13 @@ function SystemWorkspace({ settings, mode, onOpenLogs, onOpenVms, services: inje
                         <PillButton label='Open virtual machines' onPress={() => { if (ops.usable(captured)) onOpenVms() }} />
                     </View>
                 </GlassCard>}
+            </>}
+            <SystemActions key={`telemetry:${captured}`}>
+                <PillButton label={auto ? 'Pause live telemetry' : 'Enable live telemetry'} disabled={!ops.usable(captured)} onPress={() => { if (ops.context(captured)) { setAuto(!auto); publish() } }} />
+                <PillButton label='Reconnect live' disabled={!ops.usable(captured) || !access?.canWrite || !auto} onPress={() => { if (ops.context(captured)) { setReconnect(n => n + 1); publish() } }} />{mode === 'overview' && <PillButton label={statistics ? 'Hide statistics' : 'Show statistics'} onPress={() => setStatistics(!statistics)} />}</SystemActions>
+            {!error && <SystemText>{access?.canWrite ? liveStatus : 'Live stream requires editing access; permitted reads remain available through Refresh.'}</SystemText>}
+            {(settings.impersonationToken || settings.impersonatingUserId) && <InlineNotice message='Actions and live telemetry are unavailable while impersonating.' />}
+            {snapshot && <>
                 {mode === 'containers' && <ContainersPanel snapshot={snapshot} selected={selected} logs={logs} logsBusy={logsBusy} logsError={logsError} host={captured} canWrite={writable} onSelect={select} onRestart={c => review('restart', c)} onLogs={() => void runtimeLogs(selected, captured)} onOpenLogs={service => { if (ops.usable(captured)) onOpenLogs(service) }} />}
             </>}
             {mode === 'overview' && <>

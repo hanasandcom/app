@@ -79,7 +79,8 @@ function TrafficMapWorkspace({ settings, streamTransport }: { settings: AppSetti
         return () => clearInterval(timer)
     }, [foreground, focused])
     const current = snapshot?.domain === domain ? snapshot : null, records = current?.records || [], countries = locatedTrafficCountries(records), located = countries.reduce((sum, item) => sum + item.count, 0)
-    const country = countries.find(item => item.iso === selected), selectedRecords = records.filter(item => item.country_iso === selected)
+    const selectedCountry = countries.some(item => item.iso === selected) ? selected : countries[0]?.iso || selected
+    const country = countries.find(item => item.iso === selectedCountry), selectedRecords = records.filter(item => item.country_iso === selectedCountry)
     return <Screen title='Live traffic map' subtitle='Global traffic · not scoped to the selected workspace' right={<PillButton small label='Refresh' onPress={() => { setBlocked(false); setRevision(value => value + 1) }} />}>
         <InlineNotice message={error} /><InlineNotice message={streamNotice} />
         <Text accessibilityLiveRegion='polite' style={{ color: theme.text, fontWeight: '700' }}>{!foreground || !focused ? 'Paused while this page is inactive' : status}</Text>
@@ -89,9 +90,9 @@ function TrafficMapWorkspace({ settings, streamTransport }: { settings: AppSetti
         {loading && <Text accessibilityRole='progressbar' style={meta}>Loading recent requests and statistics…</Text>}
         <GlassCard style={{ gap: 12 }}><Text style={meta}>{current ? `${records.length} latest requests loaded · ${located} located · ${current.total.toLocaleString()} retained requests in this domain filter. Snapshot ${new Date(current.at).toLocaleTimeString()}.` : 'Recent request snapshot is unavailable.'}</Text>
             <Text style={meta}>{lastBatch ? `Latest live batch: ${lastBatch.count} requests · ${new Date(lastBatch.at).toLocaleTimeString()}` : 'No live request batch received yet.'}</Text>
-            <TrafficMap key={domain} countries={countries} selected={selected} onSelect={iso => { setSelected(iso); setRecord(null) }} pings={pings} now={now} />
+            <TrafficMap key={domain} countries={countries} selected={selectedCountry} onSelect={iso => { setSelected(iso); setRecord(null) }} pings={pings} now={now} />
         </GlassCard>
-        <GlassCard style={{ gap: 10 }}><SectionTitle eyebrow='Country focus' title={selected} body='Counts and shares refer only to located requests in the latest loaded 200-request window.' />
+        <GlassCard style={{ gap: 10 }}><SectionTitle eyebrow='Country focus' title={selectedCountry} body='Counts and shares refer only to located requests in the latest loaded 200-request window.' />
             <Text style={meta}>{!current ? 'Country counts unavailable.' : <>{country?.count || 0} requests · {located ? ((country?.count || 0) / located * 100).toFixed(1) : '0.0'}% of located requests{country ? ` · Last seen ${new Date(country.lastSeen).toLocaleString()}` : ''}</>}</Text>
             {!!current && !selectedRecords.length && <Text style={meta}>No located requests for this country in the current snapshot.</Text>}
             {selectedRecords.slice(0, 10).map(item => <PillButton small key={item.id} label={`${item.method} ${item.status} · ${item.domain}${item.path}`} onPress={() => setRecord(item)} />)}

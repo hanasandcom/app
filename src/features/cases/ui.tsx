@@ -1,17 +1,22 @@
 import { useState } from 'react'
-import { Text, TextInput, View } from 'react-native'
+import { ScrollView, Text, TextInput, View } from 'react-native'
 import { useAppTheme } from '../../theme/context'
 import { PillButton } from '../../components/ui'
 import { text, type Row } from './model'
 import type { CaseController } from './controller'
-export function CaseText({ children, heading = false }: { children: React.ReactNode; heading?: boolean }) {
+export function CaseText({ children, heading = false, numberOfLines }: { children: React.ReactNode; heading?: boolean; numberOfLines?: number }) {
     const t = useAppTheme()
     return <Text
         selectable
         style={{ color: heading ? t.text : t.textMuted, fontSize: heading ? 18 : 14, fontWeight: heading ? '700' : '400', lineHeight: 23 }}
+        numberOfLines={numberOfLines}
     >{children}</Text>
 }
-export function Actions({ children }: { children: React.ReactNode }) { return <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>{children}</View> }
+export function Actions({ children, scroll = false }: { children: React.ReactNode; scroll?: boolean }) {
+    return scroll
+        ? <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps='handled' contentContainerStyle={{ flexDirection: 'row', gap: 8 }}>{children}</ScrollView>
+        : <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>{children}</View>
+}
 export function CaseInput({ label, value, onChange, ops, host, limit = 5000, multiline = false, disabled = false }: { label: string; value: string; onChange: (v: string) => void; ops: CaseController; host: number; limit?: number; multiline?: boolean; disabled?: boolean }) {
     const t = useAppTheme()
     return <View style={{ gap: 5 }}>

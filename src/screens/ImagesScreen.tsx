@@ -94,16 +94,16 @@ function CloudLibrary({ settings }: { settings: AppSettings }) {
                 <GlassCard>
                     <View style={{ gap: spacing.sm }}>
                         <TextInput accessibilityLabel='Search images' autoCorrect={false} autoCapitalize='none' placeholder='Search images or places' placeholderTextColor={theme.textSoft} value={filter.search} onChangeText={search => changeFilter({ ...filter, search })} style={{ color: theme.text, padding: 12, borderRadius: 12, backgroundColor: theme.ambientNeutral }} />
-                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }}>
                             <PillButton label='Upload photos' tone='accent' small onPress={() => setUploadOpen(true)} />
                             <PillButton label='Manage albums' small onPress={() => setAlbumsOpen(true)} />
                             <PillButton label='Library' tone={!filter.favorites && !filter.albumId ? 'accent' : 'default'} small onPress={() => changeFilter({ ...filter, favorites: false, albumId: '' })} />
                             <PillButton label='Favorites' tone={filter.favorites ? 'accent' : 'default'} small onPress={() => changeFilter({ ...filter, favorites: true, albumId: '' })} />
                             <PillButton label={loading ? 'Loading…' : 'Refresh'} small disabled={loading} onPress={() => void load(false)} />
-                        </View>
+                            <PillButton label='Review device photos' small onPress={() => setDevice(true)} />
+                        </ScrollView>
                         {!!albums.length && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }}>{albums.map(album => <PillButton key={album.id} label={`${album.name} (${album.photo_count})`} small tone={filter.albumId === album.id ? 'accent' : 'default'} onPress={() => changeFilter({ ...filter, albumId: album.id, favorites: false })} />)}</ScrollView>}
                         {!!albumError && <><InlineNotice message={`Albums: ${albumError}`} /><PillButton label='Retry albums' small onPress={() => void loadAlbums()} /></>}
-                        <PillButton label='Review device photos' small onPress={() => setDevice(true)} />
                         <Text style={{ color: theme.textMuted, fontSize: 12 }}>{files.length} images{hasMore ? ' loaded' : ''}</Text>
                     </View>
                 </GlassCard>

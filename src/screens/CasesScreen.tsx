@@ -12,6 +12,15 @@ import { CaseDetail, type CasePanel } from '../features/cases/CaseDetail'
 import { Development, type CommitPage, type DevelopmentPage } from '../features/cases/Development'
 export type CasesScreenProps = { settings: AppSettings; initialCaseId?: string; onOpenIntelligence?: () => void; onOpenHealth?: (automationId: string) => void; services?: CaseServices }
 export function CasesScreen(props: CasesScreenProps) { return <CasesWorkspace key={caseWorkspaceKey(props.settings, props.initialCaseId)} {...props} /> }
+function activeCaseFilters(status: string, severity: string, owner: string, resolution: string, review: string) {
+    return [status !== 'active', severity !== 'all', owner !== 'all', resolution !== 'all', review !== 'all'].filter(Boolean).length
+}
+function updatedLabel(value: string) {
+    const date = new Date(value)
+    return Number.isNaN(date.getTime())
+        ? 'Update time unavailable'
+        : `Updated ${date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
+}
 function CasesWorkspace({ settings, initialCaseId, onOpenIntelligence, onOpenHealth, services: injected }: CasesScreenProps) {
     const services = useMemo(() => injected || caseServices(settings), [settings, injected])
     const ops = useRef(new CaseController(intentScope(settings))).current
@@ -25,6 +34,7 @@ function CasesWorkspace({ settings, initialCaseId, onOpenIntelligence, onOpenHea
     const [owner, setOwner] = useState('all'), [resolution, setResolution] = useState('all')
     const drafts = useRef({ comment, ai, repoDraft, mergeSources: [] as string[] })
     const [listLimit, setListLimit] = useState(50)
+    const [filtersExpanded, setFiltersExpanded] = useState(false)
     const [mergeSources, setMergeSources] = useState<string[]>([]), [error, setError] = useState(''), [notice, setNotice] = useState(''), [, render] = useState(0)
     const mounted = useRef(true), focused = useRef(false), foreground = useRef(AppState.currentState === 'active')
     const current = useRef({ selected, panel, detail, repository }); current.current = { selected, panel, detail, repository }
@@ -150,7 +160,7 @@ function CasesWorkspace({ settings, initialCaseId, onOpenIntelligence, onOpenHea
     }
     const shown = items ? filterCases(items, query, status, severity, review, owner, resolution) : []
     return <Screen
-        title='Monitoring cases'
+        title='Cases'
         subtitle={settings.selectedOrganizationId && settings.selectedOrganizationId !== 'personal' ? 'Selected organization' : 'Personal workspace'}
         right={<PillButton
             key={`refresh:${host}`}
@@ -182,7 +192,7 @@ function CasesWorkspace({ settings, initialCaseId, onOpenIntelligence, onOpenHea
 
             {selected ? <>
                 <PillButton label='Back to monitoring cases' disabled={!ops.idle(host)} onPress={() => navigate('')} />
-                <Actions>
+                <Actions scroll>
                     {(['overview', 'comments', 'events', 'history', 'notifications', 'development'] as CasePanel[]).map(v => <PillButton key={v} label={`${panel === v ? '✓ ' : ''}${v}`} disabled={!ops.idle(host)} onPress={() => tab(v)} />)}
                 </Actions>
                 {detail && panel !== 'development' && <CaseDetail
@@ -231,64 +241,71 @@ function CasesWorkspace({ settings, initialCaseId, onOpenIntelligence, onOpenHea
                 <GlassCard>
                     <View style={{ gap: 10 }}>
                         <CaseText heading>Monitoring case queue</CaseText>
-                        <CaseText>Cases are created by health checks. Search and filters apply to the loaded monitoring cases.</CaseText>
+                        <CaseText>Health checks · {items === null ? ops.reading ? 'Loading…' : 'Not loaded' : `${shown.length} ${status === 'active' ? 'active' : 'matching'} · ${items.length} loaded`}</CaseText>
 
                         <CaseInput label='Search monitoring cases' value={query} onChange={setQuery} ops={ops} host={host} limit={200} />
 
-                        <Options
-                            label='Status'
-                            values={['active', 'all', 'open', 'in_progress', 'resolved', 'closed']}
-                            value={status}
-                            disabled={!ops.idle(host)}
-                            choose={v => { if (ops.idle(host)) setStatus(v) }}
-                        />
-
-                        <Options
-                            label='Severity'
-                            values={['all', 'low', 'medium', 'high', 'critical']}
-                            value={severity}
-                            disabled={!ops.idle(host)}
-                            choose={v => { if (ops.idle(host)) setSeverity(v) }}
-                        />
-
-                        <Options
-                            label='Assigned owner'
-                            values={['all', 'unassigned', ...new Set((items || []).map(c => c.assignedOwner).filter(Boolean))]}
-                            value={owner}
-                            disabled={!ops.idle(host)}
-                            choose={v => { if (ops.idle(host)) setOwner(v) }}
-                        />
-
-                        <Options
-                            label='Resolution method'
-                            values={['all', 'human', 'ai', 'automation', 'unknown']}
-                            value={resolution}
-                            disabled={!ops.idle(host)}
-                            choose={v => { if (ops.idle(host)) { setResolution(v); if (v !== 'all') setStatus('all') } }}
-                        />
-
-                        <Options
-                            label='Human review'
-                            values={['all', 'pending', 'confirmed']}
-                            value={review}
-                            disabled={!ops.idle(host)}
-                            choose={v => { if (ops.idle(host)) { setReview(v); if (v !== 'all') setStatus('all') } }}
-                        />
-
                         <PillButton
-                            label='Reset filters'
+                            label={`${filtersExpanded ? 'Hide filters' : 'Filters'}${filtersExpanded || activeCaseFilters(status, severity, owner, resolution, review) === 0 ? '' : ` · ${activeCaseFilters(status, severity, owner, resolution, review)}`}`}
                             disabled={!ops.idle(host)}
-                            onPress={() => { if (ops.idle(host)) { setQuery(''); setStatus('active'); setSeverity('all'); setOwner('all'); setResolution('all'); setReview('all') } }}
+                            onPress={() => { if (ops.idle(host)) setFiltersExpanded(value => !value) }}
                         />
 
-                        <CaseText>{items === null ? ops.reading ? 'Loading cases…' : 'Cases have not loaded.' : `${shown.length} matching · ${items.length} loaded`}</CaseText>
+                        {filtersExpanded && <>
+                            <Options
+                                label='Status'
+                                values={['active', 'all', 'open', 'in_progress', 'resolved', 'closed']}
+                                value={status}
+                                disabled={!ops.idle(host)}
+                                choose={v => { if (ops.idle(host)) setStatus(v) }}
+                            />
 
+                            <Options
+                                label='Severity'
+                                values={['all', 'low', 'medium', 'high', 'critical']}
+                                value={severity}
+                                disabled={!ops.idle(host)}
+                                choose={v => { if (ops.idle(host)) setSeverity(v) }}
+                            />
+
+                            <Options
+                                label='Assigned owner'
+                                values={['all', 'unassigned', ...new Set((items || []).map(c => c.assignedOwner).filter(Boolean))]}
+                                value={owner}
+                                disabled={!ops.idle(host)}
+                                choose={v => { if (ops.idle(host)) setOwner(v) }}
+                            />
+
+                            <Options
+                                label='Resolution method'
+                                values={['all', 'human', 'ai', 'automation', 'unknown']}
+                                value={resolution}
+                                disabled={!ops.idle(host)}
+                                choose={v => { if (ops.idle(host)) { setResolution(v); if (v !== 'all') setStatus('all') } }}
+                            />
+
+                            <Options
+                                label='Human review'
+                                values={['all', 'pending', 'confirmed']}
+                                value={review}
+                                disabled={!ops.idle(host)}
+                                choose={v => { if (ops.idle(host)) { setReview(v); if (v !== 'all') setStatus('all') } }}
+                            />
+
+                            <PillButton
+                                label='Reset filters'
+                                disabled={!ops.idle(host)}
+                                onPress={() => { if (ops.idle(host)) { setQuery(''); setStatus('active'); setSeverity('all'); setOwner('all'); setResolution('all'); setReview('all') } }}
+                            />
+                        </>}
                     </View>
                 </GlassCard>
                 {shown.slice(0, listLimit).map(item => <GlassCard key={item.id}>
                     <View style={{ gap: 8 }}>
                         <CaseText heading>{item.title}</CaseText>
-                        <CaseText>{item.status.replaceAll('_', ' ')} · {item.severity}{ '\n' }{item.summary}{ '\n' }Updated: {item.updatedAt}</CaseText>
+                        <CaseText>{item.status.replaceAll('_', ' ')} · {item.severity}</CaseText>
+                        <CaseText numberOfLines={3}>{item.summary}</CaseText>
+                        <CaseText>{updatedLabel(item.updatedAt)}</CaseText>
                         <Actions>
                             <PillButton label={`Open ${item.id}`} disabled={!ops.idle(host)} onPress={() => navigate(item.id)} />
                             <PillButton

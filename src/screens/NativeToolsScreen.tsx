@@ -52,6 +52,8 @@ export function NativeToolsScreen({ settings, tool, onManageSshKeys, onSelectOrg
         case 'load-tests': return <LoadTestsScreen settings={settings} />
         case 'user-management': return <UserManagementScreen settings={settings} onSelectOrganization={onSelectOrganization} />
         case 'findings': return <FindingsScreen settings={settings} onOpenCase={ref => onOpenCase({ ...ref, route: 'alert_queue' })} onOpenActor={onOpenActor} onOpenMonitoredActors={onOpenMonitoredActors} />
+        case 'actors': return <IntelligenceScreen settings={settings} mode='profiles' title='Actors' />
+        case 'latest-activity': return <IntelligenceScreen settings={settings} mode='activity' title='Latest Activity' />
         case 'rule-tuning': return <RuleTuningScreen settings={settings} />
         case 'api-reference': return <ApiReferenceScreen settings={settings} mode='reference' onOpenJson={onOpenApiJson} onOpenGuide={onOpenGuide} />
         case 'openapi-json': return <ApiReferenceScreen settings={settings} mode='json' onOpenJson={onOpenApiJson} onOpenGuide={onOpenGuide} />

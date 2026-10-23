@@ -10,7 +10,7 @@ mock.module('./api', () => ({ apiFetch: async (settings: AppSettings, url: strin
 mock.module('react-native', () => ({ BackHandler: {}, Pressable: () => null, Text: () => null, TextInput: () => null, View: () => null }))
 mock.module('../components/ui', () => ({ GlassCard: () => null, InlineNotice: () => null, PillButton: () => null, Screen: () => null, SectionTitle: () => null }))
 mock.module('../theme/context', () => ({ useAppTheme: () => ({}) }))
-const { workspaceRequestUrl, fetchWorkspaceSection, workspaceRows, workspaceSectionNotice, workspaceFieldValue, workspaceDetailRow } = await import('../screens/WorkspacePageScreen')
+const { workspaceRequestUrl, fetchWorkspaceSection, workspaceRows, workspaceChecksNeedingAttention, workspaceSectionNotice, workspaceFieldValue, workspaceDetailRow } = await import('../screens/WorkspacePageScreen')
 const settings = { apiBaseUrl: 'https://api.example.test/api', siteBaseUrl: 'https://site.example.test', userId: 'synthetic-user', authToken: 'synthetic-token', selectedOrganizationId: 'synthetic-org', impersonationToken: '' } as AppSettings
 beforeEach(() => { globalThis.fetch = originalFetch; publicRequests.length = 0; requests.length = 0; response = () => Response.json({ checks: [] }) })
 
@@ -51,6 +51,16 @@ describe('maintained workspace API contracts', () => {
         expect(workspaceRows(stale, definition)).toHaveLength(1)
         expect(workspaceSectionNotice({ monitoring: 'unavailable', checks: [check] }, definition, now)).toContain('unavailable')
         expect(workspaceSectionNotice({ monitoring: 'live', checks: [] }, definition, now)).toContain('unavailable')
+    })
+
+    it('prioritizes down and degraded checks for the status overview', () => {
+        const checks = workspaceChecksNeedingAttention([
+            { check_name: 'Healthy', status: 'up', latency_ms: 3 },
+            { check_name: 'Slow warning', status: 'degraded', latency_ms: 800 },
+            { check_name: 'Down API', status: 'down', latency_ms: 300 },
+            { check_name: 'Slow down', status: 'down', latency_ms: 900 },
+        ])
+        expect(checks.map(check => check.check_name)).toEqual(['Slow down', 'Down API', 'Slow warning'])
     })
 
     it('retries one transient idempotent menu read and keeps authorization failures final', async () => {

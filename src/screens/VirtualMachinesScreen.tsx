@@ -15,7 +15,7 @@ export function VirtualMachinesScreen(props: VirtualMachinesScreenProps) { retur
 function VmWorkspaceScreen({ settings, onOpenCheckout, services: injected }: VirtualMachinesScreenProps) {
     const services = useMemo(() => injected || vmServices, [injected])
     const w = useVmWorkspace(settings, services)
-    const [mode, setMode] = useState<'inventory' | 'create'>('inventory'), [filter, setFilter] = useState(defaultVmFilter), [limit, setLimit] = useState(30)
+    const [mode, setMode] = useState<'inventory' | 'create'>('inventory'), [filter, setFilter] = useState(defaultVmFilter), [limit, setLimit] = useState(30), [showMoreFilters, setShowMoreFilters] = useState(false)
     const g = w.ops.generation, rows = w.snapshot.inventory?.value
     const filtered = rows ? filterVms(rows, filter) : []
     const input = (change: () => void) => { if (w.ops.idle(g)) change() }
@@ -39,13 +39,16 @@ function VmWorkspaceScreen({ settings, onOpenCheckout, services: injected }: Vir
             {mode === 'inventory' && <GlassCard>
                 <VmText strong>Owned and accessible inventory</VmText>
                 <VmField label='Search VM names' value={filter.query} onChange={query => input(() => { setFilter(value => ({ ...value, query })); setLimit(30) })} />
-                <VmField label='Exact editor ID (or with / without)' value={filter.editor} onChange={editor => input(() => { setFilter(value => ({ ...value, editor })); setLimit(30) })} />
-                <VmText>Lifecycle</VmText>
-                <VmRow>{(['all', 'active', 'deleted'] as const).map(lifecycle => <PillButton key={lifecycle} label={`${filter.lifecycle === lifecycle ? '✓ ' : ''}${lifecycle}`} small onPress={() => input(() => { setFilter(v => ({ ...v, lifecycle })); setLimit(30) })} />)}</VmRow>
-                <VmRow>{['with', 'without', ''].map(editor => <PillButton key={editor} small label={editor === 'with' ? 'Has editors' : editor === 'without' ? 'No editors' : 'Any editors'} onPress={() => input(() => setFilter(v => ({ ...v, editor })))} />)}</VmRow>
-                <VmField label='Minimum CPU cores' value={filter.cpu} onChange={cpu => input(() => { setFilter(v => ({ ...v, cpu })); setLimit(30) })} max={5} />
-                <VmField label='Minimum memory (GiB)' value={filter.memory} onChange={memory => input(() => { setFilter(v => ({ ...v, memory })); setLimit(30) })} max={8} />
                 <VmRow>{['', 'running', 'stopped'].map(status => <PillButton key={status} small label={`${filter.status === status ? '✓ ' : ''}${status || 'Any power state'}`} onPress={() => input(() => setFilter(v => ({ ...v, status })))} />)}</VmRow>
+                <PillButton small label={`${showMoreFilters ? 'Hide' : 'More'} filters${[filter.lifecycle !== 'all', !!filter.editor, !!filter.cpu, !!filter.memory].filter(Boolean).length ? ` · ${[filter.lifecycle !== 'all', !!filter.editor, !!filter.cpu, !!filter.memory].filter(Boolean).length} active` : ''}`} onPress={() => setShowMoreFilters(value => !value)} />
+                {showMoreFilters && <View style={{ gap: 10 }}>
+                    <VmText>Lifecycle, editor access, and minimum resources</VmText>
+                    <VmRow>{(['all', 'active', 'deleted'] as const).map(lifecycle => <PillButton key={lifecycle} label={`${filter.lifecycle === lifecycle ? '✓ ' : ''}${lifecycle}`} small onPress={() => input(() => { setFilter(v => ({ ...v, lifecycle })); setLimit(30) })} />)}</VmRow>
+                    <VmRow>{['with', 'without', ''].map(editor => <PillButton key={editor} small label={editor === 'with' ? 'Has editors' : editor === 'without' ? 'No editors' : 'Any editors'} onPress={() => input(() => setFilter(v => ({ ...v, editor })))} />)}</VmRow>
+                    <VmField label='Editor ID, with, or without' value={filter.editor} onChange={editor => input(() => { setFilter(value => ({ ...value, editor })); setLimit(30) })} />
+                    <VmField label='Minimum CPU cores' value={filter.cpu} onChange={cpu => input(() => { setFilter(v => ({ ...v, cpu })); setLimit(30) })} max={5} />
+                    <VmField label='Minimum memory (GiB)' value={filter.memory} onChange={memory => input(() => { setFilter(v => ({ ...v, memory })); setLimit(30) })} max={8} />
+                </View>}
                 {!rows ? <VmText>Inventory unavailable.</VmText> : <>
                     <VmText>{filtered.length} matching / {rows.length} loaded VMs{w.snapshot.reads.inventory ? '' : ' · partial inventory; actions remain locked until a complete refresh'}.</VmText>
                     {!filtered.length && <VmText>No loaded VMs match these filters.</VmText>}

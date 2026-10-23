@@ -6,9 +6,11 @@ import { useAppTheme } from '../theme/context'
 import { deliveryStages, deliveryStatuses, intelligenceAccountKey, loadActorProfiles, loadDeliveryHealth, mergeIntelligencePage, recordDeliveryEvidence, validateReportEvidence } from '../lib/intelligence'
 import type { ActorProfile, DeliveryFilter, DeliveryRecord, DeliverySnapshot, ReportEvidence } from '../lib/intelligence'
 
-export type IntelligenceMode = 'profiles' | 'timeliness'
-export function IntelligenceScreen({ settings, mode }: { settings: AppSettings; mode: IntelligenceMode }) {
-    return mode === 'profiles' ? <Profiles key={intelligenceAccountKey(settings)} settings={settings} /> : <DeliveryHealth key={intelligenceAccountKey(settings)} settings={settings} />
+export type IntelligenceMode = 'profiles' | 'activity' | 'timeliness'
+export function IntelligenceScreen({ settings, mode, title }: { settings: AppSettings; mode: IntelligenceMode; title?: string }) {
+    return mode === 'profiles' || mode === 'activity'
+        ? <Profiles key={intelligenceAccountKey(settings)} settings={settings} title={title || (mode === 'activity' ? 'Latest Activity' : 'Actor Profiles')} activity={mode === 'activity'} />
+        : <DeliveryHealth key={intelligenceAccountKey(settings)} settings={settings} />
 }
 function message(cause: unknown) { return cause instanceof Error ? cause.message : 'The intelligence request failed. Try again.' }
 function date(value: string) { const parsed = new Date(value); return Number.isFinite(parsed.getTime()) ? parsed.toLocaleString() : value || 'Not reported' }
@@ -23,14 +25,15 @@ function Input({ name, value, onChange, placeholder, disabled = false }: { name:
 function SourceLink({ url, title }: { url: string | null; title: string }) {
     return url ? <PillButton small label={title} onPress={() => { void Linking.openURL(url).catch(() => Alert.alert('Unable to open reference', 'Try again when a browser is available.')) }} /> : null
 }
-function Profiles({ settings }: { settings: AppSettings }) {
+function Profiles({ settings, title, activity = false }: { settings: AppSettings; title: string; activity?: boolean }) {
     const [draft, setDraft] = useState(''), [query, setQuery] = useState('')
-    return <Screen title='Actor Profiles'>
-        <GlassCard style={{ gap: 12 }}><Input name='Find actor profiles' value={draft} onChange={setDraft} placeholder='Actor name or alias' /><PillButton label='Search profiles' onPress={() => setQuery(draft.trim())} /></GlassCard>
-        <ProfileResults key={query} settings={settings} query={query} />
+    return <Screen title={title}>
+        {activity && <Body>Actors are ordered by most recently observed evidence.</Body>}
+        <GlassCard style={{ gap: 12 }}><Input name={activity ? 'Find recent actor activity' : 'Find actor profiles'} value={draft} onChange={setDraft} placeholder='Actor name or alias' /><PillButton label={activity ? 'Search activity' : 'Search profiles'} onPress={() => setQuery(draft.trim())} /></GlassCard>
+        <ProfileResults key={query} settings={settings} query={query} activity={activity} />
     </Screen>
 }
-function ProfileResults({ settings, query }: { settings: AppSettings; query: string }) {
+function ProfileResults({ settings, query, activity = false }: { settings: AppSettings; query: string; activity?: boolean }) {
     const [items, setItems] = useState<ActorProfile[]>([]), [total, setTotal] = useState<number | null>(null)
     const [page, setPage] = useState(1), [nextPage, setNextPage] = useState<number | null>(null), [revision, setRevision] = useState(0)
     const [error, setError] = useState(''), [loading, setLoading] = useState(false), [selected, setSelected] = useState('')
@@ -48,10 +51,11 @@ function ProfileResults({ settings, query }: { settings: AppSettings; query: str
     return <>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}><PillButton small label={loading ? 'Loading…' : 'Refresh'} disabled={loading} onPress={() => { setPage(1); setRevision(value => value + 1) }} />{error && page > 1 ? <PillButton small label='Retry page' disabled={loading} onPress={() => setRevision(value => value + 1)} /> : null}</View>
         {!!error && <InlineNotice message={error} />}
-        {total !== null && <Body>{items.length} of {total} matching profiles</Body>}
-        {!loading && !error && !items.length && <Body>No actor profiles match this search.</Body>}
+        {total !== null && <Body>{items.length} of {total} {activity ? 'actors' : 'matching profiles'}</Body>}
+        {!loading && !error && !items.length && <Body>{activity ? 'No recent actor activity was found.' : 'No actor profiles match this search.'}</Body>}
         {items.map(profile => <GlassCard key={profile.id} style={{ gap: 10 }}>
             <Heading>{profile.name || profile.normalizedName || profile.id}</Heading>
+            {activity && <Body>Last observed: {date(profile.lastSeenAt)}</Body>}
             <Body>{profile.actorType || 'Type not reported'} · {profile.reviewState || 'Review state not reported'}</Body>
             <Body>{profile.evidenceCount === null ? 'Evidence count not reported' : `${profile.evidenceCount} evidence records`}{profile.confidence === null ? '' : ` · ${Math.round(profile.confidence * 100)}% confidence`}</Body>
             <PillButton small label={selected === profile.id ? 'Close profile' : 'View profile'} onPress={() => setSelected(current => current === profile.id ? '' : profile.id)} />

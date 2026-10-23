@@ -66,7 +66,7 @@ test('TI source handoffs retain the candidate-inventory alias behavior', () => {
 test('menu and contextual website handoffs both use the canonical URL helper', async () => {
     const source = await Bun.file(new URL('../App.tsx', import.meta.url)).text()
     expect(source).toContain('WebBrowser.openBrowserAsync(websitePageUrl(settings.siteBaseUrl, path))')
-    expect(source).toContain('if (item.disabledReason && item.path) {\n            openWebsite(item.path)')
+    expect(source).toContain('if (item.opensWebsite && item.path) {\n            openWebsite(item.path)')
     expect(source.match(/WebBrowser\.openBrowserAsync\(/g)?.length).toBe(2)
     const checkout = source.slice(source.indexOf('async function openVmCheckout'), source.indexOf('function openMonitoredActors'))
     expect(checkout).toContain('target.origin !== \'https://checkout.stripe.com\'')

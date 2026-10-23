@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { Alert, StyleSheet, Text, TextInput, View } from 'react-native'
 import { CalendarClock, Play, RefreshCw } from 'lucide-react-native'
 import { createAutomation, deleteAutomation, fetchAutomationDetails, fetchAutomationOverview, runAutomationNow, updateAutomation } from '../lib/api'
 import { automationEditError, automationInitialTab, automationReadCurrent, automationSelection, automationSavePayload, defaultJsonRule, monitoringTypes, newAutomationDraft, toAutomationDraft, validateAutomationDraft } from '../lib/automation-contract'
@@ -38,6 +38,8 @@ function AccountAutomations({ settings, section, initialAutomationId }: { settin
     const [draft, setDraft] = useState<AgentAutomationPayload>(() => newAutomationDraft(section, defaultTimezone()))
 
     const selected = automations.find(item => item.id === selectedId) || null
+    const cronRunning = cronJobs.filter(job => job.running).length
+    const cronWithErrors = cronJobs.filter(job => !!job.lastError || ['failed', 'error'].includes(job.status.toLowerCase())).length
 
     useEffect(() => {
         active.current = true
@@ -213,6 +215,7 @@ function AccountAutomations({ settings, section, initialAutomationId }: { settin
             {tab === 'cron' ? <>
                 <GlassCard style={styles.editor}>
                     <Text style={styles.sectionTitle}>Cron Jobs · {cronJobs.length}</Text>
+                    {!!cronJobs.length && <Text style={styles.cardMeta}>{cronRunning} running · {cronWithErrors} reporting errors</Text>}
                     <PillButton label={cronBusy === 'load' ? 'Loading…' : 'Refresh cron jobs'} disabled={!!cronBusy} small onPress={() => void loadCronJobs()} />
                     <InlineNotice message={cronError} />
                     {!cronJobs.length && !cronBusy && !cronError && <Text style={styles.cardBody}>No system cron jobs are available for this account.</Text>}
@@ -240,12 +243,12 @@ function AccountAutomations({ settings, section, initialAutomationId }: { settin
                     <PillButton label={busy === 'load' ? 'Loading…' : section === 'health' ? 'Refresh health checks' : 'Refresh personal jobs'} disabled={!!busy} onPress={() => void load()} small />
                 </View>
                 <InlineNotice message={automationError} />
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.automationRail}>
+                <View style={styles.automationList}>
                     {automations.map(automation => (
                         <GlassCard key={automation.id} style={[styles.automationCard, automation.id === selectedId && styles.selectedCard]}>
                             <Text style={styles.cardTitle} numberOfLines={1}>{automation.name}</Text>
                             <Text style={styles.cardBody} numberOfLines={2}>{automation.prompt}</Text>
-                            <Text style={styles.cardMeta}>{automation.actionType} · {automation.monitoringType}</Text>
+                            <Text style={styles.cardMeta}>{automationActionLabel(automation.actionType)} · {monitoringLabel(automation.monitoringType)}</Text>
                             <Text style={styles.cardMeta}>{automation.status} · {automation.lastStatus || 'Not run yet'}</Text>
                             {!!automation.targetUrl && <Text style={styles.cardBody} numberOfLines={2}>{automation.targetUrl}</Text>}
                             <Text style={styles.cardMeta}>{formatSchedule(automation)}</Text>
@@ -264,7 +267,7 @@ function AccountAutomations({ settings, section, initialAutomationId }: { settin
                             <Text style={styles.cardBody}>Create one and the server will run it even if this app is closed.</Text>
                         </GlassCard>
                     )}
-                </ScrollView>
+                </View>
 
                 {showEditor && <GlassCard style={styles.editor}>
                     <View style={styles.editorHeader}>
@@ -388,13 +391,34 @@ function formatSchedule(automation: AgentAutomation) {
         : `Every ${automation.intervalMinutes || 0} min · ${formatDate(automation.nextRunAt)} · ${automation.timezone || 'UTC'}`
 }
 
+function automationActionLabel(action: AgentAutomation['actionType']) {
+    switch (action) {
+        case 'agent_prompt': return 'Monitoring'
+        case 'echo': return 'History reminder'
+        case 'mail_health_check': return 'Mail health'
+        case 'system_alert': return 'Scheduled message'
+        case 'organization_report': return 'Organization report'
+    }
+}
+
+function monitoringLabel(type: AgentAutomation['monitoringType']) {
+    switch (type) {
+        case 'fetch': return 'HTTP check'
+        case 'post': return 'HTTP check'
+        case 'tcp': return 'TCP check'
+        case 'ssh': return 'SSH check'
+        case 'json': return 'JSON check'
+        case 'push': return 'External events'
+    }
+}
+
 function createStyles(theme: ThemePalette) {
     return StyleSheet.create({
         actions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-        automationRail: { gap: spacing.md, paddingVertical: spacing.sm },
-        automationCard: { width: 250, gap: spacing.sm },
+        automationList: { gap: spacing.sm, paddingVertical: spacing.sm },
+        automationCard: { gap: spacing.sm },
         selectedCard: { borderColor: theme.accent },
-        emptyCard: { width: 260, gap: spacing.sm },
+        emptyCard: { gap: spacing.sm },
         editor: { gap: spacing.md },
         editorHeader: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },
         sectionTitle: { color: theme.text, fontSize: 17, fontWeight: '700' },

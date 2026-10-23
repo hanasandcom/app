@@ -8,7 +8,7 @@ import { requestPinnedDesktopAgent } from './pinned-desktop-transport'
 export { AuthenticationError, PendingDeletionError } from './api-errors'
 
 const desktopAgentRequestBodyBytes = 64 * 1024
-const defaultMailApiBaseUrl = process.env.EXPO_PUBLIC_MAIL_API_BASE_URL || 'https://mail.hanasand.com/api'
+const defaultMailApiBaseUrl = process.env.EXPO_PUBLIC_MAIL_API_BASE_URL || 'https://api.hanasand.com/api'
 const desktopAgentCoverTrafficIntervalMs = 1_000
 const desktopAgentPresenceCacheMs = 15_000
 const desktopAgentDiscoveryTimeoutMs = 12_000

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useIsFocused } from '@react-navigation/native'
-import { Alert, Platform, Text, View } from 'react-native'
+import { Alert, Platform, ScrollView, Text, View } from 'react-native'
 import type { AppSettings } from '../types'
 import { deleteHanasandAccount, fetchProfileStats, type MobileProfileStats } from '../lib/api'
 import {
@@ -101,9 +101,9 @@ export function ProfileScreen({ settings, onLogout, onDeleted, initialSection }:
     return (
         <Screen title='Profile' subtitle={identity ? `@${identity.username || identity.id}` : settings.userId}
             right={<PillButton small label='Refresh' disabled={loading || busy} onPress={() => setRevision(value => value + 1)} />}>
-            <View style={styles.row}>
-                {sections.map(item => <PillButton key={item} label={item} tone={section === item ? 'accent' : 'default'} disabled={busy} onPress={() => { setSection(item); setNotice(''); setError('') }} />)}
-            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.sectionRail}>
+                {sections.map(item => <PillButton key={item} small label={item} tone={section === item ? 'accent' : 'default'} disabled={busy} onPress={() => { setSection(item); setNotice(''); setError('') }} />)}
+            </ScrollView>
             <InlineNotice message={error} />
             <InlineNotice message={notice} tone='success' />
             {loading && <Text accessibilityRole='progressbar' style={styles.meta}>Loading {section.toLowerCase()}…</Text>}
@@ -214,6 +214,7 @@ function recentActivity(days: MobileProfileStats['loginDays']) {
 function createStyles(theme: ThemePalette) {
     return {
         card: { gap: spacing.md }, row: { flexDirection: 'row' as const, flexWrap: 'wrap' as const, gap: spacing.sm },
+        sectionRail: { flexDirection: 'row' as const, gap: spacing.sm, paddingVertical: 2 },
         meta: { color: theme.textMuted, fontSize: 13, lineHeight: 19 }, title: { color: theme.text, fontSize: 15, fontWeight: '700' as const },
         item: { gap: spacing.sm, borderTopWidth: 1, borderColor: theme.surfaceBorderSoft, paddingTop: spacing.md },
         fingerprint: { color: theme.textMuted, fontSize: 12, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace' },
