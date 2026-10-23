@@ -175,10 +175,19 @@ export async function loadSettings() {
 }
 
 let settingsSaveQueue: Promise<void> = Promise.resolve()
+let settingsIntentRevision = 0
 
-export function saveSettings(settings: AppSettings): Promise<void> {
+export function settingsWriteRevision(): number {
+    return settingsIntentRevision
+}
+
+export function saveSettings(settings: AppSettings, expectedRevision?: number): Promise<void> {
+    const previousRevision = settingsIntentRevision++
+    const superseded = () => new Error('Settings changed before this save could be applied.')
+    if (expectedRevision !== undefined && previousRevision !== expectedRevision) return Promise.reject(superseded())
     const snapshot = { ...settings }
     const save = settingsSaveQueue.then(async () => {
+        if (expectedRevision !== undefined && settingsIntentRevision !== expectedRevision + 1) throw superseded()
         // Wait for both writes even if one fails: a pending older secret write
         // must never overwrite a newer account after its save starts.
         const secrets = await Promise.allSettled([

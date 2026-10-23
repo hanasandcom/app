@@ -48,6 +48,7 @@ const {
     loadSettings,
     saveAuthenticatorEntries,
     saveSettings,
+    settingsWriteRevision,
 } = await import('./storage')
 
 function totpKey(id: string) {
@@ -195,6 +196,59 @@ describe('secure local storage', () => {
         expect((await rejected)?.message).toBe('Synthetic public failure')
         await newer
         expect(await loadSettings()).toMatchObject({ userId: 'new', authToken: 'new-auth' })
+    })
+
+    it('rejects a delayed Return intent after a newer account save has started', async () => {
+        const stop = deferred(), entered = deferred(), release = deferred()
+        const captured = settingsWriteRevision()
+        const oldReturn = (async () => {
+            await stop.promise
+            await saveSettings({ ...defaultSettings, userId: 'old-actor', authToken: 'old-auth' }, captured)
+        })()
+        const rejected = oldReturn.then(() => null, error => error as Error)
+        beforeSecureWrite = async (key, value) => {
+            if (key === 'hanasand-mobile.auth-token' && value === 'new-auth') { entered.resolve(); await release.promise }
+        }
+        const newer = saveSettings({ ...defaultSettings, userId: 'new-actor', authToken: 'new-auth' })
+        expect(settingsWriteRevision()).toBe(captured + 1)
+        await entered.promise
+        stop.resolve()
+        expect((await rejected)?.message).toContain('Settings changed')
+        expect(settingsWriteRevision()).toBe(captured + 2)
+        expect(operations).toHaveLength(2)
+        release.resolve()
+        await newer
+        expect(await loadSettings()).toMatchObject({ userId: 'new-actor', authToken: 'new-auth', impersonationToken: '' })
+        expect(operations.filter(value => value.startsWith('secure:'))).toHaveLength(2)
+    })
+
+    it('skips a conditional queued Return before native writes when a newer logout supersedes it', async () => {
+        const entered = deferred(), release = deferred()
+        beforeSecureWrite = async (key, value) => {
+            if (key === 'hanasand-mobile.auth-token' && value === 'older-auth') { entered.resolve(); await release.promise }
+        }
+        const older = saveSettings({ ...defaultSettings, userId: 'older', authToken: 'older-auth' })
+        await entered.promise
+        const captured = settingsWriteRevision()
+        const returning = saveSettings({ ...defaultSettings, userId: 'returning', authToken: 'must-not-write' }, captured)
+        const rejected = returning.then(() => null, error => error as Error)
+        expect(settingsWriteRevision()).toBe(captured + 1)
+        const logout = saveSettings({ ...defaultSettings })
+        expect(settingsWriteRevision()).toBe(captured + 2)
+        release.resolve()
+        await older
+        expect((await rejected)?.message).toContain('Settings changed')
+        await logout
+        expect(operations.filter(value => value.startsWith('secure:'))).toHaveLength(4)
+        expect(operations.filter(value => value.startsWith('async:'))).toHaveLength(2)
+        expect(await loadSettings()).toMatchObject({ userId: '', authToken: '', impersonationToken: '' })
+    })
+
+    it('persists a conditional save when its captured intent remains current', async () => {
+        const captured = settingsWriteRevision()
+        await saveSettings({ ...defaultSettings, userId: 'current', authToken: 'current-auth' }, captured)
+        expect(settingsWriteRevision()).toBe(captured + 1)
+        expect(await loadSettings()).toMatchObject({ userId: 'current', authToken: 'current-auth' })
     })
 
     it('moves legacy TOTP seeds to SecureStore before replacing their AsyncStorage record', async () => {
