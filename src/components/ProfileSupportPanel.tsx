@@ -106,7 +106,7 @@ export function ProfileSupportPanel({ settings, revision }: { settings: AppSetti
         <View style={styles.item}>
             <SectionTitle eyebrow='Support' title={ticketId ? ticket?.subject || 'Conversation' : 'New ticket'} />
             {messagesLoading && <Text accessibilityRole='progressbar' style={styles.meta}>Loading conversation…</Text>}
-            {messages.map(row => <View key={row.id} style={styles.item}><Text style={styles.title}>{row.sender_name}</Text><Text selectable style={styles.meta}>{row.body}</Text><Text style={styles.meta}>{date(row.created_at)}</Text></View>)}
+            {messages.map(row => <View key={row.id} style={styles.item}><Text style={styles.title}>{row.sender_name || (row.sender_id === settings.userId ? 'You' : 'Support')}</Text><Text selectable style={styles.meta}>{row.body}</Text><Text style={styles.meta}>{date(row.created_at)}</Text></View>)}
             {ticket?.status === 'closed' ? <>
                 <Text style={styles.meta}>This conversation is resolved. Start a new ticket if you need more help.</Text>
                 {ticket.feedback_rating ? <Text style={styles.meta}>Your feedback: {ticket.feedback_rating}/5{ticket.feedback_comment ? ` · ${ticket.feedback_comment}` : ''}</Text> : access.canFeedback && <>
