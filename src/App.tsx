@@ -252,7 +252,7 @@ export default function App() {
 
     async function returnToOwnView() {
         const before = currentSettings.current
-        if (!before?.impersonationToken || returningToOwnView.current) return
+        if (!before || !before.impersonationToken && !before.impersonatingUserId || returningToOwnView.current) return
         const controller = new AbortController()
         returningToOwnView.current = controller; setReturnPending(true)
         const sameSession = () => {
@@ -466,10 +466,10 @@ export default function App() {
                                     onOpenGuide={() => openWebsite('/developers')} />}
                             </Tab.Screen>
                         </Tab.Navigator>
-                        {!!settings.impersonatingUserId && (
+                        {!!(settings.impersonatingUserId || settings.impersonationToken) && (
                             <View style={{ position: 'absolute', left: 14, right: 14, bottom: Platform.OS === 'ios' ? 100 : 86, borderRadius: 18, borderWidth: 1, borderColor: activePalette.surfaceBorder, backgroundColor: activePalette.backgroundAlt, paddingHorizontal: 14, paddingVertical: 10 }}>
                                 <Pressable disabled={returnPending} accessibilityState={{ busy: returnPending }} onPress={() => void returnToOwnView()} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                                    <Text style={{ color: activePalette.text, fontWeight: '700', flex: 1 }} numberOfLines={2}>Impersonating {settings.impersonatingUserName || settings.impersonatingUserId}</Text>
+                                    <Text style={{ color: activePalette.text, fontWeight: '700', flex: 1 }} numberOfLines={2}>Impersonating {settings.impersonatingUserName || settings.impersonatingUserId || 'another account'}</Text>
                                     <Text style={{ color: activePalette.accent, fontWeight: '800' }}>{returnPending ? 'Returning…' : 'Return to own view'}</Text>
                                 </Pressable>
                             </View>
