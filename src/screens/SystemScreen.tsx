@@ -9,6 +9,7 @@ import { applyLive, bytes, intentScope, measured, ownAccount, staleTelemetry, sy
 import { systemServices, type SystemServices } from '../features/system/services'
 import { StoragePanel } from '../features/system/StoragePanel'
 import { ContainersPanel } from '../features/system/ContainersPanel'
+import { StorageObservation } from '../features/system/storage-observation'
 import { pollStorage } from '../features/system/storage-poll'
 import { SystemActions, SystemText } from '../features/system/ui'
 export type SystemScreenProps = { settings: AppSettings; mode: 'overview' | 'containers'; onOpenLogs: (service?: string) => void; onOpenVms: () => void; services?: SystemServices }
@@ -16,6 +17,7 @@ export function SystemScreen(props: SystemScreenProps) { return <SystemWorkspace
 function SystemWorkspace({ settings, mode, onOpenLogs, onOpenVms, services: injected }: SystemScreenProps) {
     const services = useMemo(() => injected || systemServices(settings), [injected, settings])
     const ops = useRef(new SystemController(intentScope(settings))).current
+    const storageObservation = useRef(new StorageObservation()).current
     const [access, setAccess] = useState<Access | null>(null), [snapshot, setSnapshot] = useState<Telemetry | null>(null), [storage, setStorage] = useState<Storage | null>(null)
     const [error, setError] = useState(''), [notice, setNotice] = useState(''), [storageError, setStorageError] = useState('')
     const [visible, setVisible] = useState(false), [auto, setAuto] = useState(true), [reconnect, setReconnect] = useState(0), [liveStatus, setLiveStatus] = useState('Not connected')
@@ -25,11 +27,11 @@ function SystemWorkspace({ settings, mode, onOpenLogs, onOpenVms, services: inje
     const latest = useRef({ access, snapshot, storage, selected }); latest.current = { access, snapshot, storage, selected }
     const publish = () => { if (mounted.current) render(n => n + 1) }
     const captured = ops.generation
-    function hide() { ops.hide(); logRequest.current?.abort(); logRequest.current = null; setVisible(false); setAccess(null); setSnapshot(null); setStorage(null); setLogs(null); setSelected(''); setLogsBusy(false); publish() }
+    function hide() { storageObservation.unavailable(); ops.hide(); logRequest.current?.abort(); logRequest.current = null; setVisible(false); setAccess(null); setSnapshot(null); setStorage(null); setLogs(null); setSelected(''); setLogsBusy(false); publish() }
     async function refresh(generation: number, manual: boolean) {
         const read = ops.beginRead(generation, manual)
         if (!read) return
-        logRequest.current?.abort(); setLogs(null); setLogsError(''); setError(''); setStorageError(''); setAccess(null); publish()
+        storageObservation.unavailable(); logRequest.current?.abort(); setLogs(null); setLogsError(''); setError(''); setStorageError(''); setAccess(null); publish()
         let complete = false, canRead = false
         try {
             const permission = await services.access(read.controller.signal)
@@ -40,7 +42,8 @@ function SystemWorkspace({ settings, mode, onOpenLogs, onOpenVms, services: inje
             const [telemetry, disk] = await Promise.allSettled([services.telemetry(read.controller.signal), mode === 'overview' || ops.unknown?.kind === 'cleanup' ? services.storage(read.controller.signal) : Promise.resolve(null)])
             if (!ops.current(read.ticket.generation)) return
             if (telemetry.status === 'fulfilled') { setSnapshot(telemetry.value); latest.current.snapshot = telemetry.value } else { setSnapshot(null); setError(message(telemetry.reason)) }
-            if (disk.status === 'fulfilled') setStorage(disk.value); else { setStorage(null); setStorageError(message(disk.reason)) }
+            if (disk.status === 'fulfilled' && disk.value) { storageObservation.observe(disk.value); setStorage(disk.value) }
+            else if (disk.status === 'rejected') { storageObservation.unavailable(); setStorageError(message(disk.reason)) }
             const unknown = ops.unknown
             complete = telemetry.status === 'fulfilled' && (!unknown || unknown.kind !== 'cleanup' || disk.status === 'fulfilled' && disk.value !== null)
         } catch (cause) { if (ops.current(read.ticket.generation)) setError(message(cause)) }
@@ -79,8 +82,9 @@ function SystemWorkspace({ settings, mode, onOpenLogs, onOpenVms, services: inje
             current: () => mounted.current && ops.current(captured),
             busy: () => ops.reading || ops.writing,
             value: () => latest.current.storage,
-            data: value => { latest.current.storage = value; setStorage(value); setStorageError('') },
+            data: value => { storageObservation.observe(value); latest.current.storage = value; setStorage(value); setStorageError('') },
             error: cause => {
+                storageObservation.unavailable(); ops.forgetReview()
                 setStorageError(message(cause))
                 if (cause instanceof SystemError && [401, 403].includes(cause.status)) { ops.needsReview = true; setAccess(null); publish() }
             },
@@ -104,17 +108,19 @@ function SystemWorkspace({ settings, mode, onOpenLogs, onOpenVms, services: inje
     const writable = ops.usable(captured) && !ops.locked && !!access?.canWrite && ownAccount(settings) && !!snapshot && !staleTelemetry(snapshot)
     function review(kind: SystemIntent['kind'], container?: Container) {
         if (!writable || kind === 'restart' && (!container || selected !== container.id) || kind === 'cleanup' && (!storage || storage.stale || storage.running || storage.queued || !!storage.error)) return
-        const generation = captured, target = container?.id || 'docker-storage', name = container?.name
+        const generation = captured, target = container?.id || 'docker-storage', name = container?.name, storageRevision = storageObservation.revision
+        if (kind === 'cleanup' && !storageObservation.current(storageRevision)) return
         Alert.alert(kind === 'restart' ? `Restart ${name}?` : 'Clear unused Docker storage?', kind === 'restart' ? 'Active requests may be interrupted. Closing this screen does not cancel the restart.' : 'The host cleanup service will clear eligible build cache and unused images, preserving its rollback policy.', [
             { text: 'Cancel', style: 'cancel' }, { text: kind === 'restart' ? 'Restart' : 'Queue cleanup', style: 'destructive', onPress: () => {
                 const current = latest.current
                 if (!ops.usable(generation) || ops.locked || !current.access?.canWrite || !current.snapshot || staleTelemetry(current.snapshot)
+                    || kind === 'cleanup' && !storageObservation.current(storageRevision)
                     || kind === 'restart' && (current.selected !== target || !current.snapshot.containers.some(c => c.id === target && c.name === name))) return
-                void perform({ token: randomUUID(), kind, target }, generation)
+                void perform({ token: randomUUID(), kind, target }, generation, storageRevision)
             } },
         ])
     }
-    async function perform(intent: SystemIntent, generation: number) {
+    async function perform(intent: SystemIntent, generation: number, storageRevision: number) {
         const current = latest.current
         if (!current.access || !current.snapshot || !ownAccount(settings)) return
         const write = ops.beginWrite(generation, intent)
@@ -124,8 +130,11 @@ function SystemWorkspace({ settings, mode, onOpenLogs, onOpenVms, services: inje
             const permission = await services.access(write.controller.signal)
             if (!ops.current(write.generation) || !permission.canWrite || permission.scope !== systemScope(settings)) throw new SystemError('Current editing access could not be verified.', 403)
             if (intent.kind === 'restart') await services.restart(permission, current.snapshot, intent.target, write.controller.signal)
-            else if (current.storage) await services.cleanup(permission, current.storage, write.controller.signal)
-            else throw new SystemError('Current storage figures are unavailable.')
+            else {
+                const observed = storageObservation.current(storageRevision)
+                if (!observed) throw new SystemError('Storage changed or became unavailable. Refresh and review cleanup again.')
+                await services.cleanup(permission, observed, write.controller.signal)
+            }
             if (ops.finishWrite(write.generation, intent, true)) setNotice(intent.kind === 'restart' ? 'Restart request accepted. Refresh to inspect current state; completion is not confirmed.' : 'Cleanup queued. Refresh to inspect host progress.')
         } catch (cause) {
             const confirmedNoWrite = cause instanceof SystemError && !cause.uncertain
@@ -169,7 +178,7 @@ function SystemWorkspace({ settings, mode, onOpenLogs, onOpenVms, services: inje
                 {mode === 'containers' && <ContainersPanel snapshot={snapshot} selected={selected} logs={logs} logsBusy={logsBusy} logsError={logsError} host={captured} canWrite={writable} onSelect={select} onRestart={c => review('restart', c)} onLogs={() => void runtimeLogs(selected, captured)} onOpenLogs={service => { if (ops.usable(captured)) onOpenLogs(service) }} />}
             </>}
             {mode === 'overview' && <>
-                <InlineNotice message={storageError} />{storage && <StoragePanel value={storage} host={captured} canWrite={writable} onCleanup={() => review('cleanup')} />}</>}
+                <InlineNotice message={storageError} />{storage && <StoragePanel value={storage} host={captured} canWrite={writable && !!storageObservation.current(storageObservation.revision)} onCleanup={() => review('cleanup')} />}</>}
         </>}
     </Screen>
 }

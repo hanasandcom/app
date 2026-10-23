@@ -193,3 +193,39 @@ test('denied internal visibility cannot acknowledge an existing uncertain action
     expect(source).toContain('if (!canRead) { setSnapshot(null); setStorage(null); return }')
     expect(source).toContain('ops.finishRead(read.ticket, complete, canRead)')
 })
+test('failed storage observations retain figures but block queued cleanup and an already-open confirmation', async () => {
+    const { StorageObservation } = await import('./storage-observation')
+    const observed = new StorageObservation(), idle = m.parseStorage(storage())
+    observed.observe(idle); const review = observed.revision
+    expect(observed.current(review)).toBe(idle)
+    let resolvePermission!: () => void, dispatches = 0
+    const permission = new Promise<void>(resolve => { resolvePermission = resolve })
+    const attempt = async () => { await permission; if (observed.current(review)) dispatches++ }
+    const pending = attempt()
+    observed.unavailable() // Current polling request returned 503 during permission validation.
+    expect(observed.current(review)).toBeNull()
+    resolvePermission(); await pending; expect(dispatches).toBe(0)
+    observed.observe(idle)
+    expect(observed.current(review)).toBeNull() // A successful later read cannot revive the old Alert.
+    expect(observed.current(observed.revision)).toBe(idle)
+    observed.observe(m.parseStorage(storage({ running: true })))
+    expect(observed.current(observed.revision)).toBeNull()
+    const source = readFileSync(fileURLToPath(import.meta.url).replace(/features\/system\/system.test.ts$/, 'screens/SystemScreen.tsx'), 'utf8')
+    expect(source).toContain('storageObservation.unavailable(); ops.forgetReview()\n                setStorageError')
+    expect(source).toContain('kind === \'cleanup\' && !storageObservation.current(storageRevision)')
+    expect(source.indexOf('await services.access(write.controller.signal)')).toBeLessThan(source.indexOf('const observed = storageObservation.current(storageRevision)'))
+    expect(source).toContain('await services.cleanup(permission, observed, write.controller.signal)')
+    expect(source).toContain('canWrite={writable && !!storageObservation.current(storageObservation.revision)}')
+})
+
+test('a new failed observation also invalidates an earlier manual uncertainty review', () => {
+    const ops = new SystemController('review-observation', new SystemIntents()); ops.visible = true
+    const intent = { token: 'uncertain', kind: 'cleanup' as const, target: 'docker-storage' }
+    const write = ops.beginWrite(ops.generation, intent)!
+    ops.finishWrite(write.generation, intent, false)
+    const read = ops.beginRead(ops.generation, true)!
+    ops.finishRead(read.ticket, true, true); expect(ops.canAcknowledge).toBe(true)
+    ops.forgetReview(); expect(ops.canAcknowledge).toBe(false)
+    expect(ops.acknowledge(ops.generation, intent.token)).toBe(false)
+    expect(ops.unknown).toEqual(intent)
+})

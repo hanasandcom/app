@@ -24,6 +24,7 @@ export class SystemController {
     get unknown() { return this.registry.get(this.scope) }
     get locked() { return this.needsReview || !!this.unknown }
     get canAcknowledge() { return !!this.unknown && this.reviewed === this.unknown.token }
+    forgetReview() { this.reviewed = undefined }
     current(g: number) { return this.visible && this.generation === g }
     usable(g: number) { return this.current(g) && !this.reading && !this.writing }
     context(g: number) { if (!this.usable(g)) return false; this.generation++; this.reviewed = undefined; return true }
