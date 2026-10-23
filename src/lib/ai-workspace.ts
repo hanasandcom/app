@@ -260,7 +260,7 @@ export async function runHanasandPrompt(settings: AppSettings, conversationId: s
         return { message }
     } catch (error) {
         if (signal.aborted || (error as { submitted?: boolean }).submitted) throw error
-        const body = await request<AiRunDetails & { status?: string }>(settings, endpoint(settings.apiBaseUrl, settings.codexApiPath), {
+        const body = await request<AiRunDetails & { status?: string }>(settings, endpoint(settings.siteBaseUrl, 'api/backend/tools/ai'), {
             method: 'POST', body: JSON.stringify({ prompt, context: JSON.stringify(context) }), signal,
         }, 120000)
         if (body.status === 'connecting') throw new Error(body.message || 'No model is connected. Try again shortly.', { cause: error })

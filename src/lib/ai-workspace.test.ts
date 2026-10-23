@@ -167,7 +167,7 @@ describe('shared mobile AI workspace', () => {
     it('uses HTTP fallback only when the live request could not be sent', async () => {
         socketMode = 'unavailable'; payload = { message: 'HTTP answer', status: 'completed' }
         expect((await api.runHanasandPrompt(settings, 'thread', 'Prompt', [], () => {}, new AbortController().signal)).message).toBe('HTTP answer')
-        expect(calls[0].url).toBe('https://api.example.test/api/tools/ai')
+        expect(calls[0].url).toBe('https://example.test/api/backend/tools/ai')
     })
     it('cancels the live listener without submitting a fallback request', async () => {
         socketMode = 'hold'

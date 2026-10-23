@@ -1036,7 +1036,7 @@ export async function fetchServerText(url: string, settings?: AppSettings) {
 export async function askCodex(settings: AppSettings, prompt: string, context?: string): Promise<AiRunDetails> {
     requireAppAuth(settings, 'use Codex in-app')
 
-    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, settings.codexApiPath), {
+    const response = await apiFetch(settings, joinUrl(settings.siteBaseUrl, 'api/backend/tools/ai'), {
         method: 'POST',
         headers: headers(settings),
         body: JSON.stringify({ prompt, context }),

@@ -55,7 +55,7 @@ mock.module('expo-crypto', () => ({
     },
 }))
 
-const { startMobileImpersonation, stopMobileImpersonation, isHanasandOrganizationMember, apiFetch, fetchAiModels, createHanasandBrowserSignInUrl, fetchNotes, AuthenticationError, exchangeHanasandMobileSsoCode, fetchDesktopAgentStatus, isHanasandGoogleSignInConfigured, loginToHanasand, loginWithHanasandPasskey, refreshHanasandSession, runDesktopAgentCommand } = await import('./api')
+const { startMobileImpersonation, stopMobileImpersonation, isHanasandOrganizationMember, apiFetch, askCodex, fetchAiModels, createHanasandBrowserSignInUrl, fetchNotes, AuthenticationError, exchangeHanasandMobileSsoCode, fetchDesktopAgentStatus, isHanasandGoogleSignInConfigured, loginToHanasand, loginWithHanasandPasskey, refreshHanasandSession, runDesktopAgentCommand } = await import('./api')
 
 const settings: AppSettings = {
     themeMode: 'obsidian',
@@ -174,6 +174,24 @@ describe('desktop agent discovery retry', () => {
         await expect(fetchDesktopAgentStatus({ ...settings, authToken: 'desktop-discovery-timeout-token' }))
             .rejects.toThrow('Desktop agent discovery timed out. Check your connection and retry.')
     }, 15_000)
+})
+
+describe('native Codex tool route', () => {
+    it('uses the website backend proxy with a proof bound to its public route', async () => {
+        let target = ''
+        let request: RequestInit | undefined
+        mockFetch(async (input, init) => {
+            target = String(input)
+            request = init
+            return Response.json({ message: 'Synthetic answer', durationMs: 12 })
+        })
+        expect(await askCodex(settings, 'Synthetic prompt', 'Synthetic context')).toMatchObject({ message: 'Synthetic answer', durationMs: 12 })
+        expect(target).toBe('https://hanasand.com/api/backend/tools/ai')
+        expect(request?.method).toBe('POST')
+        expect(new Headers(request?.headers).get('authorization')).toBe(`Bearer ${settings.authToken}`)
+        expect(new Headers(request?.headers).get('x-device-proof-url')).toBe('https://hanasand.com/api/backend/tools/ai')
+        expect(JSON.parse(String(request?.body))).toEqual({ prompt: 'Synthetic prompt', context: 'Synthetic context' })
+    })
 })
 
 describe('browser sign-in routing', () => {

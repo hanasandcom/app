@@ -175,8 +175,6 @@ export function SettingsDrawer({
                                 <SettingsInput theme={theme} label='Site base URL' value={draft.siteBaseUrl} onChangeText={(value) => update('siteBaseUrl', value)} urlInput />
                                 <SettingsInput theme={theme} label='API base URL' value={draft.apiBaseUrl} onChangeText={(value) => update('apiBaseUrl', value)} urlInput />
                                 <SettingsInput theme={theme} label='CDN API URL' value={draft.cdnBaseUrl} onChangeText={(value) => update('cdnBaseUrl', value)} urlInput />
-                                <SettingsInput theme={theme} label='Codex URL' value={draft.codexUrl} onChangeText={(value) => update('codexUrl', value)} urlInput />
-                                <SettingsInput theme={theme} label='Codex API path' value={draft.codexApiPath} onChangeText={(value) => update('codexApiPath', value)} autoCapitalize='none' />
                                 <SettingsInput theme={theme} label='Desktop agent URL' value={draft.desktopAgentBaseUrl} onChangeText={(value) => update('desktopAgentBaseUrl', value)} urlInput />
                             </View>
                         )}
