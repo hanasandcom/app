@@ -137,3 +137,19 @@ test('callbacks captured before clearing stay invalid after write and refresh re
     state.capturedGeneration = state.generation
     expect(api.canEditDeskInput(state)).toBe(true)
 })
+
+test('submission changes native input identity while ordinary replies and live reads keep it stable', () => {
+    const before = api.deskInputKey(id, 0), submitting = api.deskInputKey(id, 1), idle = api.deskInputKey(id, 2)
+    expect(before).toBe(api.deskInputKey(id, 0))
+    expect(submitting).not.toBe(before); expect(idle).not.toBe(submitting)
+    // Model Fabric's lookup by mounted native target: after remount, dispatch never reaches a fresh listener.
+    const targets = new Map<string, (value: string) => void>()
+    let draft = ''
+    targets.set(before, value => { draft = value })
+    targets.delete(before); targets.set(idle, value => { draft = value })
+    targets.get(before)?.('delayed submitted text')
+    expect(draft).toBe('')
+    targets.get(idle)?.('fresh input'); expect(draft).toBe('fresh input')
+    const source = readFileSync(new URL('../screens/SupportDeskScreen.tsx', import.meta.url).pathname, 'utf8')
+    expect(source.match(/key=\{deskInputKey\(ticket.id, accountClear\)\}/g)).toHaveLength(2)
+})

@@ -10,7 +10,7 @@ import { SupportDeskFilters, SupportDeskInput } from '../components/SupportDeskF
 import { GlassCard, InlineNotice, PillButton, Screen, SectionTitle } from '../components/ui'
 import { useAppTheme } from '../theme/context'
 import {
-    canEditDeskInput, changeDeskAccount, deskFilterQuery, emptyDeskFilters, loadDeskMessages, loadSupportDesk,
+    canEditDeskInput, deskInputKey, changeDeskAccount, deskFilterQuery, emptyDeskFilters, loadDeskMessages, loadSupportDesk,
     replyToDeskTicket, setDeskTicketStatus, supportDeskScope, validateSupportAccountChange,
     visibleDeskTickets, type DeskFilters, type DeskTicket, type SupportDesk
 } from '../lib/support-desk'
@@ -139,7 +139,7 @@ function SupportDeskWorkspace({ settings, liveAdapter }: { settings: AppSettings
         } finally {
             if (writing.current === controller) {
                 writing.current = null; inputEpoch.current++
-                if (current()) { setBusy(false); if (succeeded) void load(false) }
+                if (current()) { setAccountClear(value => value + 1); setBusy(false); if (succeeded) void load(false) }
             }
         }
     }
@@ -205,7 +205,7 @@ function SupportDeskWorkspace({ settings, liveAdapter }: { settings: AppSettings
                     <Text style={meta}>{date(item.created_at)}</Text>
                 </View>)}
                 {!messages.length && !loading && <Text style={meta}>No messages returned.</Text>}
-                <SupportDeskInput label='Reply to customer' value={draft} multiline maxLength={10000}
+                <SupportDeskInput key={deskInputKey(ticket.id, accountClear)} label='Reply to customer' value={draft} multiline maxLength={10000}
                     editable={writable && ticket.status !== 'closed'} onChangeText={value => {
                         if (!editAllowed(ticket.id) || ticket.status === 'closed') return
                         review.current++; drafts.current[ticket.id] = value; setDraft(value)
@@ -214,7 +214,7 @@ function SupportDeskWorkspace({ settings, liveAdapter }: { settings: AppSettings
                 {ticket.user_id && ticket.channel === 'human' && <PillButton label='Customer account changes' disabled={!writable}
                     onPress={() => { review.current++; setAccountOpen(value => !value) }} />}
             </GlassCard>}
-            {accountOpen && ticket?.user_id && <SupportAccountEditor key={ticket.id} active={visible.current}
+            {accountOpen && ticket?.user_id && <SupportAccountEditor key={deskInputKey(ticket.id, accountClear)} active={visible.current}
                 disabled={!writable} clearRevision={accountClear} onDirty={() => {
                     if (!editAllowed(ticket.id)) return false
                     review.current++; return true

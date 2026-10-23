@@ -9,6 +9,7 @@ export const supportDeskScope = (settings: AppSettings) => JSON.stringify([
     supportBase(), settings.siteBaseUrl, settings.userId, settings.authToken,
     settings.impersonationToken, settings.impersonatingUserId, settings.selectedOrganizationId
 ])
+export const deskInputKey = (ticketId: string, clearRevision: number) => `${ticketId}:${clearRevision}`
 export function canEditDeskInput(state: {
     alive: boolean; visible: boolean; allowed: boolean; reading: boolean; writing: boolean; locked: boolean
     ticket: string; selected: string; generation: number; capturedGeneration: number
