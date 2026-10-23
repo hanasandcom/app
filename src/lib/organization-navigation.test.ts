@@ -67,4 +67,14 @@ describe('organization menu navigation', () => {
         expect(scrollEffect).not.toMatch(/setSelectedId|setDraft|setInviteEmails|setCreateName|onSelectOrganization/)
     })
 
+    it('opens an organization after a directory or user-detail handoff saves its workspace selection', () => {
+        expect(app).toContain('onSelectOrganization={id => void openOrganizationWorkspace(id)}')
+        const open = app.slice(app.indexOf('async function openOrganizationWorkspace'), app.indexOf('function openWebsite'))
+        expect(open).toContain('if (!await selectWorkspace(id)) {')
+        expect(open).toContain("Alert.alert('Unable to open organization'")
+        expect(open).toContain('setOrganizationRevision(value => value + 1)')
+        expect(open).toContain("navigation.navigate('Organizations', { section: 'Overview' })")
+        expect(open.indexOf('await selectWorkspace(id)')).toBeLessThan(open.indexOf("navigation.navigate('Organizations'"))
+    })
+
 })

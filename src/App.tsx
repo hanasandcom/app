@@ -147,13 +147,24 @@ export default function App() {
     }, [settings?.apiBaseUrl, settings?.userId, settings?.authToken, organizationRevision])
 
     async function selectWorkspace(id: string) {
-        if (!settings) return
+        if (!settings) return false
         try {
             await handleSaveSettings({ ...settings, selectedOrganizationId: id || 'personal' })
             setWorkspaceOpen(false)
+            return true
         } catch (error) {
             setOrganizationError(error instanceof Error ? error.message : 'Unable to save the workspace selection.')
+            return false
         }
+    }
+
+    async function openOrganizationWorkspace(id: string) {
+        if (!await selectWorkspace(id)) {
+            Alert.alert('Unable to open organization', 'Your workspace selection could not be saved. Try again.')
+            return
+        }
+        setOrganizationRevision(value => value + 1)
+        navigation.navigate('Organizations', { section: 'Overview' })
     }
 
     function openWebsite(path: string) {
@@ -456,7 +467,7 @@ export default function App() {
                             </Tab.Screen>
                             <Tab.Screen name='Tools'>
                                 {({ route }) => <NativeToolsScreen settings={settings} tool={route.params.tool} initialQuery={route.params.query} onManageSshKeys={() => navigation.navigate('Profile', { section: 'SSH keys' })}
-                                    onSelectOrganization={id => void selectWorkspace(id)}
+                                    onSelectOrganization={id => void openOrganizationWorkspace(id)}
                                     onConfigureDelivery={() => navigation.navigate('Tools', { tool: 'integrations' })}
                                     onOpenCase={openCase}
                                     onViewAiLogs={name => openWebsite(`/logs?service=${encodeURIComponent(name)}`)}
