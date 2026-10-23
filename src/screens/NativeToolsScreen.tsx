@@ -1,5 +1,6 @@
 import { FindingsScreen } from './FindingsScreen'
 import { UserManagementScreen } from './UserManagementScreen'
+import { LoadTestsScreen } from './LoadTestsScreen'
 import { RuleTuningScreen } from './RuleTuningScreen'
 import { ApiReferenceScreen } from './ApiReferenceScreen'
 import { SupportDeskScreen } from './SupportDeskScreen'
@@ -31,6 +32,7 @@ export function NativeToolsScreen({ settings, tool, onManageSshKeys, onSelectOrg
     onOpenApiJson: () => void; onOpenGuide: () => void; initialQuery?: string
 }) {
     switch (tool) {
+        case 'load-tests': return <LoadTestsScreen settings={settings} />
         case 'user-management': return <UserManagementScreen settings={settings} onSelectOrganization={onSelectOrganization} />
         case 'findings': return <FindingsScreen settings={settings} onOpenCase={ref => onOpenCase({ ...ref, route: 'alert_queue' })} onOpenActor={onOpenActor} onOpenMonitoredActors={onOpenMonitoredActors} />
         case 'rule-tuning': return <RuleTuningScreen settings={settings} />

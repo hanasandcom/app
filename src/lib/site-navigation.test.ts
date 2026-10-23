@@ -130,3 +130,11 @@ it('opens management Users in the native directory workflow', () => {
     expect(item?.disabledReason).toBeUndefined()
     expect(nativeToolForPath(item?.path)).toBe('user-management')
 })
+
+it('shares the native load-test workflow between its public and administration menu paths', () => {
+    const items = leaves(siteNavigation('synthetic-user'))
+    for (const path of ['/test', '/load-testing']) {
+        expect(items.find(item => item.path === path)?.tab).toBe('Tools')
+        expect(nativeToolForPath(path)).toBe('load-tests')
+    }
+})

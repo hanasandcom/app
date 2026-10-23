@@ -1,6 +1,8 @@
 import type { RootTabParamList } from '../types'
 
 const tools: Record<string, RootTabParamList['Tools']['tool']> = {
+    '/test': 'load-tests',
+    '/load-testing': 'load-tests',
     '/management/users': 'user-management',
     '/findings': 'findings',
     '/rules/tuning': 'rule-tuning',
