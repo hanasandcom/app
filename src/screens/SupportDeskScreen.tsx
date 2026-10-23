@@ -73,7 +73,7 @@ function SupportDeskWorkspace({ settings, liveAdapter }: { settings: AppSettings
         return () => { review.current++; reading.current?.abort() }
     }, [focused, foreground])
     sync.current = () => { setCustomerRevision(value => value + 1); void load(false) }
-    const liveEnabled = desk?.realtime && (desk.isSupport || desk.tickets.some(item => item.status !== 'closed'))
+    const liveEnabled = desk?.realtime === true
     useEffect(() => {
         if (!focused || !foreground || !liveEnabled) return
         const controller = new AbortController()

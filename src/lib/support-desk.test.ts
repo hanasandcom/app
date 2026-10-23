@@ -153,3 +153,9 @@ test('submission changes native input identity while ordinary replies and live r
     const source = readFileSync(new URL('../screens/SupportDeskScreen.tsx', import.meta.url).pathname, 'utf8')
     expect(source.match(/key=\{deskInputKey\(ticket.id, accountClear\)\}/g)).toHaveLength(2)
 })
+
+test('verified customer live updates start before the first ticket is created', () => {
+    const source = readFileSync(new URL('../screens/SupportDeskScreen.tsx', import.meta.url).pathname, 'utf8')
+    expect(source).toContain('const liveEnabled = desk?.realtime === true')
+    expect(source).not.toContain('desk.tickets.some(item => item.status !== \'closed\')')
+})
