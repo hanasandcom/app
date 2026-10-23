@@ -49,7 +49,17 @@ function metadataSummary(value: unknown) {
     return summary.join(' · ') || metadataFallback
 }
 export function findingExcerpt(value: unknown) {
-    const raw = string(value).trim()
+    let raw = string(value).trim()
+    // Decode bounded JSON string wrappers before classifying; escaped punctuation must not hide structured fields.
+    for (let depth = 0; depth < 3 && raw.startsWith('"'); depth++) {
+        if (raw.length > 8000) return metadataFallback
+        try {
+            const decoded: unknown = JSON.parse(raw)
+            if (typeof decoded !== 'string') return metadataFallback
+            raw = decoded.trim()
+        } catch { return metadataFallback }
+    }
+    if (raw.startsWith('"')) return metadataFallback
     // Structured capture metadata is never displayed wholesale, even when prefixed or JSON-encoded twice.
     if (structuredText(raw)) {
         if (raw.length > 8000) return metadataFallback

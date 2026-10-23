@@ -152,3 +152,15 @@ test('prefixed, embedded, escaped and double-encoded JSON exposes only allowed m
     expect(findingExcerpt('Safe plain source excerpt.')).toBe('Safe plain source excerpt.')
     expect(findingText('"token":"private value with spaces"')).not.toContain('private value')
 })
+
+test('Unicode-escaped JSON string layers are decoded before metadata classification', () => {
+    const encodedObject = (value: unknown) => '"' + Array.from(JSON.stringify(value)).map(char => '\\u' + char.charCodeAt(0).toString(16).padStart(4, '0')).join('') + '"'
+    const hidden = encodedObject({ unknown: 'private-other-prose' })
+    expect(findingExcerpt(hidden)).toBe('Evidence metadata is available.')
+    expect(findingExcerpt(JSON.stringify(hidden))).not.toContain('private-other-prose')
+    expect(findingExcerpt(encodedObject({ actor: 'Group', unknown: 'private-other-prose' }))).toBe('Group')
+    expect(findingExcerpt(JSON.stringify(encodedObject({ sourceName: 'Safe source', unknown: 'private-other-prose' })))).toBe('Safe source')
+    let deep = hidden
+    for (let i = 0; i < 5; i++) deep = JSON.stringify(deep)
+    expect(findingExcerpt(deep)).toBe('Evidence metadata is available.')
+})
