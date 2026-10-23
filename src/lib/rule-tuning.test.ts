@@ -427,3 +427,28 @@ test('only initial or explicit reads enable loading; ordinary ready polling pres
     expect(source).not.toContain('if (!snapshot) setLoading(true)')
     expect(source).not.toContain('const explicit =')
 })
+
+test('removing an indexed condition replaces native targets before the next row takes its index', async () => {
+    for (const replaceHosts of [false, true]) {
+        const host = nativeTargets()
+        let conditions = ['First condition', 'Second condition'], boundary = 0
+        const renderFirstRow = () => host.commit(`condition:0:${api.tuningNativeHostKey(0, replaceHosts ? boundary : 0)}`, value => { conditions[0] = value })
+        const removedRowTarget = renderFirstRow()
+        conditions = conditions.slice(1); boundary++
+        const nextRowTarget = renderFirstRow()
+        host.dispatch(removedRowTarget, 'Late event from removed condition')
+        expect(conditions[0]).toBe(replaceHosts ? 'Second condition' : 'Late event from removed condition')
+        if (replaceHosts) {
+            expect(nextRowTarget).not.toBe(removedRowTarget)
+            host.dispatch(nextRowTarget, 'Ordinary typing')
+            expect(renderFirstRow()).toBe(nextRowTarget)
+            expect(conditions[0]).toBe('Ordinary typing')
+        }
+    }
+    const source = await Bun.file(new URL('../components/RuleTuningEditor.tsx', import.meta.url)).text()
+    const structural = source.slice(source.indexOf('function changeConditions('), source.indexOf('function condition('))
+    expect(structural).toContain('if (!canEdit()')
+    expect(structural.indexOf('change({')).toBeLessThan(structural.indexOf('inputGeneration.current++; renewHosts()'))
+    const typing = source.slice(source.indexOf('function condition('), source.indexOf('async function check('))
+    expect(typing).not.toContain('renewHosts()')
+})

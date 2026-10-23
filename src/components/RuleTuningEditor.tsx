@@ -103,8 +103,9 @@ export function RuleTuningEditor({ settings, access, initial, signal, disabled, 
         setPreview(null); setWindow(null); setError('')
     }
     function changeConditions(conditions: RuleCondition[]) {
-        if (current.current.json !== null) return
+        if (!canEdit() || current.current.json !== null) return
         change({ ...draft, definition: { ...draft.definition, conditions } })
+        inputGeneration.current++; renewHosts()
     }
     function condition(index: number, patch: Partial<RuleCondition>) {
         if (current.current.json !== null) return
