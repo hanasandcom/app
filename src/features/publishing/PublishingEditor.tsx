@@ -26,8 +26,9 @@ export function PublishingEditor({ desk }: { desk: PublishingDesk }) {
     function leave() {
         if (!desk.canRead(host) || state.unknown) return
         if (!desk.hasDraftChanges()) { desk.discard(host); return }
+        const draft = { ...state.draft }
         Alert.alert('Discard unsaved changes?', 'This draft exists only in memory. Return to the list without saving?', [
-            { text: 'Keep editing', style: 'cancel' }, { text: 'Discard draft', style: 'destructive', onPress: () => desk.discard(host) },
+            { text: 'Keep editing', style: 'cancel' }, { text: 'Discard draft', style: 'destructive', onPress: () => desk.discard(host, draft) },
         ])
     }
     return <View style={{ gap: 14 }}>
@@ -50,7 +51,8 @@ export function PublishingEditor({ desk }: { desk: PublishingDesk }) {
             <MarkdownView source={state.latest.body || ''} />
             <View key={`latest:${host}`}><PillButton label='Review replacing draft with latest' disabled={!canEdit} onPress={() => {
                 if (!desk.canEdit(host)) return
-                Alert.alert('Replace unsaved draft?', 'Use the latest loaded saved body and discard your current unsaved text?', [{ text: 'Keep draft', style: 'cancel' }, { text: 'Use latest', style: 'destructive', onPress: () => desk.useLatest(host) }])
+                const draft = { ...state.draft }, latest = state.latest
+                Alert.alert('Replace unsaved draft?', 'Use the latest loaded saved body and discard your current unsaved text?', [{ text: 'Keep draft', style: 'cancel' }, { text: 'Use latest', style: 'destructive', onPress: () => desk.useLatest(host, draft, latest) }])
             }} /></View>
         </View>}
         {state.lookup && <InlineNotice tone='info' message={state.lookup.length ? 'Matching saved content exists in this workspace. No new save has been submitted.' : 'No matching content was found in this workspace. A global filename or title may still be reserved elsewhere.'} />}

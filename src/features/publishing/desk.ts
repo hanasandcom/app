@@ -7,13 +7,13 @@ export type UncertainSave = { intent: PendingPublication; mutation?: Mutation; r
 export type PublishingSnapshot = {
     items: ContentItem[]; access?: PublishingAccess; selected?: ContentItem; mode: 'list' | 'create' | 'detail'
     draft: PublishingDraft; pending: 'read' | 'write' | null; unknown?: UncertainSave
-    error: string; notice: string; host: number; visible: boolean; latest?: ContentItem; lookup: ContentItem[] | null; receipt?: SavedReceipt
+    loaded: boolean; fresh: boolean; error: string; notice: string; host: number; visible: boolean; latest?: ContentItem; lookup: ContentItem[] | null; receipt?: SavedReceipt
 }
 export type Review = { host: number; mutation: Mutation }
 
 /** Memory-only desk; one owner for confirmation, native-target and read/write epochs. */
 export class PublishingDesk {
-    state: PublishingSnapshot = { items: [], mode: 'list', draft: { id: '', body: '' }, pending: null, error: '', notice: '', host: 0, visible: false, lookup: null }
+    state: PublishingSnapshot = { items: [], mode: 'list', draft: { id: '', body: '' }, pending: null, loaded: false, fresh: false, error: '', notice: '', host: 0, visible: false, lookup: null }
     private listeners = new Set<() => void>()
     private controller?: AbortController
     private operation = 0
@@ -35,7 +35,7 @@ export class PublishingDesk {
     hide() {
         this.state.visible = false
         this.controller?.abort(); this.operation++; this.renew()
-        this.state.pending = null; this.state.access = undefined
+        this.state.pending = null; this.state.access = undefined; this.state.fresh = false
         if (this.state.unknown) this.state.unknown = { ...this.state.unknown, reviewed: false, matches: [], missing: false }
         this.publish()
     }
@@ -45,7 +45,7 @@ export class PublishingDesk {
         const controller = new AbortController()
         this.controller = controller
         const operation = ++this.operation
-        this.state.pending = pending; this.state.error = ''; this.renew(); this.publish()
+        this.state.pending = pending; this.state.error = ''; if (pending === 'read') this.state.fresh = false; this.renew(); this.publish()
         return { controller, operation }
     }
     private current(operation: number) { return !this.disposed && this.state.visible && this.operation === operation }
@@ -83,9 +83,9 @@ export class PublishingDesk {
                 }
             }
             if (!this.current(operation)) return
-            this.state.access = access; this.state.items = items
+            this.state.access = access; this.state.items = items; this.state.loaded = true; this.state.fresh = true
             // An unsaved editor is never replaced by a refresh response.
-            if (detail && selected && this.state.draft.body !== selected.body && detail.body !== selected.body) this.state.latest = detail
+            if (detail && selected && this.state.draft.body !== selected.body) this.state.latest = detail.body !== selected.body ? detail : undefined
             if (detail && selected && this.state.draft.body === selected.body) {
                 this.state.selected = detail; this.state.draft = { id: detail.id, body: detail.body || '' }; this.state.latest = undefined
             }
@@ -106,8 +106,8 @@ export class PublishingDesk {
     hasDraftChanges() {
         return this.state.mode === 'create' ? !!(this.state.draft.body || this.state.draft.id) : this.state.mode === 'detail' && this.state.draft.body !== (this.state.selected?.body || '')
     }
-    discard(host: number) {
-        if (!this.canRead(host) || this.state.unknown) return
+    discard(host: number, expected = this.state.draft) {
+        if (!this.canRead(host) || this.state.unknown || expected.id !== this.state.draft.id || expected.body !== this.state.draft.body) return
         this.state.mode = 'list'; this.state.selected = undefined; this.state.draft = { id: '', body: '' }; this.state.lookup = null; this.state.latest = undefined
         this.renew(); this.publish()
     }
@@ -169,8 +169,8 @@ export class PublishingDesk {
         } finally { if (this.current(operation)) { this.state.pending = null; this.renew(); this.publish() } }
         if (accepted && this.current(operation)) void this.refresh(false, this.state.host)
     }
-    useLatest(host: number) {
-        if (!this.canEdit(host) || !this.state.latest) return
+    useLatest(host: number, expected = this.state.draft, latest = this.state.latest) {
+        if (!this.canEdit(host) || !this.state.latest || latest !== this.state.latest || expected.id !== this.state.draft.id || expected.body !== this.state.draft.body) return
         this.state.selected = this.state.latest; this.state.draft = { id: this.state.latest.id, body: this.state.latest.body || '' }; this.state.latest = undefined
         this.renew(); this.publish()
     }

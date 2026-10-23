@@ -71,3 +71,13 @@ export function filterContent(items: ContentItem[], search: string, sort: 'newes
     return items.filter(item => terms.every(term => [item.id, item.title, item.creatorId || ''].join(' ').toLocaleLowerCase().includes(term)))
         .sort((a, b) => sort === 'title' ? a.title.localeCompare(b.title) : (Date.parse(b.updatedAt || b.createdAt || '') || 0) - (Date.parse(a.updatedAt || a.createdAt || '') || 0))
 }
+
+/** Only a successful list snapshot can establish zero or an empty workspace. */
+export function publicationSummary(items: ContentItem[], loaded: boolean, fresh: boolean) {
+    const sum = (field: 'words' | 'minutes') => !loaded || items.some(item => item[field] === undefined) ? null : items.reduce((total, item) => total + item[field]!, 0)
+    return {
+        count: loaded ? items.length : null, words: sum('words'), minutes: sum('minutes'),
+        authors: !loaded || items.some(item => !item.creatorId) ? null : new Set(items.map(item => item.creatorId)).size,
+        empty: loaded && fresh && items.length === 0, cached: loaded && !fresh,
+    }
+}

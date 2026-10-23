@@ -79,7 +79,7 @@ test('unknown write survives new controller/token refresh and A→B→A; auto re
     expect(next.state.receipt).toBeUndefined()
     expect(next.state.unknown).toBeUndefined()
 })
-test('manual read started before unknown mutation cannot later unlock it; failed read cannot mark reviewed', async () => {
+test('failed manual read cannot mark an uncertain operation reviewed or unlock editing', async () => {
     const f = fixture(); await open(f)
     f.api.mutate = async () => { throw new PublishingError('Unknown', 500, true) }
     f.desk.edit(f.desk.state.host, { body: '# Uncertain' })
@@ -230,4 +230,41 @@ test('impersonated read/ack cannot inspect or clear the own-account uncertain in
     ownAgain.activate(); await tick()
     expect(ownAgain.state.unknown?.reviewed).toBe(false)
     expect(ownAgain.canEdit(ownAgain.state.host)).toBe(false)
+})
+
+test('only successful snapshots establish count/empty; auth/list failures stay unknown and refresh failure labels cache', async () => {
+    const { publicationSummary } = await import('./contracts')
+    for (const endpoint of ['access', 'list'] as const) {
+        const f = fixture()
+        f.api[endpoint] = async () => { throw new PublishingError('Unavailable', endpoint === 'access' ? 401 : 503) }
+        f.desk.activate(); await tick()
+        const summary = publicationSummary(f.desk.state.items, f.desk.state.loaded, f.desk.state.fresh)
+        expect(summary.count).toBeNull()
+        expect(summary.words).toBeNull()
+        expect(summary.empty).toBe(false)
+    }
+    const empty = fixture(); empty.api.list = async () => []
+    empty.desk.activate(); await tick()
+    expect(publicationSummary(empty.desk.state.items, empty.desk.state.loaded, empty.desk.state.fresh)).toMatchObject({ count: 0, words: 0, empty: true, cached: false })
+    const cached = fixture(); cached.desk.activate(); await tick()
+    cached.api.list = async () => { throw new PublishingError('Busy', 503) }
+    await cached.desk.refresh(true, cached.desk.state.host)
+    expect(publicationSummary(cached.desk.state.items, cached.desk.state.loaded, cached.desk.state.fresh)).toMatchObject({ count: 1, cached: true, empty: false })
+    expect(cached.desk.state.items[0].id).toBe(cached.item.id)
+})
+
+test('draft discard and use-latest dialogs do not erase text entered after opening the review', async () => {
+    const f = fixture(); await open(f)
+    const host = f.desk.state.host
+    f.desk.edit(host, { body: '# Draft A' })
+    const capturedDraft = { ...f.desk.state.draft }
+    f.desk.edit(host, { body: '# Draft B' })
+    f.desk.discard(host, capturedDraft)
+    expect(f.desk.state.draft.body).toBe('# Draft B')
+    f.setDetail({ ...f.item, body: '# New server' })
+    await f.desk.refresh(true, host)
+    const latest = f.desk.state.latest, draft = { ...f.desk.state.draft }, latestHost = f.desk.state.host
+    f.desk.edit(latestHost, { body: '# Draft C' })
+    f.desk.useLatest(latestHost, draft, latest)
+    expect(f.desk.state.draft.body).toBe('# Draft C')
 })
