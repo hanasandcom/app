@@ -156,3 +156,80 @@ test('queued keyboard events cannot replace submitted text while writing or awai
     }
     expect(canEditSupportDraft(false, false)).toBe(true)
 })
+
+
+test('customer Support native targets cannot restore cleared text or retarget another conversation', async () => {
+    const { canEditCustomerSupportInput } = await import('./profile-support')
+    const state = { mounted: true, writing: false, locked: false, generation: 0, selection: 'first' }
+    let draft = 'Retained body', hostGeneration = -1, target = 0
+    const targets = new Map<number, (value: string) => void>()
+    function commit() {
+        if (hostGeneration !== state.generation) { targets.delete(target); target++; hostGeneration = state.generation }
+        const generation = state.generation, selection = state.selection
+        targets.set(target, value => { if (canEditCustomerSupportInput(state, generation, selection)) draft = value })
+        return target
+    }
+    const dispatch = (id: number, value: string) => targets.get(id)?.(value)
+    const beforeSend = commit()
+    dispatch(beforeSend, 'Retained body'); expect(commit()).toBe(beforeSend)
+    state.writing = true; state.generation++
+    dispatch(beforeSend, 'Queued before commit'); expect(draft).toBe('Retained body')
+    commit(); state.generation++; draft = ''; commit()
+    state.writing = false; state.generation++; const idle = commit()
+    dispatch(beforeSend, 'Restore after send idle'); expect(draft).toBe('')
+    dispatch(idle, 'New unsent body'); expect(draft).toBe('New unsent body')
+    state.generation++; state.selection = 'second'; commit()
+    dispatch(idle, 'Retarget old conversation'); expect(draft).toBe('New unsent body')
+    state.writing = true; state.generation++; commit()
+    // Uncertain and failed outcomes retain draft state outside the replaced native input.
+    state.locked = true; state.writing = false; state.generation++; const locked = commit()
+    dispatch(locked, 'Overwrite unknown body'); expect(draft).toBe('New unsent body')
+    state.generation++; state.locked = false; const reviewed = commit()
+    dispatch(reviewed, 'Corrected body'); expect(draft).toBe('Corrected body')
+    for (const change of [{ mounted: false }, { writing: true }, { locked: true }, { generation: state.generation + 1 }, { selection: 'third' }])
+        expect(canEditCustomerSupportInput({ ...state, ...change }, state.generation, state.selection)).toBe(false)
+    const source = await Bun.file(new URL('../components/ProfileSupportPanel.tsx', import.meta.url)).text()
+    expect(source).toContain('<TextInput key={`support:${nativeKey}`}')
+    expect(source).toContain('generation: inputGeneration.current, selection: selectedId.current }, capturedGeneration, ticketId)')
+    expect(source).toContain('submitting.current = true; renewInputs()')
+    expect(source).toContain('finally { submitting.current = false; if (mounted.current) { renewInputs(); setBusy(false) } }')
+    expect(source).toContain('Back/resume keeps drafts, conflict and request UUID.')
+    const edit = source.slice(source.indexOf('function edit('), source.indexOf('function select('))
+    expect(edit).not.toContain('renewInputs()')
+})
+
+
+test('focused form replacement removes delayed rating and Send targets across submit and selection', async () => {
+    const { canEditCustomerSupportInput } = await import('./profile-support')
+    const state = { mounted: true, writing: false, locked: false, generation: 0, selection: 'first' }
+    let nativeTarget = 0, hostGeneration = -1, rating = 0
+    const sends: string[] = [], targets = new Map<number, { send: () => void; rate: () => void }>()
+    function commit() {
+        if (hostGeneration !== state.generation) { targets.delete(nativeTarget); nativeTarget++; hostGeneration = state.generation }
+        const generation = state.generation, selection = state.selection
+        targets.set(nativeTarget, {
+            send() { if (canEditCustomerSupportInput(state, generation, selection)) sends.push(selection) },
+            rate() { if (canEditCustomerSupportInput(state, generation, selection)) rating = 3 }
+        })
+        return nativeTarget
+    }
+    const oldTarget = commit()
+    const oldCallback = targets.get(oldTarget)!
+    state.writing = true; state.generation++
+    oldCallback.send(); expect(sends).toEqual([])
+    commit(); state.writing = false; state.generation++; commit()
+    targets.get(oldTarget)?.send(); targets.get(oldTarget)?.rate()
+    expect(sends).toEqual([]); expect(rating).toBe(0)
+    const beforeSelection = nativeTarget, beforeSelectionCallback = targets.get(beforeSelection)!
+    state.selection = 'second'; state.generation++
+    beforeSelectionCallback.send(); beforeSelectionCallback.rate()
+    expect(sends).toEqual([]); expect(rating).toBe(0)
+    const current = commit()
+    targets.get(beforeSelection)?.send(); targets.get(beforeSelection)?.rate()
+    expect(sends).toEqual([]); expect(rating).toBe(0)
+    targets.get(current)?.rate(); targets.get(current)?.send()
+    expect(rating).toBe(3); expect(sends).toEqual(['second'])
+    const source = await Bun.file(new URL('../components/ProfileSupportPanel.tsx', import.meta.url)).text()
+    expect(source).toContain('<View key={`support-form:${inputKey}:${ticketId}:${mode}`}')
+    expect(source).toContain('if (!canEdit() || loading || error || !access.ownAccount) return')
+})
