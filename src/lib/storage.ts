@@ -174,12 +174,25 @@ export async function loadSettings() {
     return nextSettings
 }
 
-export async function saveSettings(settings: AppSettings) {
-    await Promise.all([
-        SecureStore.setItemAsync(AUTH_TOKEN_KEY, settings.authToken),
-        SecureStore.setItemAsync(IMPERSONATION_TOKEN_KEY, settings.impersonationToken),
-    ])
-    await setStoredValue(SETTINGS_KEY, JSON.stringify(settingsWithoutSecrets(settings)))
+let settingsSaveQueue: Promise<void> = Promise.resolve()
+
+export function saveSettings(settings: AppSettings): Promise<void> {
+    const snapshot = { ...settings }
+    const save = settingsSaveQueue.then(async () => {
+        // Wait for both writes even if one fails: a pending older secret write
+        // must never overwrite a newer account after its save starts.
+        const secrets = await Promise.allSettled([
+            SecureStore.setItemAsync(AUTH_TOKEN_KEY, snapshot.authToken),
+            SecureStore.setItemAsync(IMPERSONATION_TOKEN_KEY, snapshot.impersonationToken),
+        ])
+        for (const result of secrets) {
+            if (result.status === 'rejected') throw result.reason
+        }
+        await setStoredValue(SETTINGS_KEY, JSON.stringify(settingsWithoutSecrets(snapshot)))
+    })
+    // Preserve this caller's rejection while allowing later saves to proceed.
+    settingsSaveQueue = save.catch(() => {})
+    return save
 }
 
 function settingsWithoutSecrets(settings: AppSettings) {

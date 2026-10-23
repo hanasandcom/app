@@ -5,6 +5,14 @@ const secureValues = new Map<string, string>()
 const operations: string[] = []
 let failSecureWrite = false
 let failAsyncRead = false
+let beforeSecureWrite: ((key: string, value: string) => Promise<void>) | undefined
+let beforeAsyncWrite: ((key: string, value: string) => Promise<void>) | undefined
+
+function deferred() {
+    let resolve!: () => void
+    const promise = new Promise<void>(done => { resolve = done })
+    return { promise, resolve }
+}
 
 mock.module('@react-native-async-storage/async-storage', () => ({
     default: {
@@ -14,6 +22,7 @@ mock.module('@react-native-async-storage/async-storage', () => ({
         },
         setItem: async (key: string, value: string) => {
             operations.push(`async:${key}`)
+            await beforeAsyncWrite?.(key, value)
             asyncValues.set(key, value)
         },
     },
@@ -23,6 +32,7 @@ mock.module('expo-secure-store', () => ({
     getItemAsync: async (key: string) => secureValues.get(key) ?? null,
     setItemAsync: async (key: string, value: string) => {
         operations.push(`secure:${key}`)
+        await beforeSecureWrite?.(key, value)
         if (failSecureWrite) throw new Error('Secure storage unavailable')
         secureValues.set(key, value)
     },
@@ -50,6 +60,8 @@ beforeEach(() => {
     operations.length = 0
     failSecureWrite = false
     failAsyncRead = false
+    beforeSecureWrite = undefined
+    beforeAsyncWrite = undefined
 })
 
 describe('secure local storage', () => {
@@ -107,6 +119,82 @@ describe('secure local storage', () => {
         expect(secureValues.get('hanasand-mobile.impersonation-token')).toBe('new-impersonation')
         expect(asyncValues.get('hanasand-mobile/settings')).not.toContain('new-auth')
         expect(asyncValues.get('hanasand-mobile/settings')).not.toContain('new-impersonation')
+    })
+
+    it('serializes a held return-to-account save before a newer account and snapshots queued input', async () => {
+        const entered = deferred(), release = deferred()
+        beforeSecureWrite = async (key, value) => {
+            if (key === 'hanasand-mobile.auth-token' && value === 'return-auth') {
+                entered.resolve()
+                await release.promise
+            }
+        }
+        const returning = saveSettings({ ...defaultSettings, userId: 'actor', authToken: 'return-auth' })
+        await entered.promise
+        const switchedSettings = { ...defaultSettings, userId: 'other', authToken: 'other-auth', impersonationToken: 'other-delegation' }
+        const switched = saveSettings(switchedSettings)
+        switchedSettings.userId = 'mutated-after-call'
+        switchedSettings.authToken = 'mutated-secret'
+        await Promise.resolve()
+        expect(operations.filter(value => value.startsWith('secure:'))).toHaveLength(2)
+        expect(asyncValues.has('hanasand-mobile/settings')).toBe(false)
+        release.resolve()
+        await Promise.all([returning, switched])
+        expect(secureValues.get('hanasand-mobile.auth-token')).toBe('other-auth')
+        expect(secureValues.get('hanasand-mobile.impersonation-token')).toBe('other-delegation')
+        expect(JSON.parse(asyncValues.get('hanasand-mobile/settings')!)).toMatchObject({ userId: 'other', authToken: '', impersonationToken: '' })
+        expect(operations).toEqual([
+            'secure:hanasand-mobile.auth-token', 'secure:hanasand-mobile.impersonation-token', 'async:hanasand-mobile/settings',
+            'secure:hanasand-mobile.auth-token', 'secure:hanasand-mobile.impersonation-token', 'async:hanasand-mobile/settings',
+        ])
+    })
+
+    it('keeps the FIFO boundary through the public record write before a queued logout', async () => {
+        const entered = deferred(), release = deferred()
+        beforeAsyncWrite = async (_key, value) => {
+            if (JSON.parse(value).userId === 'actor') { entered.resolve(); await release.promise }
+        }
+        const returning = saveSettings({ ...defaultSettings, userId: 'actor', authToken: 'actor-auth' })
+        await entered.promise
+        const logout = saveSettings({ ...defaultSettings })
+        await Promise.resolve()
+        expect(operations).toHaveLength(3)
+        release.resolve()
+        await Promise.all([returning, logout])
+        expect(await loadSettings()).toMatchObject({ userId: '', authToken: '', impersonationToken: '' })
+    })
+
+    it('rejects a failed save without releasing a pending sibling secret or poisoning the next save', async () => {
+        const entered = deferred(), release = deferred()
+        beforeSecureWrite = async (key, value) => {
+            if (value === 'failed-auth') throw new Error('Synthetic secure failure')
+            if (key === 'hanasand-mobile.impersonation-token' && value === 'old-delegation') {
+                entered.resolve(); await release.promise
+            }
+        }
+        const failed = saveSettings({ ...defaultSettings, userId: 'old', authToken: 'failed-auth', impersonationToken: 'old-delegation' })
+        const rejected = failed.then(() => null, error => error as Error)
+        await entered.promise
+        const newer = saveSettings({ ...defaultSettings, userId: 'new', authToken: 'new-auth' })
+        await Promise.resolve()
+        expect(operations).toHaveLength(2)
+        release.resolve()
+        expect((await rejected)?.message).toBe('Synthetic secure failure')
+        await newer
+        expect(operations.filter(value => value.startsWith('async:'))).toHaveLength(1)
+        expect(await loadSettings()).toMatchObject({ userId: 'new', authToken: 'new-auth', impersonationToken: '' })
+    })
+
+    it('rejects a failed public write and still persists a later save', async () => {
+        beforeAsyncWrite = async (_key, value) => {
+            if (JSON.parse(value).userId === 'failed') throw new Error('Synthetic public failure')
+        }
+        const failed = saveSettings({ ...defaultSettings, userId: 'failed', authToken: 'old-auth' })
+        const rejected = failed.then(() => null, error => error as Error)
+        const newer = saveSettings({ ...defaultSettings, userId: 'new', authToken: 'new-auth' })
+        expect((await rejected)?.message).toBe('Synthetic public failure')
+        await newer
+        expect(await loadSettings()).toMatchObject({ userId: 'new', authToken: 'new-auth' })
     })
 
     it('moves legacy TOTP seeds to SecureStore before replacing their AsyncStorage record', async () => {
