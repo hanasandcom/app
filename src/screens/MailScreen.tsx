@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, BackHandler, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { Alert, BackHandler, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { ChevronDown, Mail, Paperclip, RefreshCw, Search, Star } from 'lucide-react-native'
 import * as Sharing from 'expo-sharing'
 import type { AppSettings } from '../types'
@@ -61,6 +61,7 @@ export function MailScreen({ settings }: { settings: AppSettings }) {
     const [query, setQuery] = useState('')
     const [activeQuery, setActiveQuery] = useState('')
     const [folderName, setFolderName] = useState('')
+    const [showAccounts, setShowAccounts] = useState(false)
     const [showFolders, setShowFolders] = useState(false)
     const [moving, setMoving] = useState(false)
     const [composer, setComposer] = useState(() => createMailComposer(''))
@@ -80,6 +81,7 @@ export function MailScreen({ settings }: { settings: AppSettings }) {
         setComposer(createMailComposer(''))
         setQuery('')
         setActiveQuery('')
+        setShowAccounts(false)
     }, [settings.userId, settings.impersonationToken])
 
     useEffect(() => { void refresh() }, [scope.mailboxUser, scope.mailboxId, activeQuery, settings.authToken, settings.userId, settings.impersonationToken])
@@ -270,6 +272,7 @@ export function MailScreen({ settings }: { settings: AppSettings }) {
         setCursor(null)
         setQuery('')
         setActiveQuery('')
+        setShowAccounts(false)
     }
     function selectFolder(mailboxId: string) {
         ++sequence.current
@@ -308,21 +311,23 @@ export function MailScreen({ settings }: { settings: AppSettings }) {
                         {!!query.trim() && <Pressable accessibilityRole='button' accessibilityLabel='Search mail' onPress={() => { setScope(currentScope()); setActiveQuery(query.trim()) }} disabled={loading || !overview}><Text style={styles.searchAction}>Search</Text></Pressable>}
                         {!!query && <Pressable accessibilityRole='button' accessibilityLabel='Clear search' onPress={() => { setQuery(''); setActiveQuery('') }} hitSlop={10}><Text style={styles.clearSearch}>×</Text></Pressable>}
                     </View>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.accountStrip}>
-                        {overview?.accessibleAccounts.map(account => <Pressable key={account.id} accessibilityRole='button' accessibilityLabel={`Mailbox ${account.name || account.address}${account.unreadCount ? `, ${account.unreadCount} unread` : ''}`} accessibilityState={{ selected: overview.mailboxUser === account.id }} style={[styles.accountChip, overview.mailboxUser === account.id && styles.accountChipSelected]} onPress={() => selectAccount(account.id)} disabled={loading || busy}>
-                            <Text numberOfLines={1} style={[styles.accountLabel, overview.mailboxUser === account.id && styles.accountLabelSelected]}>{account.name || account.address}</Text>
-                            {!!account.unreadCount && <Text style={styles.accountCount}>{account.unreadCount}</Text>}
-                        </Pressable>)}
-                    </ScrollView>
                     <View style={styles.mailToolbar}>
-                        <Pressable accessibilityRole='button' accessibilityLabel={`Choose mailbox folder, currently ${selectedFolder?.name || 'Inbox'}`} accessibilityState={{ expanded: showFolders }} style={styles.folderButton} onPress={() => setShowFolders(value => !value)} disabled={!overview || busy}>
+                        <Pressable accessibilityRole='button' accessibilityLabel={`Choose mailbox, currently ${overview?.accessibleAccounts.find(account => account.id === overview.mailboxUser)?.name || overview?.mailboxAddress || 'mailbox'}`} accessibilityState={{ expanded: showAccounts }} style={styles.selectorButton} onPress={() => { setShowAccounts(value => !value); setShowFolders(false) }} disabled={!overview || busy}>
+                            <Text numberOfLines={1} style={styles.folderLabel}>{overview?.accessibleAccounts.find(account => account.id === overview.mailboxUser)?.name || overview?.mailboxAddress || 'Mailbox'}</Text><ChevronDown color={theme.textMuted} size={16} />
+                        </Pressable>
+                        <Pressable accessibilityRole='button' accessibilityLabel={`Choose mailbox folder, currently ${selectedFolder?.name || 'Inbox'}`} accessibilityState={{ expanded: showFolders }} style={styles.selectorButton} onPress={() => { setShowFolders(value => !value); setShowAccounts(false) }} disabled={!overview || busy}>
                             <Text numberOfLines={1} style={styles.folderLabel}>{selectedFolder?.name || 'Inbox'}</Text><ChevronDown color={theme.textMuted} size={16} />
                         </Pressable>
-                        <Text style={styles.mailboxAddress} numberOfLines={1}>{overview?.mailboxAddress || ''}</Text>
                         <Pressable accessibilityRole='button' accessibilityLabel={loading ? 'Refreshing mail' : 'Refresh mail'} onPress={() => void refresh()} disabled={loading || busy} style={styles.iconButton}>
                             <RefreshCw color={loading ? theme.textSoft : theme.textMuted} size={18} />
                         </Pressable>
                     </View>
+                    {showAccounts && <View style={styles.folderPanel}>
+                        {overview?.accessibleAccounts.map(account => <Pressable key={account.id} accessibilityRole='button' accessibilityLabel={`Mailbox ${account.name || account.address}${account.unreadCount ? `, ${account.unreadCount} unread` : ''}`} accessibilityState={{ selected: overview.mailboxUser === account.id }} style={[styles.folderOption, overview.mailboxUser === account.id && styles.folderOptionSelected]} onPress={() => selectAccount(account.id)} disabled={loading || busy}>
+                            <Text numberOfLines={1} style={[styles.folderOptionLabel, overview.mailboxUser === account.id && styles.folderOptionLabelSelected]}>{account.name || account.address}</Text>
+                            {!!account.unreadCount && <Text style={styles.folderUnread}>{account.unreadCount}</Text>}
+                        </Pressable>)}
+                    </View>}
                     {showFolders && <View style={styles.folderPanel}>
                         {overview?.mailboxes.map(box => <Pressable key={box.id} accessibilityRole='button' accessibilityState={{ selected: overview.selectedMailboxId === box.id }} style={[styles.folderOption, overview.selectedMailboxId === box.id && styles.folderOptionSelected]} onPress={() => selectFolder(box.id)} disabled={busy || loading}>
                             <Text style={[styles.folderOptionLabel, overview.selectedMailboxId === box.id && styles.folderOptionLabelSelected]}>{box.name}</Text>
@@ -401,16 +406,9 @@ function createStyles(theme: ThemePalette) {
         searchInput: { flex: 1, minHeight: 48, color: theme.text, fontSize: 15, paddingVertical: 0 },
         searchAction: { color: theme.accent, fontSize: 13, fontWeight: '700', paddingVertical: 8 },
         clearSearch: { color: theme.textMuted, fontSize: 26, lineHeight: 28, paddingHorizontal: 3 },
-        accountStrip: { gap: 7, paddingVertical: 1 },
-        accountChip: { height: 31, maxWidth: 180, borderRadius: 16, borderWidth: 1, borderColor: theme.surfaceBorderSoft, backgroundColor: theme.backgroundRaised, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 7 },
-        accountChipSelected: { borderColor: theme.accent, backgroundColor: theme.accentSoft },
-        accountLabel: { color: theme.textMuted, fontSize: 13, fontWeight: '600', flexShrink: 1 },
-        accountLabelSelected: { color: theme.text },
-        accountCount: { color: theme.text, fontSize: 11, fontWeight: '700' },
-        mailToolbar: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 34 },
-        folderButton: { minHeight: 32, maxWidth: '58%', borderRadius: 16, paddingHorizontal: 11, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: theme.surfaceStrong },
+        mailToolbar: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 40 },
+        selectorButton: { minHeight: 34, maxWidth: '46%', borderRadius: 18, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: theme.surfaceStrong },
         folderLabel: { color: theme.text, fontSize: 12, fontWeight: '600', flexShrink: 1 },
-        mailboxAddress: { flex: 1, color: theme.textSoft, fontSize: 12 },
         iconButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19 },
         folderPanel: { padding: 8, borderRadius: 16, borderWidth: 1, borderColor: theme.surfaceBorderSoft, backgroundColor: theme.surface },
         folderOption: { minHeight: 42, borderRadius: 11, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
