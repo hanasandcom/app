@@ -97,7 +97,7 @@ function Directory({ settings, onSelectOrganization }: {
     const displayed = rows.slice(0, shown)
     const impersonating = Boolean(settings.impersonationToken || settings.impersonatingUserId)
     return (
-        <Screen title='Organization Directory' subtitle='Hanasand administration'
+        <Screen title='Organizations' subtitle='Hanasand administration'
             right={<PillButton small label={busy ? 'Loading…' : 'Refresh'} disabled={busy} onPress={() => void refresh()} />}>
             <InlineNotice message={error} />
             <InlineNotice message={notice} tone='info' />
