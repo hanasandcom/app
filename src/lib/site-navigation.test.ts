@@ -123,3 +123,10 @@ it('registers Findings investigation, Rule Tuning, API reference and complete JS
         expect(items.some(item => item.path === path && item.tab === 'Tools' && !item.disabledReason)).toBe(true)
     }
 })
+
+it('opens management Users in the native directory workflow', () => {
+    const item = leaves(siteNavigation('synthetic-user')).find(row => row.path === '/management/users')
+    expect(item?.tab).toBe('Tools')
+    expect(item?.disabledReason).toBeUndefined()
+    expect(nativeToolForPath(item?.path)).toBe('user-management')
+})
