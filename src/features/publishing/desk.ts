@@ -7,7 +7,7 @@ export type UncertainSave = { intent: PendingPublication; mutation?: Mutation; r
 export type PublishingSnapshot = {
     items: ContentItem[]; access?: PublishingAccess; selected?: ContentItem; mode: 'list' | 'create' | 'detail'
     draft: PublishingDraft; pending: 'read' | 'write' | null; unknown?: UncertainSave
-    loaded: boolean; fresh: boolean; error: string; notice: string; host: number; visible: boolean; latest?: ContentItem; lookup: ContentItem[] | null; receipt?: SavedReceipt
+    loaded: boolean; fresh: boolean; error: string; notice: string; host: number; visible: boolean; latest?: ContentItem; targetMissing?: boolean; lookup: ContentItem[] | null; receipt?: SavedReceipt
 }
 export type Review = { host: number; mutation: Mutation }
 
@@ -64,10 +64,10 @@ export class PublishingDesk {
             const access = await this.api.access(controller.signal)
             if (!access.canRead) throw new PublishingError('This account cannot open the selected editorial workspace.', 403)
             const items = await this.api.list(controller.signal)
-            let detail: ContentItem | undefined
+            let detail: ContentItem | undefined, targetMissing = false
             if (selected && !unknown) {
                 try { detail = await this.api.detail(selected.id, controller.signal) }
-                catch (error) { if (!(error instanceof PublishingError && error.status === 404)) throw error }
+                catch (error) { if (error instanceof PublishingError && error.status === 404) targetMissing = true; else throw error }
             }
             let matches: ContentItem[] = [], missing = false
             if (manual && unknown && !this.settings.impersonationToken && !this.settings.impersonatingUserId) {
@@ -84,6 +84,11 @@ export class PublishingDesk {
             }
             if (!this.current(operation)) return
             this.state.access = access; this.state.items = items; this.state.loaded = true; this.state.fresh = true
+            // A confirmed deletion cannot leave an earlier saved version available as current.
+            if (selected && !unknown) {
+                this.state.targetMissing = targetMissing
+                if (targetMissing) this.state.latest = undefined
+            }
             // An unsaved editor is never replaced by a refresh response.
             if (detail && selected && this.state.draft.body !== selected.body) this.state.latest = detail.body !== selected.body ? detail : undefined
             if (detail && selected && this.state.draft.body === selected.body) {
@@ -101,14 +106,14 @@ export class PublishingDesk {
     startCreate(host: number) {
         if (!this.canEdit(host) || this.hasDraftChanges()) return false
         this.state.mode = 'create'; this.state.selected = undefined; this.state.draft = { id: '', body: '' }
-        this.state.error = ''; this.state.notice = ''; this.state.lookup = null; this.state.latest = undefined; this.renew(); this.publish(); return true
+        this.state.error = ''; this.state.notice = ''; this.state.lookup = null; this.state.latest = undefined; this.state.targetMissing = false; this.renew(); this.publish(); return true
     }
     hasDraftChanges() {
         return this.state.mode === 'create' ? !!(this.state.draft.body || this.state.draft.id) : this.state.mode === 'detail' && this.state.draft.body !== (this.state.selected?.body || '')
     }
     discard(host: number, expected = this.state.draft) {
         if (!this.canRead(host) || this.state.unknown || expected.id !== this.state.draft.id || expected.body !== this.state.draft.body) return
-        this.state.mode = 'list'; this.state.selected = undefined; this.state.draft = { id: '', body: '' }; this.state.lookup = null; this.state.latest = undefined
+        this.state.mode = 'list'; this.state.selected = undefined; this.state.draft = { id: '', body: '' }; this.state.lookup = null; this.state.latest = undefined; this.state.targetMissing = false
         this.renew(); this.publish()
     }
     async select(id: string, host: number) {
@@ -117,7 +122,7 @@ export class PublishingDesk {
         try {
             const item = assertItemScope(await this.api.detail(id, controller.signal), contentOrganization(this.settings))
             if (!this.current(operation)) return
-            this.state.selected = item; this.state.mode = 'detail'; this.state.draft = { id: item.id, body: item.body || '' }; this.state.lookup = null; this.state.latest = undefined
+            this.state.selected = item; this.state.mode = 'detail'; this.state.draft = { id: item.id, body: item.body || '' }; this.state.lookup = null; this.state.latest = undefined; this.state.targetMissing = false
         } catch (error) { if (this.current(operation)) this.failed(error) }
         finally { if (this.current(operation)) { this.state.pending = null; this.renew(); this.publish() } }
     }
@@ -134,6 +139,7 @@ export class PublishingDesk {
     review(action: Mutation['action'], host: number): Review | null {
         if (!this.canEdit(host) || !this.state.access) return null
         try {
+            if (action !== 'create' && this.state.targetMissing) throw new PublishingError('The saved record is missing. Your draft is kept; this record cannot be updated or deleted.')
             requireWriter(this.settings, this.state.access, action === 'create' ? undefined : this.state.selected)
             const mutation: Mutation = { action, draft: { ...this.state.draft }, original: action === 'create' ? undefined : this.state.selected }
             validateMutation(this.kind, mutation)
@@ -158,7 +164,7 @@ export class PublishingDesk {
             forgetPublication(intent)
             this.state.unknown = undefined; this.state.receipt = receipt; accepted = true
             this.state.notice = receipt.action === 'delete' ? `Deleted ${receipt.id}.` : `Saved ${receipt.id}. Changes are immediately persistent; no draft or publication stage is provided.`
-            this.state.mode = 'list'; this.state.selected = undefined; this.state.draft = { id: '', body: '' }; this.state.lookup = null; this.state.latest = undefined
+            this.state.mode = 'list'; this.state.selected = undefined; this.state.draft = { id: '', body: '' }; this.state.lookup = null; this.state.latest = undefined; this.state.targetMissing = false
             this.state.items = this.state.items.filter(item => item.id !== receipt.id)
             if (receipt.item) this.state.items.unshift(receipt.item)
             // A successful receipt is retained even if subsequent refresh fails. Never retry the write.
@@ -170,7 +176,7 @@ export class PublishingDesk {
         if (accepted && this.current(operation)) void this.refresh(false, this.state.host)
     }
     useLatest(host: number, expected = this.state.draft, latest = this.state.latest) {
-        if (!this.canEdit(host) || !this.state.latest || latest !== this.state.latest || expected.id !== this.state.draft.id || expected.body !== this.state.draft.body) return
+        if (!this.canEdit(host) || !this.state.latest || this.state.targetMissing || latest !== this.state.latest || expected.id !== this.state.draft.id || expected.body !== this.state.draft.body) return
         this.state.selected = this.state.latest; this.state.draft = { id: this.state.latest.id, body: this.state.latest.body || '' }; this.state.latest = undefined
         this.renew(); this.publish()
     }

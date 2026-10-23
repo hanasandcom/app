@@ -45,6 +45,7 @@ export function PublishingEditor({ desk }: { desk: PublishingDesk }) {
         </View>
         {article && creating && <PublishingField label='Article filename' value={state.draft.id} onChange={id => desk.edit(host, { id })} editable={canEdit} host={host} />}
         {preview || !canEdit ? <MarkdownView source={state.draft.body} /> : <PublishingField label={article ? 'Article Markdown' : 'Thought Markdown'} value={state.draft.body} onChange={body => desk.edit(host, { body })} editable={canEdit} multiline host={host} />}
+        {state.targetMissing && <InlineNotice message='The saved record was not found in the latest refresh. Your draft is kept; this record cannot be updated or deleted.' />}
         {state.latest && <View style={{ gap: 10 }}>
             <InlineNotice message='The saved body changed while your draft was open. There is no server revision check; saving your draft may overwrite this version.' />
             <PublishingText heading>Latest saved body</PublishingText>
@@ -59,8 +60,8 @@ export function PublishingEditor({ desk }: { desk: PublishingDesk }) {
         {state.lookup?.map(item => <View key={item.id} style={{ gap: 6 }}><PublishingText heading>{item.title}</PublishingText><PublishingText muted>{item.id}</PublishingText><MarkdownView source={item.body || ''} /></View>)}
         <View key={`save-actions:${host}`}>
             <PublishingActions>
-                <PillButton label={creating ? 'Review create' : 'Review save'} tone='accent' onPress={() => review(creating ? 'create' : 'update')} disabled={!canEdit || !state.draft.body.trim()} />
-                {!creating && <PillButton label='Review delete' tone='danger' onPress={() => review('delete')} disabled={!canEdit} />}
+                <PillButton label={creating ? 'Review create' : 'Review save'} tone='accent' onPress={() => review(creating ? 'create' : 'update')} disabled={!canEdit || !state.draft.body.trim() || !creating && state.targetMissing === true} />
+                {!creating && <PillButton label='Review delete' tone='danger' onPress={() => review('delete')} disabled={!canEdit || state.targetMissing === true} />}
             </PublishingActions>
         </View>
     </View>

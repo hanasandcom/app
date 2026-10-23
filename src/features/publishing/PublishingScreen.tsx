@@ -55,6 +55,7 @@ export function PublishingScreen({ settings, kind, services }: { settings: AppSe
                 </PublishingActions>
             </View>
             <InlineNotice message={state.error} />
+            <InlineNotice tone='info' message={state.access?.warning} />
             {!state.fresh && <InlineNotice tone='info' message={state.loaded ? 'Showing a cached in-memory list. Current service data is unavailable until refresh completes successfully.' : 'The workspace list has not loaded successfully. Counts and empty state are unavailable.'} />}
             <InlineNotice tone='success' message={state.notice} />
             {!state.access?.canWrite && <InlineNotice tone='info' message='Editing is unavailable until current workspace access is verified on your own account. Existing drafts are retained.' />}

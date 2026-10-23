@@ -56,6 +56,7 @@ export function createPublishingApi(settings: AppSettings, kind: ContentKind, tr
         async access(signal: AbortSignal): Promise<PublishingAccess> {
             const base = { scope: accountScope(fixed), organizationId, name: organizationId ? 'Organization content' : 'Hanasand editorial content' }
             let canRead: boolean, canWrite: boolean
+            let warning: string | undefined
             if (organizationId) {
                 const value = object((await request('organizations', signal, 'GET', undefined, true)).value)
                 if (!Array.isArray(value.organizations)) throw new PublishingError('Workspace permissions are invalid.')
@@ -65,11 +66,20 @@ export function createPublishingApi(settings: AppSettings, kind: ContentKind, tr
                 canWrite = !!active && ['owner', 'admin', 'editor'].includes(String(member.role).toLowerCase())
                 if (member && typeof member.name === 'string') base.name = member.name
             } else {
-                const value = object((await request('management/organizations?internalPages=1', signal, 'GET', undefined, true)).value)
-                if (typeof value.allowed !== 'boolean' || typeof value.canEdit !== 'boolean') throw new PublishingError('Editorial permissions are invalid.')
-                canRead = value.allowed; canWrite = value.allowed && value.canEdit
+                // Unscoped editorial reads are public in Core. Only writes require
+                // the fixed Hanasand membership; unavailable flags never grant them.
+                canRead = true
+                canWrite = false
+                try {
+                    const value = object((await request('management/organizations?internalPages=1', signal, 'GET', undefined, true)).value)
+                    if (typeof value.allowed !== 'boolean' || typeof value.canEdit !== 'boolean') throw new PublishingError('Editorial permissions are invalid.')
+                    canWrite = value.allowed && value.canEdit
+                } catch (error) {
+                    if (signal.aborted) throw error
+                    warning = 'Public content can be read, but editing access could not be verified. Refresh before editing.'
+                }
             }
-            return { ...base, canRead, canWrite: canWrite && !fixed.impersonationToken && !fixed.impersonatingUserId }
+            return { ...base, canRead, warning, canWrite: canWrite && !fixed.impersonationToken && !fixed.impersonatingUserId }
         },
         async list(signal: AbortSignal) {
             const { value } = await request(kind + '?workspace=true', signal)

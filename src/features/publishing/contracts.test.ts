@@ -133,3 +133,21 @@ test('body read failure after dispatch is uncertain and read-only title lookup d
     await expect(collision.mutate(access, { action: 'create', draft: { id: '', body: thought.title } }, signal())).rejects.toMatchObject({ status: 409, uncertain: false })
     expect(requests).toBe(2)
 })
+
+test('ordinary Personal readers can read the public pool while Hanasand editing remains independently verified', async () => {
+    for (const selectedOrganizationId of [undefined, '', 'personal']) {
+        const personal = { ...settings, selectedOrganizationId }
+        const api = createPublishingApi(personal, 'articles', async (_, url) => Response.json(url.includes('internalPages') ? { allowed: false, canEdit: false } : [{ ...article, organization_id: null }]))
+        const permission = await api.access(signal())
+        expect(permission).toMatchObject({ canRead: true, canWrite: false, organizationId: null })
+        expect((await api.list(signal()))[0].id).toBe('example.md')
+        expect(() => requireWriter(personal, permission)).toThrow()
+    }
+    const personal = { ...settings, selectedOrganizationId: 'personal' }
+    const unavailable = createPublishingApi(personal, 'thoughts', async (_, url) => url.includes('internalPages') ? Response.json({ error: 'Unavailable' }, { status: 503 }) : Response.json([{ ...thought, organization_id: null }]))
+    const permission = await unavailable.access(signal())
+    expect(permission).toMatchObject({ canRead: true, canWrite: false })
+    expect(permission.warning).toContain('could not be verified')
+    expect((await unavailable.list(signal()))[0].id).toBe('42')
+    expect(() => requireWriter(personal, permission)).toThrow()
+})

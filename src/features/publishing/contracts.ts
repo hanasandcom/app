@@ -6,7 +6,7 @@ export type ContentItem = {
     body?: string; createdAt?: string; updatedAt?: string; creatorId?: string
     words?: number; minutes?: number; description?: string; image?: string
 }
-export type PublishingAccess = { scope: string; organizationId: string | null; canRead: boolean; canWrite: boolean; name: string }
+export type PublishingAccess = { scope: string; organizationId: string | null; canRead: boolean; canWrite: boolean; name: string; warning?: string }
 export type PublishingDraft = { id: string; body: string }
 export type Mutation = { action: 'create' | 'update' | 'delete'; draft: PublishingDraft; original?: ContentItem }
 export type SavedReceipt = { action: Mutation['action']; id: string; item?: ContentItem }

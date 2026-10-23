@@ -268,3 +268,25 @@ test('draft discard and use-latest dialogs do not erase text entered after openi
     f.desk.useLatest(latestHost, draft, latest)
     expect(f.desk.state.draft.body).toBe('# Draft C')
 })
+
+test('a fresh detail 404 clears earlier remote B without discarding dirty D or permitting stale use-latest', async () => {
+    const f = fixture(); await open(f)
+    f.desk.edit(f.desk.state.host, { body: '# Dirty D' })
+    f.setDetail({ ...f.item, body: '# Remote B' })
+    await f.desk.refresh(true, f.desk.state.host)
+    const staleHost = f.desk.state.host, draft = { ...f.desk.state.draft }, staleLatest = f.desk.state.latest
+    expect(staleLatest?.body).toBe('# Remote B')
+    f.api.list = async () => []
+    f.api.detail = async () => { throw new PublishingError('Missing', 404) }
+    await f.desk.refresh(true, f.desk.state.host)
+    expect(f.desk.state.fresh).toBe(true)
+    expect(f.desk.state.targetMissing).toBe(true)
+    expect(f.desk.state.latest).toBeUndefined()
+    expect(f.desk.state.draft.body).toBe('# Dirty D')
+    f.desk.useLatest(staleHost, draft, staleLatest)
+    f.desk.useLatest(f.desk.state.host, draft, staleLatest)
+    expect(f.desk.state.draft.body).toBe('# Dirty D')
+    expect(f.desk.review('update', f.desk.state.host)).toBeNull()
+    expect(f.desk.review('delete', f.desk.state.host)).toBeNull()
+    expect(f.posts()).toBe(0)
+})
