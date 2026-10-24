@@ -417,7 +417,7 @@ function createStyles(theme: ThemePalette) {
         actions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
         automationList: { gap: spacing.sm, paddingVertical: spacing.sm },
         automationCard: { gap: spacing.sm },
-        selectedCard: { borderColor: theme.accent },
+        selectedCard: { borderColor: theme.surfaceBorder, backgroundColor: theme.surfaceStrong },
         emptyCard: { gap: spacing.sm },
         editor: { gap: spacing.md },
         editorHeader: { alignItems: 'center', flexDirection: 'row', gap: spacing.sm },

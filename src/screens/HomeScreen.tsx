@@ -621,8 +621,8 @@ export function HomeScreen({
                 {(canUseChatGpt || selectedAgent === 'chatgpt') && (
                     <View style={{ flexDirection: 'row', alignSelf: 'flex-start', gap: 8, marginBottom: 2 }}>
                         {([['hanasand', 'Hanasand GPT'], ['chatgpt', 'ChatGPT']] as const).map(([agent, label]) => (
-                            <Pressable key={agent} accessibilityRole='button' accessibilityState={{ selected: selectedAgent === agent }} disabled={busy || agent === 'chatgpt' && !canUseChatGpt} onPress={() => { setSelectedAgent(agent) }} style={{ borderRadius: 999, borderWidth: 1, borderColor: selectedAgent === agent ? theme.accent : theme.surfaceBorderSoft, backgroundColor: selectedAgent === agent ? theme.accentSoft : theme.ambientNeutral, paddingHorizontal: 12, paddingVertical: 7 }}>
-                                <Text style={{ color: theme.text, fontSize: 12, fontWeight: '700' }}>{label}</Text>
+                            <Pressable key={agent} accessibilityRole='button' accessibilityState={{ selected: selectedAgent === agent }} disabled={busy || agent === 'chatgpt' && !canUseChatGpt} onPress={() => { setSelectedAgent(agent) }} style={{ borderRadius: 999, borderWidth: 1, borderColor: theme.surfaceBorderSoft, backgroundColor: selectedAgent === agent ? theme.surfaceStrong : theme.ambientNeutral, paddingHorizontal: 12, paddingVertical: 7 }}>
+                                <Text style={{ color: selectedAgent === agent ? theme.accent : theme.text, fontSize: 12, fontWeight: '700' }}>{label}</Text>
                             </Pressable>
                         ))}
                     </View>
@@ -714,8 +714,8 @@ function createStyles(theme: ThemePalette) {
             gap: 8,
             borderRadius: 16,
             borderWidth: 1,
-            borderColor: `${theme.danger}66`,
-            backgroundColor: `${theme.danger}12`,
+            borderColor: theme.surfaceBorderSoft,
+            backgroundColor: theme.surfaceStrong,
             paddingHorizontal: 12,
         },
         permissionText: { flex: 1, color: theme.textMuted, fontSize: 11, fontWeight: '500' },
@@ -734,7 +734,7 @@ function createStyles(theme: ThemePalette) {
             justifyContent: 'center',
         },
         remoteButtonText: { color: theme.text, fontSize: 12, fontWeight: '600' },
-        remoteButtonActive: { borderColor: theme.accent, backgroundColor: theme.accentSoft },
+        remoteButtonActive: { borderColor: theme.surfaceBorderSoft, backgroundColor: theme.surfaceStrong },
         remoteKeyboardPanel: {
             borderRadius: 16,
             borderWidth: 1,
@@ -803,8 +803,8 @@ function createStyles(theme: ThemePalette) {
             alignSelf: 'flex-end',
             borderRadius: 15,
             borderWidth: 1,
-            backgroundColor: theme.accentSoft,
-            borderColor: theme.accent,
+            backgroundColor: theme.surfaceStrong,
+            borderColor: theme.surfaceBorderSoft,
             paddingHorizontal: 12,
             paddingVertical: 9,
         },
@@ -816,8 +816,8 @@ function createStyles(theme: ThemePalette) {
         errorBubble: {
             borderRadius: 15,
             borderWidth: 1,
-            borderColor: theme.danger,
-            backgroundColor: `${theme.danger}22`,
+            borderColor: theme.surfaceBorderSoft,
+            backgroundColor: theme.surfaceStrong,
             paddingHorizontal: 12,
             paddingVertical: 9,
         },

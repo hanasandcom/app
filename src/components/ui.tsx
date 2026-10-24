@@ -167,7 +167,7 @@ export function PillButton({
                 pressed && !disabled && { opacity: 0.84, transform: [{ scale: 0.98 }] },
             ]}
         >
-            <Text style={styles.buttonLabel}>{label}</Text>
+            <Text style={[styles.buttonLabel, tone === 'accent' && { color: theme.accent }, tone === 'danger' && { color: theme.danger }]}>{label}</Text>
         </Pressable>
     )
 }
@@ -508,8 +508,8 @@ function createStyles(theme: ThemePalette) {
         button: { minHeight: 44, borderRadius: radius.pill, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: theme.surfaceBorder },
         buttonSmall: { minHeight: 38, paddingHorizontal: 14 },
         buttonDefault: { backgroundColor: theme.surfaceStrong },
-        buttonAccent: { backgroundColor: theme.accentSoft, borderColor: theme.accent },
-        buttonDanger: { backgroundColor: `${theme.danger}2e`, borderColor: `${theme.danger}55` },
+        buttonAccent: { backgroundColor: theme.surfaceStrong, borderColor: theme.surfaceBorder },
+        buttonDanger: { backgroundColor: theme.surfaceStrong, borderColor: theme.surfaceBorder },
         buttonDisabled: { opacity: 0.55 },
         buttonLabel: { color: theme.text, fontWeight: '600', fontSize: 14 },
         statChip: { flex: 1, minWidth: 92, borderRadius: radius.md, borderWidth: 1, borderColor: theme.surfaceBorder, backgroundColor: theme.surfaceStrong, padding: spacing.md, gap: 6 },

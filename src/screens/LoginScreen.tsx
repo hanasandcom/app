@@ -543,7 +543,7 @@ function createStyles(theme: ThemePalette) {
             gap: 16,
             borderRadius: 26,
             borderWidth: 1,
-            borderColor: `${theme.accent}66`,
+            borderColor: theme.surfaceBorder,
             backgroundColor: `${theme.backgroundRaised}cc`,
             padding: 14,
         },
@@ -590,7 +590,7 @@ function createStyles(theme: ThemePalette) {
             alignItems: 'center',
             justifyContent: 'center',
         },
-        codeBoxActive: { borderColor: theme.accent },
+        codeBoxActive: { borderColor: theme.surfaceBorder },
         codeText: { color: theme.text, fontSize: 20, fontWeight: '800' },
         hiddenCodeInput: {
             position: 'absolute',

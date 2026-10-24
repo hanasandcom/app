@@ -363,8 +363,8 @@ export default function App() {
                 <StatusBar style='light' />
                 <Text style={{ color: palette.text, fontSize: 17, fontWeight: '700', textAlign: 'center' }}>Secure local data is unavailable</Text>
                 <Text style={{ color: palette.textSoft, marginTop: 10, textAlign: 'center' }}>{bootstrapError}</Text>
-                <Pressable onPress={() => setBootstrapAttempt(value => value + 1)} style={{ marginTop: 20, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 14, backgroundColor: palette.accent }}>
-                    <Text style={{ color: palette.background, fontWeight: '800' }}>Try again</Text>
+                <Pressable onPress={() => setBootstrapAttempt(value => value + 1)} style={{ marginTop: 20, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 14, backgroundColor: palette.surfaceStrong, borderWidth: 1, borderColor: palette.surfaceBorder }}>
+                    <Text style={{ color: palette.accent, fontWeight: '800' }}>Try again</Text>
                 </Pressable>
             </GestureHandlerRootView>
         )

@@ -287,7 +287,7 @@ export function MailScreen({ settings }: { settings: AppSettings }) {
     const field = (name: keyof Omit<MailDraft, 'mailboxUser' | 'attachments'>, placeholder: string, multiline = false) => <TextInput accessibilityLabel={placeholder} value={draft[name]} onChangeText={value => { setComposer(current => editMailComposer(current, { [name]: value })) }} editable={!busy} placeholder={placeholder} placeholderTextColor={theme.textSoft} autoCapitalize={['to', 'cc', 'bcc'].includes(name) ? 'none' : 'sentences'} autoCorrect={!['to', 'cc', 'bcc'].includes(name)} multiline={multiline} style={[styles.input, multiline && { minHeight: 240, paddingTop: 14, textAlignVertical: 'top' }]} />
 
     return (
-        <Screen key={view} appearance='quiet' compactHeader={view === 'list'} contentStyle={view === 'list' ? { gap: spacing.sm } : undefined} title={view === 'compose' ? 'New message' : view === 'message' ? 'Message' : (selectedFolder?.name || 'Inbox')} subtitle={view === 'list' ? overview?.mailboxAddress : undefined} left={view !== 'list' ? <PillButton label='Back' small onPress={closeView} disabled={busy} /> : undefined} right={view === 'list' ? <PillButton label='Compose' small tone='accent' onPress={() => compose('new')} disabled={!overview || loading || busy || !overview.canSend} /> : undefined}>
+        <Screen key={view} appearance='quiet' compactHeader={view === 'list'} contentStyle={view === 'list' ? { gap: spacing.sm } : undefined} title={view === 'compose' ? 'New message' : view === 'message' ? 'Message' : (selectedFolder?.name || 'Inbox')} subtitle={view === 'list' ? overview?.mailboxAddress : undefined} left={view !== 'list' ? <PillButton label='Back' small onPress={closeView} disabled={busy} /> : undefined} right={view === 'list' ? <PillButton label='Send' small tone='accent' onPress={() => compose('new')} disabled={!overview || loading || busy || !overview.canSend} /> : undefined}>
             {!!error && (view !== 'list' || messages.length > 0) && <InlineNotice message={error} />}
             {!!overview?.notice && <InlineNotice message={overview.notice} />}
             {!authenticated && <InlineNotice message='Sign in to load your mail.' />}
@@ -412,7 +412,7 @@ function createStyles(theme: ThemePalette) {
         iconButton: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19 },
         folderPanel: { padding: 8, borderRadius: 16, borderWidth: 1, borderColor: theme.surfaceBorderSoft, backgroundColor: theme.surface },
         folderOption: { minHeight: 42, borderRadius: 11, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-        folderOptionSelected: { backgroundColor: theme.accentSoft },
+        folderOptionSelected: { backgroundColor: theme.surfaceStrong },
         folderOptionLabel: { color: theme.textMuted, fontSize: 14 },
         folderOptionLabelSelected: { color: theme.text, fontWeight: '700' },
         folderUnread: { color: theme.accentAlt, fontSize: 12, fontWeight: '700' },
@@ -423,7 +423,7 @@ function createStyles(theme: ThemePalette) {
         messageRow: { minHeight: 78, borderBottomWidth: 1, borderBottomColor: theme.surfaceBorderSoft, backgroundColor: theme.background, flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: spacing.md, paddingVertical: 11, gap: 11 },
         unreadMessageRow: { backgroundColor: theme.surfaceStrong },
         avatar: { width: 40, height: 40, borderRadius: 20, marginTop: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.surfaceStrong },
-        unreadAvatar: { backgroundColor: theme.accentSoft },
+        unreadAvatar: { backgroundColor: theme.surfaceStrong },
         avatarText: { color: theme.accentAlt, fontSize: 18, fontWeight: '700' },
         messageContent: { flex: 1, minWidth: 0, gap: 2 },
         messageTopline: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },

@@ -14,9 +14,9 @@ const sectionItems: Array<{ id: SettingsSection; label: string; icon: typeof Cog
 ]
 
 const themeOptions: Array<{ id: ThemeMode; label: string; description: string }> = [
-    { id: 'obsidian', label: 'Obsidian', description: 'Warm charcoal and orange contrast.' },
-    { id: 'graphite', label: 'Graphite', description: 'Cooler neutral tones for long sessions.' },
-    { id: 'forest', label: 'Forest', description: 'Dark green accents with a calmer glow.' },
+    { id: 'obsidian', label: 'Obsidian', description: 'Warm charcoal surfaces with restrained red details.' },
+    { id: 'graphite', label: 'Graphite', description: 'Cool charcoal surfaces with restrained red details.' },
+    { id: 'forest', label: 'Forest', description: 'Deep green surfaces with restrained red details.' },
 ]
 
 export function SettingsDrawer({
@@ -198,8 +198,8 @@ export function SettingsDrawer({
                             <Pressable disabled={saving} onPress={onClose} style={({ pressed }) => [styles.secondaryButton, saving && styles.disabled, { borderColor: theme.surfaceBorderSoft, backgroundColor: theme.surfaceStrong }, pressed && !saving && styles.pressed]}>
                                 <Text style={[styles.secondaryLabel, { color: theme.text }]}>Close</Text>
                             </Pressable>
-                            <Pressable disabled={saving} onPress={() => void handleSave()} style={({ pressed }) => [styles.primaryButton, saving && styles.disabled, { backgroundColor: theme.accentSoft, borderColor: theme.surfaceBorder }, pressed && !saving && styles.pressed]}>
-                                <Text style={[styles.primaryLabel, { color: theme.text }]}>{saving ? 'Saving...' : 'Save changes'}</Text>
+                            <Pressable disabled={saving} onPress={() => void handleSave()} style={({ pressed }) => [styles.primaryButton, saving && styles.disabled, { backgroundColor: theme.surfaceStrong, borderColor: theme.surfaceBorder }, pressed && !saving && styles.pressed]}>
+                                <Text style={[styles.primaryLabel, { color: theme.accent }]}>{saving ? 'Saving...' : 'Save changes'}</Text>
                             </Pressable>
                         </View>
                     </ScrollView>
@@ -263,7 +263,7 @@ function PreferenceRow({
                 <Text style={[styles.preferenceTitle, { color: theme.text }]}>{title}</Text>
                 <Text style={[styles.preferenceBody, { color: theme.textMuted }]}>{body}</Text>
             </View>
-            <Switch value={value} onValueChange={onChange} disabled={disabled} thumbColor={value ? theme.text : theme.textSoft} trackColor={{ false: 'rgba(255,255,255,0.10)', true: theme.accent }} />
+            <Switch value={value} onValueChange={onChange} disabled={disabled} thumbColor={value ? theme.accent : theme.textSoft} trackColor={{ false: 'rgba(255,255,255,0.10)', true: theme.surfaceBorder }} />
         </View>
     )
 }

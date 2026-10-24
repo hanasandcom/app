@@ -45,7 +45,7 @@ export function TableEditor({ data, onChange, enabled, host, guard, readGuard }:
                     accessibilityRole='button'
                     accessibilityLabel={`Select ${columnName(c)}${r + 1}`}
                     onPress={() => select({ row: r, col: c })}
-                    style={{ width: data.widths[c] || 180, minHeight: data.heights[r] || 48, padding: 10, borderWidth: 1, borderColor: row === r && col === c ? theme.accent : theme.surfaceBorder }}
+                    style={{ width: data.widths[c] || 180, minHeight: data.heights[r] || 48, padding: 10, borderWidth: 1, borderColor: r === row && c === col ? theme.surfaceBorder : theme.surfaceBorderSoft, backgroundColor: r === row && c === col ? theme.surfaceStrong : 'transparent' }}
                 >
                     <ThesisText>{cellValue(data.cells, r, c)}</ThesisText>
                 </Pressable>)}</View>)}</View>

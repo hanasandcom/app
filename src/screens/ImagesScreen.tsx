@@ -237,7 +237,7 @@ function PhotoUploadPicker({ settings, onClose, onUploaded }: { settings: AppSet
                 </View>
                 <ScrollView contentContainerStyle={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
                     {photos.map(photo => <Pressable key={photo.id} accessibilityRole='checkbox' accessibilityLabel={`Select ${photo.filename}`} accessibilityState={{ checked: selected.has(photo.id), disabled: busy }} disabled={busy} onPress={() => togglePhoto(photo.id)} style={{ width: '30%', gap: 4 }}>
-                        <Image source={{ uri: photo.uri }} style={{ width: '100%', aspectRatio: 1, borderRadius: 12, borderWidth: selected.has(photo.id) ? 3 : 0, borderColor: theme.accent, backgroundColor: theme.ambientNeutral }} />
+                        <Image source={{ uri: photo.uri }} style={{ width: '100%', aspectRatio: 1, borderRadius: 12, borderWidth: selected.has(photo.id) ? 3 : 0, borderColor: theme.surfaceBorder, backgroundColor: theme.ambientNeutral }} />
                         <Text numberOfLines={1} style={buttonStyle}>{selected.has(photo.id) ? '✓ ' : ''}{photo.filename}</Text>
                     </Pressable>)}
                     {!photos.length && !loading && <Text style={{ color: theme.textMuted }}>No photos available. Check the selected photo access or refresh.</Text>}
