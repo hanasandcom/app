@@ -24,6 +24,29 @@ test('inventory/details/metrics are direct registered reads and never invoke exp
     expect(calls.every(c => c.init.method === 'GET' && c.init.cache === 'no-store')).toBe(true)
     expect(calls.some(c => /connection|refresh=1|vms\/stop/.test(c.url))).toBe(false)
 })
+test('safe VM reads retry transient network failures and server errors without retrying effectful GETs', async () => {
+    let attempts = 0
+    handler = async () => {
+        attempts++
+        if (attempts === 1) throw new TypeError('temporary network failure')
+        return Response.json([vmRow()])
+    }
+    expect((await api.loadInventory(s, signal())).value[0].name).toBe('synthetic-vm')
+    expect(attempts).toBe(2)
+
+    attempts = 0
+    handler = async () => {
+        attempts++
+        return attempts === 1 ? new Response('<html>temporary gateway failure</html>', { status: 502 }) : Response.json({ name: 'synthetic-vm' })
+    }
+    expect((await api.loadDetails(s, 'synthetic-vm', signal())).value?.name).toBe('synthetic-vm')
+    expect(attempts).toBe(2)
+
+    attempts = 0
+    handler = async () => { attempts++; throw new TypeError('do not retry an effectful GET') }
+    await expect(api.collectDetails(s, vm(), signal())).rejects.toThrow('outcome is unknown')
+    expect(attempts).toBe(1)
+})
 test('custom HTTPS receives explicit authentication and organization scope; permission discovery is Identity owned', async () => {
     const custom = { ...s, apiBaseUrl: 'https://synthetic.invalid/api', selectedOrganizationId: 'org:one' }
     await api.loadInventory(custom, signal())

@@ -256,7 +256,7 @@ it('fresh case and health handoffs remount even when the requested ID repeats', 
 it('both VM menu paths and the System fallback use the native VM workflow', async () => {
     for (const path of ['/vms', '/system/virtual-machines']) {
         expect(nativeToolForPath(path)).toBe('virtual-machines')
-        expect(leaves(siteNavigation('synthetic-user')).find(item => item.path === path)?.tab).toBe('Tools')
+        expect(leaves(siteNavigation('synthetic-user')).find(item => item.path === path)?.tab).toBe('VirtualMachines')
     }
     const app = await Bun.file(new URL('../App.tsx', import.meta.url)).text()
     expect(app).toContain('onOpenVms={openVms}')

@@ -26,7 +26,7 @@ export async function vmRequest(s: AppSettings, path: string, method: string, si
     controller.signal.addEventListener('abort', interrupted, { once: true })
     if (signal.aborted) abort(); else signal.addEventListener('abort', abort, { once: true })
     const timer = setTimeout(abort, options.timeoutMs ?? deadlineMs)
-    const run = async () => {
+    const runOnce = async () => {
         if (controller.signal.aborted) throw new VmError('VM request cancelled.')
         const organizationId = s.selectedOrganizationId && s.selectedOrganizationId !== 'personal' ? s.selectedOrganizationId : undefined
         dispatched = true
@@ -42,11 +42,23 @@ export async function vmRequest(s: AppSettings, path: string, method: string, si
         if (content.length > max || utf8Size(content) > max) throw new VmError('VM response exceeded its size limit.', response.status, effect)
         let value: unknown
         try { value = JSON.parse(content) } catch {
-            if (!response.ok) throw new VmError(`VM service returned HTTP ${response.status} without JSON. Check the API address and retry.`, response.status, effect)
-            throw new VmError('VM service returned an unexpected non-JSON response. Check the API address and retry.', response.status, effect)
+            if (!response.ok) throw new VmError(`VM service returned HTTP ${response.status} without JSON. Check the API address and retry.`, response.status, effect && response.status >= 500)
+            throw new VmError(`VM service returned an unexpected non-JSON response (HTTP ${response.status}). Check the API address and retry.`, response.status, effect)
         }
         if (!response.ok) throw new VmError([401, 403].includes(response.status) ? 'VM access could not be verified.' : 'The VM service could not complete this request. Review current state.', response.status, effect && response.status >= 500)
         return { status: response.status, value }
+    }
+    const retryRead = method.toUpperCase() === 'GET' && !effect
+    const run = async () => {
+        for (let attempt = 0; ; attempt++) {
+            try { return await runOnce() }
+            catch (error) {
+                const retryable = retryRead && attempt < 2 && !controller.signal.aborted && !signal.aborted
+                    && (!(error instanceof VmError) || error.status >= 500)
+                if (!retryable) throw error
+                await new Promise(resolve => setTimeout(resolve, 150 * (attempt + 1)))
+            }
+        }
     }
     try { return await Promise.race([run(), cancelled]) }
     catch (error) { if (error instanceof VmError) throw error; throw new VmError(effect && dispatched ? 'The operation outcome is unknown. Review current state before another attempt.' : 'The VM service is unavailable.', 0, effect && dispatched) }

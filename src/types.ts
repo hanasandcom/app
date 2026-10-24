@@ -15,6 +15,7 @@ export type RootTabParamList = {
     Scan: undefined
     Notes: undefined
     Images: undefined
+    VirtualMachines: undefined
     Automations: { section?: 'health' | 'cron'; automationId?: string; handoffId?: number } | undefined
     Explore: undefined
     Organizations: { section?: OrganizationSection } | undefined

@@ -8,7 +8,7 @@ import { Alert, AppState, Platform, Pressable, Text, View } from 'react-native'
 import * as WebBrowser from 'expo-web-browser'
 import { StatusBar } from 'expo-status-bar'
 import * as SystemUI from 'expo-system-ui'
-import { AlarmClockCheck, Bot, Brain, Compass, Images, Mail, ScanLine, StickyNote, UserRound } from 'lucide-react-native'
+import { AlarmClockCheck, Bot, Brain, Compass, Images, Mail, ScanLine, Server, StickyNote, UserRound } from 'lucide-react-native'
 import type { AiChatMessage, AppSettings, RootTabParamList } from './types'
 import { SettingsDrawer } from './components/SettingsDrawer'
 import { WorkspacePicker } from './components/WorkspacePicker'
@@ -28,6 +28,7 @@ import { WatchlistsScreen } from './screens/WatchlistsScreen'
 import { ThreatSearchScreen } from './screens/ThreatSearchScreen'
 import { WorkspacePageScreen } from './screens/WorkspacePageScreen'
 import { NativeToolsScreen } from './screens/NativeToolsScreen'
+import { VirtualMachinesScreen } from './screens/VirtualMachinesScreen'
 import { nativeToolForPath } from './lib/native-tool-navigation'
 import { organizationSectionForPath } from './lib/organization-navigation'
 import { fetchOrganizationsWithRetry, type Organization } from './lib/profile-api'
@@ -53,6 +54,7 @@ const tabIcons = {
     Scan: ScanLine,
     Notes: StickyNote,
     Images: Images,
+    VirtualMachines: Server,
     Automations: AlarmClockCheck,
     Explore: Compass,
 } as const
@@ -207,7 +209,7 @@ export default function App() {
     }
     function openVms() {
         if (!sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)) return
-        navigation.navigate('Tools', { tool: 'virtual-machines' })
+        navigation.navigate('VirtualMachines')
     }
     async function openVmCheckout(url: string) {
         if (!sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)
@@ -236,6 +238,7 @@ export default function App() {
             case 'Mail': navigation.navigate('Mail'); break
             case 'Notes': navigation.navigate('Notes'); break
             case 'Images': navigation.navigate('Images'); break
+            case 'VirtualMachines': navigation.navigate('VirtualMachines'); break
             case 'Organizations': navigation.navigate('Organizations', { section: organizationSectionForPath(item.path) }); break
             case 'Watchlists': navigation.navigate('Watchlists'); break
             case 'Automations': navigation.navigate('Automations', { section: item.path === '/automation/health' ? 'health' : 'cron', automationId: undefined, handoffId: undefined }); break
@@ -451,6 +454,7 @@ export default function App() {
                                     Scan: 'scan',
                                     Notes: 'notes',
                                     Images: 'images',
+                                    VirtualMachines: 'vms',
                                     Explore: 'explore',
                                     Organizations: 'organizations',
                                     Watchlists: 'watchlists',
@@ -475,7 +479,7 @@ export default function App() {
                             screenOptions={({ route }) => ({
                                 headerShown: false,
                                 tabBarShowLabel: true,
-                                tabBarLabel: route.name === 'Explore' ? 'Menu' : route.name === 'Home' ? 'AI' : route.name === 'Intelligence' ? 'Intel' : route.name,
+                                tabBarLabel: route.name === 'Explore' ? 'Menu' : route.name === 'Home' ? 'AI' : route.name === 'Intelligence' ? 'Intel' : route.name === 'VirtualMachines' ? 'VMs' : route.name,
                                 tabBarLabelStyle: { fontSize: 10, fontWeight: '600' },
                                 tabBarStyle: {
                                     position: 'absolute',
@@ -497,7 +501,7 @@ export default function App() {
                                 tabBarItemStyle: {
                                     borderRadius: 18,
                                     marginHorizontal: 2,
-                                    ...(!['Home', 'Mail', 'Intelligence', 'Images', 'Explore'].includes(route.name) ? { display: 'none' as const } : {}),
+                                    ...(!['Home', 'Mail', 'Intelligence', 'Images', 'VirtualMachines'].includes(route.name) ? { display: 'none' as const } : {}),
                                 },
                                 tabBarIcon: ({ color, focused }) => {
                                     const Icon = tabIcons[route.name as keyof typeof tabIcons] || Compass
@@ -523,6 +527,9 @@ export default function App() {
                                 {() => <NotesScreen settings={settings} />}
                             </Tab.Screen>
                             <Tab.Screen name='Images'>{() => <ImagesScreen settings={settings} />}</Tab.Screen>
+                            <Tab.Screen name='VirtualMachines'>
+                                {() => <VirtualMachinesScreen settings={settings} onOpenCheckout={openVmCheckout} />}
+                            </Tab.Screen>
                             <Tab.Screen name='Automations'>
                                 {({ route }) => <AutomationsScreen key={JSON.stringify([route.params?.automationId, route.params?.handoffId])} settings={settings} section={route.params?.section} initialAutomationId={route.params?.automationId} />}
                             </Tab.Screen>

@@ -270,11 +270,11 @@ export function toggleNavigationGroup(expanded: Record<string, boolean>, key: st
 }
 
 export function siteNavigation(userId: string, access?: Omit<NavigationAccess, 'id'>): SiteNavigationItem[] {
-    const tabs: Record<string, keyof RootTabParamList> = { '/': 'Home', '/mail': 'Mail', '/notes': 'Notes', '/gallery': 'Images', '/upload': 'Images', '/scan': 'Scan', '/organizations': 'Organizations', '/organizations/team': 'Organizations', '/organizations/settings': 'Organizations', '/automation/health': 'Automations', '/automation/cron': 'Automations' }
+    const tabs: Record<string, keyof RootTabParamList> = { '/': 'Home', '/mail': 'Mail', '/notes': 'Notes', '/gallery': 'Images', '/upload': 'Images', '/vms': 'VirtualMachines', '/system/virtual-machines': 'VirtualMachines', '/scan': 'Scan', '/organizations': 'Organizations', '/organizations/team': 'Organizations', '/organizations/settings': 'Organizations', '/automation/health': 'Automations', '/automation/cron': 'Automations' }
     const convert = (item: NavigationItem): SiteNavigationItem => {
         if (item.items) return { label: item.label, items: item.items.map(convert) }
         const path = item.href || ''
-        const tab = path === '/watchlists' || path === '/organizations/watchlists' ? 'Watchlists' : path.startsWith(`/profile/${userId}`) ? 'Profile' : nativeToolForPath(path) ? 'Tools' : tabs[path]
+        const tab = tabs[path] || (path === '/watchlists' || path === '/organizations/watchlists' ? 'Watchlists' : path.startsWith(`/profile/${userId}`) ? 'Profile' : nativeToolForPath(path) ? 'Tools' : undefined)
         const supported = tab || workspacePageDefinition(path)
         return { label: item.label, path, ...(tab ? { tab } : {}), ...(!supported ? { opensWebsite: true } : {}) }
     }
