@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ArrowLeft, RotateCcw } from 'lucide-react-native'
 import type { AppSettings } from '../types'
 import { restoreHanasandAccount } from '../lib/api'
@@ -22,6 +23,7 @@ export function PendingDeletionScreen({
     onRestored: (session: { id: string, token: string }) => Promise<void>
 }) {
     const theme = getThemePalette(settings.themeMode)
+    const insets = useSafeAreaInsets()
     const styles = useMemo(() => createStyles(theme), [theme])
     const [busy, setBusy] = useState(false)
     const [status, setStatus] = useState('')
@@ -45,7 +47,7 @@ export function PendingDeletionScreen({
 
     return (
         <LinearGradient colors={[theme.backgroundRaised, theme.background, theme.backgroundAlt]} locations={[0, 0.58, 1]} style={styles.root}>
-            <View style={styles.wrap}>
+            <View style={[styles.wrap, { paddingTop: Math.max(54, insets.top + 20), paddingBottom: 54 + insets.bottom }]}>
                 <View style={styles.masthead}>
                     <Text style={styles.logo}>Hanasand</Text>
                     <View style={styles.logoRule} />

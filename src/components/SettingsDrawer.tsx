@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, useWindowDimensions, type KeyboardTypeOptions } from 'react-native'
+import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, useWindowDimensions, type KeyboardTypeOptions } from 'react-native'
 import { ArrowLeft, CircleDot, Cog, Monitor, Palette, SlidersHorizontal } from 'lucide-react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { AppSettings } from '../types'
 import { getThemePalette, type ThemeMode, radius, spacing } from '../theme/tokens'
+import { safeAreaTopInset } from '../lib/safe-area'
 
 type SettingsSection = 'general' | 'appearance' | 'configuration' | 'personalization'
 
@@ -74,7 +75,7 @@ export function SettingsDrawer({
     return (
         <Modal visible={open} animationType='fade' transparent onRequestClose={onClose}>
             <View style={[styles.overlay, compactDrawer && {
-                paddingTop: insets.top + spacing.lg + spacing.sm,
+                paddingTop: safeAreaTopInset(insets.top, Platform.OS) + spacing.lg + spacing.sm,
                 paddingBottom: insets.bottom + spacing.sm,
             }]}>
                 <Pressable style={styles.backdrop} onPress={onClose} />

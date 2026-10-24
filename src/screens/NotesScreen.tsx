@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { FileText, X } from 'lucide-react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { AppSettings, Note } from '../types'
@@ -9,6 +9,7 @@ import { workspaceAccountKey } from '../lib/workspace-data'
 import { PillButton, Screen } from '../components/ui'
 import { radius, spacing, type ThemePalette } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
+import { safeAreaTopInset } from '../lib/safe-area'
 
 const NOTES_CACHE_KEY = 'hanasand-mobile/account-notes/'
 
@@ -328,7 +329,7 @@ function AccountNotes({ settings }: { settings: AppSettings }) {
             </View>
 
             <Modal visible={menuOpen} transparent animationType='fade' onRequestClose={() => setMenuOpen(false)}>
-                <View style={[styles.modalBackdrop, { paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.lg }]}>
+                <View style={[styles.modalBackdrop, { paddingTop: safeAreaTopInset(insets.top, Platform.OS) + spacing.lg, paddingBottom: insets.bottom + spacing.lg }]}>
                     <Pressable style={StyleSheet.absoluteFill} onPress={() => setMenuOpen(false)} />
                     <View style={styles.noteDrawer}>
                         <View style={styles.drawerHeader}>

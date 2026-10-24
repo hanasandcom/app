@@ -10,6 +10,7 @@ import { completePasswordReset, createHanasandAccount, createHanasandBrowserSign
 import { getThemePalette, spacing, type ThemePalette } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
 import { InlineNotice } from '../components/ui'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 type AuthMode = 'login' | 'signup'
 type ResetStep = 'idle' | 'code' | 'password'
@@ -42,6 +43,7 @@ export function LoginScreen({
     onPendingDeletion: (details: { id: string, restoreToken: string, deletionScheduledAt: string }) => Promise<void>
 }) {
     const theme = getThemePalette(settings.themeMode)
+    const insets = useSafeAreaInsets()
     const styles = useMemo(() => createStyles(theme), [theme])
     const [authMode, setAuthMode] = useState<AuthMode>('login')
     const [username, setUsername] = useState('')
@@ -277,7 +279,7 @@ export function LoginScreen({
     return (
         <LinearGradient colors={[theme.backgroundRaised, theme.background, theme.backgroundAlt]} locations={[0, 0.58, 1]} style={styles.root}>
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.keyboard}>
-                <ScrollView keyboardShouldPersistTaps='handled' contentContainerStyle={styles.content}>
+                <ScrollView keyboardShouldPersistTaps='handled' contentContainerStyle={[styles.content, { paddingTop: Math.max(54, insets.top + 20), paddingBottom: 54 + insets.bottom }]}>
                     <View style={styles.masthead}>
                         <Text style={styles.logo}>Hanasand</Text>
                         <View style={styles.logoRule} />

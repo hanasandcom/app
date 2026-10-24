@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Animated, Dimensions, FlatList, Image, Linking, Modal, PanResponder, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import { Alert, Animated, Dimensions, FlatList, Image, Linking, Modal, PanResponder, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
 import { File as LocalFile } from 'expo-file-system'
 import * as MediaLibrary from 'expo-media-library'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -10,6 +10,7 @@ import { GalleryAlbumImage, GalleryAlbumsScreen } from './GalleryAlbumsScreen'
 import { DropdownMenu, GlassCard, InlineNotice, PillButton, Screen, SectionTitle } from '../components/ui'
 import { spacing } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
+import { safeAreaTopInset } from '../lib/safe-area'
 
 const CARD_WIDTH = Dimensions.get('window').width - 48
 const SWIPE_THRESHOLD = 110
@@ -128,7 +129,7 @@ function CloudLibrary({ settings }: { settings: AppSettings }) {
             void loadAlbums()
         }} />}
         <Modal visible={!!preview} animationType='fade' onRequestClose={() => setPreview(null)}>
-            <View style={{ flex: 1, backgroundColor: theme.backgroundRaised, paddingHorizontal: 24, paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16, gap: 16 }}>
+            <View style={{ flex: 1, backgroundColor: theme.backgroundRaised, paddingHorizontal: 24, paddingTop: safeAreaTopInset(insets.top, Platform.OS) + 16, paddingBottom: insets.bottom + 16, gap: 16 }}>
                 <PillButton label='Close image' onPress={() => setPreview(null)} />
                 {preview && <><Text style={{ color: theme.text }}>{preview.name}</Text><GalleryAlbumImage settings={settings} fileId={preview.id} thumbnail={false} resizeMode='contain' style={{ flex: 1 }} /></>}
             </View>
@@ -220,7 +221,7 @@ function PhotoUploadPicker({ settings, onClose, onUploaded }: { settings: AppSet
     }
     const buttonStyle = { color: theme.text, fontSize: 12 } as const
     return <Modal visible animationType='slide' onRequestClose={() => { if (!uploading.current) onClose() }}>
-        <View style={{ flex: 1, backgroundColor: theme.backgroundRaised, paddingHorizontal: 20, paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.md, gap: spacing.md }}>
+        <View style={{ flex: 1, backgroundColor: theme.backgroundRaised, paddingHorizontal: 20, paddingTop: safeAreaTopInset(insets.top, Platform.OS) + spacing.md, paddingBottom: insets.bottom + spacing.md, gap: spacing.md }}>
             <Text style={{ color: theme.text, fontSize: 24, fontWeight: '700' }}>Upload photos</Text>
             <Text style={{ color: theme.textMuted }}>Select the photos to add to your Hanasand library.</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
