@@ -93,7 +93,7 @@ test('VM inventory renders before slower permission checks finish; target and ba
     expect(result.reads.target).toBe(true)
     expect(result.reads.platform).toBe(true)
 })
-test('opening a listed VM reuses complete workspace reads and refreshes only its target data', async () => {
+test('inventory skips checkout products and a listed VM loads them with its target data', async () => {
     const calls = { owned: 0, accessible: 0, platform: 0, organizations: 0, products: 0, vm: 0, management: 0, details: 0, metrics: 0 }
     const api = services({
         loadInventory: async s => { calls.owned++; return scoped(s, [vm().value]) },
@@ -110,7 +110,7 @@ test('opening a listed VM reuses complete workspace reads and refreshes only its
     const initialRead = ops.beginRead(ops.generation, false, '')!
     const initial = await readVmWorkspace(settings, initialRead, api)
     expect(ops.finishRead(initialRead, { target: '', authorized: true, reads: initial.reads })).toBe(true)
-    expect(calls).toEqual({ owned: 1, accessible: 1, platform: 1, organizations: 1, products: 1, vm: 0, management: 0, details: 0, metrics: 0 })
+    expect(calls).toEqual({ owned: 1, accessible: 1, platform: 1, organizations: 1, products: 0, vm: 0, management: 0, details: 0, metrics: 0 })
 
     const targetRead = ops.beginRead(ops.generation, false, 'synthetic-vm')!
     const target = await readVmWorkspace(settings, targetRead, api, undefined, initial)
@@ -137,12 +137,12 @@ test('workspace reads are repeated when the inventory is incomplete or the sessi
     const incompleteRead = ops.beginRead(ops.generation, false, 'synthetic-vm')!
     const incompleteResult = await readVmWorkspace(settings, incompleteRead, api, undefined, incomplete)
     expect(ops.finishRead(incompleteRead, { target: incompleteRead.target, authorized: true, reads: incompleteResult.reads })).toBe(true)
-    expect(calls).toEqual({ inventory: 2, accessible: 2, platform: 2, organizations: 2, products: 2 })
+    expect(calls).toEqual({ inventory: 2, accessible: 2, platform: 2, organizations: 2, products: 1 })
 
     const rotated = { ...settings, authToken: 'rotated-token' }
     const rotatedRead = ops.beginRead(ops.generation, false, 'synthetic-vm')!
     await readVmWorkspace(rotated, rotatedRead, api, undefined, initial)
-    expect(calls).toEqual({ inventory: 3, accessible: 3, platform: 3, organizations: 3, products: 3 })
+    expect(calls).toEqual({ inventory: 3, accessible: 3, platform: 3, organizations: 3, products: 2 })
 })
 test('a failed exact VM read stays locked and cannot be treated as a verified target', async () => {
     const ops = new VmController(settings, new VmIntents()); ops.visible = true

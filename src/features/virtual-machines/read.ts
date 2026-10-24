@@ -31,7 +31,6 @@ function canReuseWorkspaceReads(settings: AppSettings, previous: VmSnapshot | un
     if (!previous?.inventory || !previous.reads.inventory || previous.inventory.scope !== vmScope(settings)) return false
     if (!previous.inventory.value.some(vm => vm.name.toLowerCase() === target.toLowerCase())) return false
     if (!previous.platform || previous.platform.scope !== vmScope(settings) || previous.organizations === null) return false
-    if (!settings.impersonationToken && !settings.impersonatingUserId && (!previous.products || previous.products.scope !== vmScope(settings))) return false
     return true
 }
 export const safeVmMessage = (error: unknown) => error instanceof VmError && error.name !== 'AbortError' ? error.message : 'This VM information is unavailable. Refresh to try again.'
@@ -103,7 +102,7 @@ export async function readVmWorkspace(settings: AppSettings, read: VmRead, servi
             take(() => services.loadPlatformAccess(settings, signal), value => { result.platform = value; result.reads.platform = value.value.canEdit }),
             take(() => services.organizations(settings, signal), value => { result.organizations = value }),
         ] : []),
-        ...(!reuseWorkspace && !settings.impersonationToken && !settings.impersonatingUserId ? [take(() => services.loadProducts(settings, signal), value => {
+        ...(hasTarget && (!reuseWorkspace || !previous?.products) && !settings.impersonationToken && !settings.impersonatingUserId ? [take(() => services.loadProducts(settings, signal), value => {
             result.products = value
             result.reads.products = value.value.plans.some(plan => plan.id === 'failover') && value.value.containers.some(vm => vm.name === read.target)
         })] : []),
