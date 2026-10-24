@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { FileText, X } from 'lucide-react-native'
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { AppSettings, Note } from '../types'
 import { createNote, deleteNote, fetchNotes, updateNote } from '../lib/api'
 import { workspaceAccountKey } from '../lib/workspace-data'
@@ -93,6 +93,7 @@ export function NotesScreen({ settings }: { settings: AppSettings }) {
 
 function AccountNotes({ settings }: { settings: AppSettings }) {
     const theme = useAppTheme()
+    const insets = useSafeAreaInsets()
     const styles = useMemo(() => createStyles(theme), [theme])
     const [notes, setNotes] = useState<LocalNote[]>([])
     const [selectedId, setSelectedId] = useState('')
@@ -327,63 +328,61 @@ function AccountNotes({ settings }: { settings: AppSettings }) {
             </View>
 
             <Modal visible={menuOpen} transparent animationType='fade' onRequestClose={() => setMenuOpen(false)}>
-                <SafeAreaProvider>
-                    <SafeAreaView edges={['top', 'bottom']} style={[styles.modalBackdrop, { paddingTop: spacing.lg, paddingBottom: spacing.lg }]}>
-                        <Pressable style={StyleSheet.absoluteFill} onPress={() => setMenuOpen(false)} />
-                        <View style={styles.noteDrawer}>
-                            <View style={styles.drawerHeader}>
-                                <Text style={styles.drawerTitle}>Previous notes</Text>
-                                <Pressable
-                                    accessibilityRole='button'
-                                    accessibilityLabel='Close previous notes'
-                                    onPress={() => setMenuOpen(false)}
-                                    style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
-                                >
-                                    <X color={theme.textMuted} size={18} />
-                                </Pressable>
-                            </View>
-                            <ScrollView contentContainerStyle={styles.noteList}>
-                                <Pressable
-                                    accessibilityRole='button'
-                                    accessibilityLabel='Start a fresh note'
-                                    onPress={startFreshNote}
-                                    style={({ pressed }) => [styles.noteRow, styles.freshNoteRow, pressed && styles.pressed]}
-                                >
-                                    <FileText color={theme.text} size={17} />
-                                    <View style={styles.noteRowText}>
-                                        <Text style={styles.noteTitle}>Fresh note</Text>
-                                        <Text style={styles.notePreview}>Start typing. It saves automatically.</Text>
-                                    </View>
-                                </Pressable>
-                                {notes.filter(hasText).map(note => (
-                                    <Pressable
-                                        key={note.id}
-                                        accessibilityRole='button'
-                                        accessibilityLabel={`Open ${noteTitle(note)}`}
-                                        accessibilityState={{ selected: note.id === selectedId }}
-                                        onPress={() => openNote(note)}
-                                        style={({ pressed }) => [
-                                            styles.noteRow,
-                                            note.id === selectedId && styles.noteRowActive,
-                                            pressed && styles.pressed,
-                                        ]}
-                                    >
-                                        <FileText color={note.id === selectedId ? theme.text : theme.textSoft} size={17} />
-                                        <View style={styles.noteRowText}>
-                                            <Text style={styles.noteTitle} numberOfLines={1}>{noteTitle(note)}</Text>
-                                            <Text style={styles.notePreview} numberOfLines={2}>{notePreview(note)}</Text>
-                                        </View>
-                                    </Pressable>
-                                ))}
-                                {!notes.filter(hasText).length && (
-                                    <View style={styles.emptyState}>
-                                        <Text style={styles.notePreview}>Start typing and your note will be kept here automatically.</Text>
-                                    </View>
-                                )}
-                            </ScrollView>
+                <View style={[styles.modalBackdrop, { paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.lg }]}>
+                    <Pressable style={StyleSheet.absoluteFill} onPress={() => setMenuOpen(false)} />
+                    <View style={styles.noteDrawer}>
+                        <View style={styles.drawerHeader}>
+                            <Text style={styles.drawerTitle}>Previous notes</Text>
+                            <Pressable
+                                accessibilityRole='button'
+                                accessibilityLabel='Close previous notes'
+                                onPress={() => setMenuOpen(false)}
+                                style={({ pressed }) => [styles.closeButton, pressed && styles.pressed]}
+                            >
+                                <X color={theme.textMuted} size={18} />
+                            </Pressable>
                         </View>
-                    </SafeAreaView>
-                </SafeAreaProvider>
+                        <ScrollView contentContainerStyle={styles.noteList}>
+                            <Pressable
+                                accessibilityRole='button'
+                                accessibilityLabel='Start a fresh note'
+                                onPress={startFreshNote}
+                                style={({ pressed }) => [styles.noteRow, styles.freshNoteRow, pressed && styles.pressed]}
+                            >
+                                <FileText color={theme.text} size={17} />
+                                <View style={styles.noteRowText}>
+                                    <Text style={styles.noteTitle}>Fresh note</Text>
+                                    <Text style={styles.notePreview}>Start typing. It saves automatically.</Text>
+                                </View>
+                            </Pressable>
+                            {notes.filter(hasText).map(note => (
+                                <Pressable
+                                    key={note.id}
+                                    accessibilityRole='button'
+                                    accessibilityLabel={`Open ${noteTitle(note)}`}
+                                    accessibilityState={{ selected: note.id === selectedId }}
+                                    onPress={() => openNote(note)}
+                                    style={({ pressed }) => [
+                                        styles.noteRow,
+                                        note.id === selectedId && styles.noteRowActive,
+                                        pressed && styles.pressed,
+                                    ]}
+                                >
+                                    <FileText color={note.id === selectedId ? theme.text : theme.textSoft} size={17} />
+                                    <View style={styles.noteRowText}>
+                                        <Text style={styles.noteTitle} numberOfLines={1}>{noteTitle(note)}</Text>
+                                        <Text style={styles.notePreview} numberOfLines={2}>{notePreview(note)}</Text>
+                                    </View>
+                                </Pressable>
+                            ))}
+                            {!notes.filter(hasText).length && (
+                                <View style={styles.emptyState}>
+                                    <Text style={styles.notePreview}>Start typing and your note will be kept here automatically.</Text>
+                                </View>
+                            )}
+                        </ScrollView>
+                    </View>
+                </View>
             </Modal>
         </Screen>
     )

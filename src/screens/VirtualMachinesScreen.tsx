@@ -52,11 +52,13 @@ function VmWorkspaceScreen({ settings, onOpenCheckout, services: injected }: Vir
                 {!rows ? <VmText>Inventory unavailable.</VmText> : <>
                     <VmText>{filtered.length} matching / {rows.length} loaded VMs{w.snapshot.reads.inventory ? '' : ' · partial inventory; actions remain locked until a complete refresh'}.</VmText>
                     {!filtered.length && <VmText>No loaded VMs match these filters.</VmText>}
-                    <View style={{ gap: 12 }}>
-                        {filtered.slice(0, limit).map(vm => <GlassCard key={vm.name}>
-                            <VmText strong>{vm.name}</VmText><VmText>{vm.deleted_at ? 'Scheduled deletion' : vm.status || 'Status unavailable'} · {vm.limits_cpu || '?'} CPU · {vm.limits_memory || 'Memory unavailable'}</VmText>
-                            <VmText>{vm.organization_name || vm.organization_id || 'Personal'} · Owner {vm.owner}</VmText>
-                            <PillButton label={`Open ${vm.name}`} disabled={!w.ops.idle(g)} onPress={() => w.select(g, vm.name)} />
+                    <View>
+                        {filtered.slice(0, limit).map(vm => <GlassCard key={vm.name} style={{ marginBottom: 12 }}>
+                            <View style={{ gap: 12 }}>
+                                <VmText strong>{vm.name}</VmText><VmText>{vm.deleted_at ? 'Scheduled deletion' : vm.status || 'Status unavailable'} · {vm.limits_cpu || '?'} CPU · {vm.limits_memory || 'Memory unavailable'}</VmText>
+                                <VmText>{vm.organization_name || vm.organization_id || 'Personal'} · Owner {vm.owner}</VmText>
+                                <PillButton label={`Open ${vm.name}`} disabled={!w.ops.idle(g)} onPress={() => w.select(g, vm.name)} />
+                            </View>
                         </GlassCard>)}
                     </View>
                     {limit < filtered.length && <PillButton label='Show more loaded VMs' onPress={() => input(() => setLimit(n => n + 30))} />}

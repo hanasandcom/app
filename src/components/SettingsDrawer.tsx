@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, useWindowDimensions, type KeyboardTypeOptions } from 'react-native'
 import { ArrowLeft, CircleDot, Cog, Monitor, Palette, SlidersHorizontal } from 'lucide-react-native'
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { AppSettings } from '../types'
 import { getThemePalette, type ThemeMode, radius, spacing } from '../theme/tokens'
 
@@ -35,6 +35,7 @@ export function SettingsDrawer({
     onThemeChange: (mode: ThemeMode) => Promise<void> | void
 }) {
     const { width } = useWindowDimensions()
+    const insets = useSafeAreaInsets()
     const [section, setSection] = useState<SettingsSection>('general')
     const [draft, setDraft] = useState(settings)
     const [saving, setSaving] = useState(false)
@@ -72,157 +73,155 @@ export function SettingsDrawer({
 
     return (
         <Modal visible={open} animationType='fade' transparent onRequestClose={onClose}>
-            <SafeAreaProvider>
-                <SafeAreaView edges={compactDrawer ? ['top', 'bottom'] : []} style={[styles.overlay, compactDrawer && {
-                    paddingTop: spacing.lg + spacing.sm,
-                    paddingBottom: spacing.sm,
-                }]}>
-                    <Pressable style={styles.backdrop} onPress={onClose} />
-                    <View style={[styles.drawer, compactDrawer && styles.drawerCompact, { width: drawerWidth, backgroundColor: theme.backgroundAlt, borderColor: theme.surfaceBorder }, compactDrawer && { marginVertical: 0 }]}>
-                        <View style={[
-                            styles.sidebar,
-                            compactDrawer && styles.sidebarCompact,
-                            { backgroundColor: draft.themeMode === 'light' ? 'rgba(36,38,42,0.035)' : 'rgba(255,255,255,0.035)', borderRightColor: theme.surfaceBorderSoft, borderBottomColor: theme.surfaceBorderSoft },
-                        ]}>
-                            <Pressable onPress={onClose} style={({ pressed }) => [styles.backRow, pressed && styles.pressed]}>
-                                <ArrowLeft color={theme.textSoft} size={18} strokeWidth={2} />
-                                <Text style={[styles.backLabel, { color: theme.textSoft }]}>Back to app</Text>
-                            </Pressable>
-                            <View style={[{ gap: 8 }, compactDrawer && styles.navCompact]}>
-                                {sectionItems.map(item => {
-                                    const Icon = item.icon
-                                    const active = section === item.id
-                                    return (
+            <View style={[styles.overlay, compactDrawer && {
+                paddingTop: insets.top + spacing.lg + spacing.sm,
+                paddingBottom: insets.bottom + spacing.sm,
+            }]}>
+                <Pressable style={styles.backdrop} onPress={onClose} />
+                <View style={[styles.drawer, compactDrawer && styles.drawerCompact, { width: drawerWidth, backgroundColor: theme.backgroundAlt, borderColor: theme.surfaceBorder }, compactDrawer && { marginVertical: 0 }]}>
+                    <View style={[
+                        styles.sidebar,
+                        compactDrawer && styles.sidebarCompact,
+                        { backgroundColor: draft.themeMode === 'light' ? 'rgba(36,38,42,0.035)' : 'rgba(255,255,255,0.035)', borderRightColor: theme.surfaceBorderSoft, borderBottomColor: theme.surfaceBorderSoft },
+                    ]}>
+                        <Pressable onPress={onClose} style={({ pressed }) => [styles.backRow, pressed && styles.pressed]}>
+                            <ArrowLeft color={theme.textSoft} size={18} strokeWidth={2} />
+                            <Text style={[styles.backLabel, { color: theme.textSoft }]}>Back to app</Text>
+                        </Pressable>
+                        <View style={[{ gap: 8 }, compactDrawer && styles.navCompact]}>
+                            {sectionItems.map(item => {
+                                const Icon = item.icon
+                                const active = section === item.id
+                                return (
+                                    <Pressable
+                                        key={item.id}
+                                        onPress={() => setSection(item.id)}
+                                        style={({ pressed }) => [
+                                            styles.navItem,
+                                            {
+                                                backgroundColor: active ? theme.accentSoft : 'transparent',
+                                                borderColor: active ? theme.surfaceBorder : 'transparent',
+                                            },
+                                            pressed && styles.pressed,
+                                        ]}
+                                    >
+                                        <Icon color={active ? theme.text : theme.textSoft} size={18} strokeWidth={2} />
+                                        <Text style={[styles.navLabel, { color: active ? theme.text : theme.textMuted }]}>{item.label}</Text>
+                                    </Pressable>
+                                )
+                            })}
+                        </View>
+                    </View>
+                    <ScrollView contentContainerStyle={[styles.content, compactDrawer && styles.contentCompact]}>
+                        {section === 'general' && (
+                            <View style={styles.sectionColumn}>
+                                <Text style={[styles.sectionTitle, { color: theme.text }]}>General</Text>
+                                <Text style={[styles.sectionBody, { color: theme.textMuted }]}>Choose how the desktop app behaves by default.</Text>
+                                <Text style={[styles.groupLabel, { color: theme.text }]}>Workspace mode</Text>
+                                <View style={styles.modeGrid}>
+                                    <ModeCard
+                                        active={draft.workspaceMode === 'coding'}
+                                        title='For coding'
+                                        body='More technical responses and tighter control.'
+                                        onPress={() => update('workspaceMode', 'coding')}
+                                        theme={theme}
+                                    />
+                                    <ModeCard
+                                        active={draft.workspaceMode === 'daily'}
+                                        title='For daily work'
+                                        body='Same power, fewer technical details by default.'
+                                        onPress={() => update('workspaceMode', 'daily')}
+                                        theme={theme}
+                                    />
+                                </View>
+                                <View style={[styles.preferenceCard, { backgroundColor: theme.surface, borderColor: theme.surfaceBorderSoft }]}>
+                                    <PreferenceRow
+                                        theme={theme}
+                                        title='Use desktop agent first'
+                                        body='Prefer the local desktop agent when it is reachable.'
+                                        value={draft.desktopAgentBaseUrl.startsWith('http')}
+                                        onChange={(value) => {
+                                            update('desktopAgentBaseUrl', value ? settings.desktopAgentBaseUrl || 'https://localhost:45731' : '')
+                                        }}
+                                    />
+                                    <PreferenceNote
+                                        theme={theme}
+                                        title='Saving'
+                                        body='Changes are staged here and persisted when you press Save.'
+                                    />
+                                </View>
+                            </View>
+                        )}
+
+                        {section === 'appearance' && (
+                            <View style={styles.sectionColumn}>
+                                <Text style={[styles.sectionTitle, { color: theme.text }]}>Appearance</Text>
+                                <Text style={[styles.sectionBody, { color: theme.textMuted }]}>Switch the shell palette without changing your content.</Text>
+                                <View style={styles.themeStack}>
+                                    {themeOptions.map(option => (
                                         <Pressable
-                                            key={item.id}
-                                            onPress={() => setSection(item.id)}
+                                            key={option.id}
+                                            onPress={() => {
+                                                update('themeMode', option.id)
+                                                void Promise.resolve(onThemeChange(option.id)).catch(cause => Alert.alert('Theme could not be saved', cause instanceof Error ? cause.message : 'Try again.'))
+                                            }}
                                             style={({ pressed }) => [
-                                                styles.navItem,
+                                                styles.themeCard,
                                                 {
-                                                    backgroundColor: active ? theme.accentSoft : 'transparent',
-                                                    borderColor: active ? theme.surfaceBorder : 'transparent',
+                                                    backgroundColor: option.id === draft.themeMode ? theme.surface : theme.accentSoft,
+                                                    borderColor: option.id === draft.themeMode ? theme.surfaceBorder : theme.surfaceBorderSoft,
                                                 },
                                                 pressed && styles.pressed,
                                             ]}
                                         >
-                                            <Icon color={active ? theme.text : theme.textSoft} size={18} strokeWidth={2} />
-                                            <Text style={[styles.navLabel, { color: active ? theme.text : theme.textMuted }]}>{item.label}</Text>
+                                            <View style={{ flex: 1 }}>
+                                                <Text style={[styles.themeTitle, { color: theme.text }]}>{option.label}</Text>
+                                                <Text style={[styles.themeBody, { color: theme.textMuted }]}>{option.description}</Text>
+                                            </View>
+                                            <CircleDot color={option.id === draft.themeMode ? theme.accent : theme.textSoft} size={20} strokeWidth={2} />
                                         </Pressable>
-                                    )
-                                })}
+                                    ))}
+                                </View>
                             </View>
+                        )}
+
+                        {section === 'configuration' && (
+                            <View style={styles.sectionColumn}>
+                                <Text style={[styles.sectionTitle, { color: theme.text }]}>Configuration</Text>
+                                <Text style={[styles.sectionBody, { color: theme.textMuted }]}>Core endpoints for the Hanasand stack. Authentication is handled by your login session.</Text>
+                                <SettingsInput theme={theme} label='Site base URL' value={draft.siteBaseUrl} onChangeText={(value) => update('siteBaseUrl', value)} urlInput />
+                                <SettingsInput theme={theme} label='API base URL' value={draft.apiBaseUrl} onChangeText={(value) => update('apiBaseUrl', value)} urlInput />
+                                <SettingsInput theme={theme} label='CDN API URL' value={draft.cdnBaseUrl} onChangeText={(value) => update('cdnBaseUrl', value)} urlInput />
+                                <SettingsInput theme={theme} label='Desktop agent URL' value={draft.desktopAgentBaseUrl} onChangeText={(value) => update('desktopAgentBaseUrl', value)} urlInput />
+                            </View>
+                        )}
+
+                        {section === 'personalization' && (
+                            <View style={styles.sectionColumn}>
+                                <Text style={[styles.sectionTitle, { color: theme.text }]}>Personalization</Text>
+                                <Text style={[styles.sectionBody, { color: theme.textMuted }]}>Keep your remote shortcuts and machine-specific tools in one place.</Text>
+                                <SettingsInput theme={theme} label='VPN URL scheme' value={draft.vpnUrlScheme} onChangeText={(value) => update('vpnUrlScheme', value)} autoCapitalize='none' />
+                                <SettingsInput theme={theme} label='Remote desktop host' value={draft.remoteDesktopHost} onChangeText={(value) => update('remoteDesktopHost', value)} autoCapitalize='none' />
+                                <SettingsInput theme={theme} label='Remote desktop user' value={draft.remoteDesktopUser} onChangeText={(value) => update('remoteDesktopUser', value)} autoCapitalize='none' />
+                                <SettingsInput theme={theme} label='VNC host' value={draft.vncHost} onChangeText={(value) => update('vncHost', value)} autoCapitalize='none' />
+                                <SettingsInput theme={theme} label='Server base URL' value={draft.serverBaseUrl} onChangeText={(value) => update('serverBaseUrl', value)} urlInput />
+                                <SettingsInput theme={theme} label='Start path' value={draft.serverStartPath} onChangeText={(value) => update('serverStartPath', value)} autoCapitalize='none' />
+                                <SettingsInput theme={theme} label='Stop path' value={draft.serverStopPath} onChangeText={(value) => update('serverStopPath', value)} autoCapitalize='none' />
+                                <SettingsInput theme={theme} label='Logs path' value={draft.serverLogsPath} onChangeText={(value) => update('serverLogsPath', value)} autoCapitalize='none' />
+                            </View>
+                        )}
+
+                        <View style={styles.footerActions}>
+                            <Pressable disabled={saving} onPress={onClose} style={({ pressed }) => [styles.secondaryButton, saving && styles.disabled, { borderColor: theme.surfaceBorderSoft, backgroundColor: theme.surfaceStrong }, pressed && !saving && styles.pressed]}>
+                                <Text style={[styles.secondaryLabel, { color: theme.text }]}>Close</Text>
+                            </Pressable>
+                            <Pressable disabled={saving} onPress={() => void handleSave()} style={({ pressed }) => [styles.primaryButton, saving && styles.disabled, { backgroundColor: theme.surfaceStrong, borderColor: theme.surfaceBorder }, pressed && !saving && styles.pressed]}>
+                                <Text style={[styles.primaryLabel, { color: theme.accent }]}>{saving ? 'Saving...' : 'Save changes'}</Text>
+                            </Pressable>
                         </View>
-                        <ScrollView contentContainerStyle={[styles.content, compactDrawer && styles.contentCompact]}>
-                            {section === 'general' && (
-                                <View style={styles.sectionColumn}>
-                                    <Text style={[styles.sectionTitle, { color: theme.text }]}>General</Text>
-                                    <Text style={[styles.sectionBody, { color: theme.textMuted }]}>Choose how the desktop app behaves by default.</Text>
-                                    <Text style={[styles.groupLabel, { color: theme.text }]}>Workspace mode</Text>
-                                    <View style={styles.modeGrid}>
-                                        <ModeCard
-                                            active={draft.workspaceMode === 'coding'}
-                                            title='For coding'
-                                            body='More technical responses and tighter control.'
-                                            onPress={() => update('workspaceMode', 'coding')}
-                                            theme={theme}
-                                        />
-                                        <ModeCard
-                                            active={draft.workspaceMode === 'daily'}
-                                            title='For daily work'
-                                            body='Same power, fewer technical details by default.'
-                                            onPress={() => update('workspaceMode', 'daily')}
-                                            theme={theme}
-                                        />
-                                    </View>
-                                    <View style={[styles.preferenceCard, { backgroundColor: theme.surface, borderColor: theme.surfaceBorderSoft }]}>
-                                        <PreferenceRow
-                                            theme={theme}
-                                            title='Use desktop agent first'
-                                            body='Prefer the local desktop agent when it is reachable.'
-                                            value={draft.desktopAgentBaseUrl.startsWith('http')}
-                                            onChange={(value) => {
-                                                update('desktopAgentBaseUrl', value ? settings.desktopAgentBaseUrl || 'https://localhost:45731' : '')
-                                            }}
-                                        />
-                                        <PreferenceNote
-                                            theme={theme}
-                                            title='Saving'
-                                            body='Changes are staged here and persisted when you press Save.'
-                                        />
-                                    </View>
-                                </View>
-                            )}
-
-                            {section === 'appearance' && (
-                                <View style={styles.sectionColumn}>
-                                    <Text style={[styles.sectionTitle, { color: theme.text }]}>Appearance</Text>
-                                    <Text style={[styles.sectionBody, { color: theme.textMuted }]}>Switch the shell palette without changing your content.</Text>
-                                    <View style={styles.themeStack}>
-                                        {themeOptions.map(option => (
-                                            <Pressable
-                                                key={option.id}
-                                                onPress={() => {
-                                                    update('themeMode', option.id)
-                                                    void Promise.resolve(onThemeChange(option.id)).catch(cause => Alert.alert('Theme could not be saved', cause instanceof Error ? cause.message : 'Try again.'))
-                                                }}
-                                                style={({ pressed }) => [
-                                                    styles.themeCard,
-                                                    {
-                                                        backgroundColor: option.id === draft.themeMode ? theme.surface : theme.accentSoft,
-                                                        borderColor: option.id === draft.themeMode ? theme.surfaceBorder : theme.surfaceBorderSoft,
-                                                    },
-                                                    pressed && styles.pressed,
-                                                ]}
-                                            >
-                                                <View style={{ flex: 1 }}>
-                                                    <Text style={[styles.themeTitle, { color: theme.text }]}>{option.label}</Text>
-                                                    <Text style={[styles.themeBody, { color: theme.textMuted }]}>{option.description}</Text>
-                                                </View>
-                                                <CircleDot color={option.id === draft.themeMode ? theme.accent : theme.textSoft} size={20} strokeWidth={2} />
-                                            </Pressable>
-                                        ))}
-                                    </View>
-                                </View>
-                            )}
-
-                            {section === 'configuration' && (
-                                <View style={styles.sectionColumn}>
-                                    <Text style={[styles.sectionTitle, { color: theme.text }]}>Configuration</Text>
-                                    <Text style={[styles.sectionBody, { color: theme.textMuted }]}>Core endpoints for the Hanasand stack. Authentication is handled by your login session.</Text>
-                                    <SettingsInput theme={theme} label='Site base URL' value={draft.siteBaseUrl} onChangeText={(value) => update('siteBaseUrl', value)} urlInput />
-                                    <SettingsInput theme={theme} label='API base URL' value={draft.apiBaseUrl} onChangeText={(value) => update('apiBaseUrl', value)} urlInput />
-                                    <SettingsInput theme={theme} label='CDN API URL' value={draft.cdnBaseUrl} onChangeText={(value) => update('cdnBaseUrl', value)} urlInput />
-                                    <SettingsInput theme={theme} label='Desktop agent URL' value={draft.desktopAgentBaseUrl} onChangeText={(value) => update('desktopAgentBaseUrl', value)} urlInput />
-                                </View>
-                            )}
-
-                            {section === 'personalization' && (
-                                <View style={styles.sectionColumn}>
-                                    <Text style={[styles.sectionTitle, { color: theme.text }]}>Personalization</Text>
-                                    <Text style={[styles.sectionBody, { color: theme.textMuted }]}>Keep your remote shortcuts and machine-specific tools in one place.</Text>
-                                    <SettingsInput theme={theme} label='VPN URL scheme' value={draft.vpnUrlScheme} onChangeText={(value) => update('vpnUrlScheme', value)} autoCapitalize='none' />
-                                    <SettingsInput theme={theme} label='Remote desktop host' value={draft.remoteDesktopHost} onChangeText={(value) => update('remoteDesktopHost', value)} autoCapitalize='none' />
-                                    <SettingsInput theme={theme} label='Remote desktop user' value={draft.remoteDesktopUser} onChangeText={(value) => update('remoteDesktopUser', value)} autoCapitalize='none' />
-                                    <SettingsInput theme={theme} label='VNC host' value={draft.vncHost} onChangeText={(value) => update('vncHost', value)} autoCapitalize='none' />
-                                    <SettingsInput theme={theme} label='Server base URL' value={draft.serverBaseUrl} onChangeText={(value) => update('serverBaseUrl', value)} urlInput />
-                                    <SettingsInput theme={theme} label='Start path' value={draft.serverStartPath} onChangeText={(value) => update('serverStartPath', value)} autoCapitalize='none' />
-                                    <SettingsInput theme={theme} label='Stop path' value={draft.serverStopPath} onChangeText={(value) => update('serverStopPath', value)} autoCapitalize='none' />
-                                    <SettingsInput theme={theme} label='Logs path' value={draft.serverLogsPath} onChangeText={(value) => update('serverLogsPath', value)} autoCapitalize='none' />
-                                </View>
-                            )}
-
-                            <View style={styles.footerActions}>
-                                <Pressable disabled={saving} onPress={onClose} style={({ pressed }) => [styles.secondaryButton, saving && styles.disabled, { borderColor: theme.surfaceBorderSoft, backgroundColor: theme.surfaceStrong }, pressed && !saving && styles.pressed]}>
-                                    <Text style={[styles.secondaryLabel, { color: theme.text }]}>Close</Text>
-                                </Pressable>
-                                <Pressable disabled={saving} onPress={() => void handleSave()} style={({ pressed }) => [styles.primaryButton, saving && styles.disabled, { backgroundColor: theme.surfaceStrong, borderColor: theme.surfaceBorder }, pressed && !saving && styles.pressed]}>
-                                    <Text style={[styles.primaryLabel, { color: theme.accent }]}>{saving ? 'Saving...' : 'Save changes'}</Text>
-                                </Pressable>
-                            </View>
-                        </ScrollView>
-                    </View>
-                </SafeAreaView>
-            </SafeAreaProvider>
+                    </ScrollView>
+                </View>
+            </View>
         </Modal>
     )
 }

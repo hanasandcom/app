@@ -41,7 +41,10 @@ export async function vmRequest(s: AppSettings, path: string, method: string, si
         const content = await response.text()
         if (content.length > max || utf8Size(content) > max) throw new VmError('VM response exceeded its size limit.', response.status, effect)
         let value: unknown
-        try { value = JSON.parse(content) } catch { throw new VmError('VM response could not be verified.', response.status, effect) }
+        try { value = JSON.parse(content) } catch {
+            if (!response.ok) throw new VmError(`VM service returned HTTP ${response.status} without JSON. Check the API address and retry.`, response.status, effect)
+            throw new VmError('VM service returned an unexpected non-JSON response. Check the API address and retry.', response.status, effect)
+        }
         if (!response.ok) throw new VmError([401, 403].includes(response.status) ? 'VM access could not be verified.' : 'The VM service could not complete this request. Review current state.', response.status, effect && response.status >= 500)
         return { status: response.status, value }
     }

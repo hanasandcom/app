@@ -168,6 +168,8 @@ test('unsafe service URL, traversal targets, oversize and nonJSON responses fail
     expect(calls.length).toBe(0)
     await expect(api.loadInventory(s, signal(), { transport: async () => new Response('{}', { headers: { 'content-length': '8388609' } }) })).rejects.toThrow('size limit')
     await expect(api.power(s, vm(), permission(), 'start', signal(), { transport: async () => new Response('unreadable') })).rejects.toMatchObject({ uncertain: true })
+    await expect(api.loadVm(s, 'synthetic-vm', signal(), { transport: async () => new Response('<!doctype html>', { status: 404, headers: { 'content-type': 'text/html' } }) }))
+        .rejects.toMatchObject({ status: 404, message: 'VM service returned HTTP 404 without JSON. Check the API address and retry.' })
     expect(transport.utf8Size('Ø😀')).toBe(6)
 })
 

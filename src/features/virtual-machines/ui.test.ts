@@ -36,6 +36,27 @@ test('complete inventory deduplicates owned/access; initial read is not a connec
     const result = await readVmWorkspace(settings, read, services({ loadAccessibleInventory: async () => scoped(settings, [vm().value]), syncConnection: async () => { effects++; throw new Error() }, collectDetails: async () => { effects++; throw new Error() }, power: async () => { effects++; throw new Error() } }))
     expect(result.inventory?.value.length).toBe(1); expect(result.reads.inventory).toBe(true); expect(result.reads.target).toBe(true); expect(effects).toBe(0)
 })
+test('VM inventory renders before slower permission checks finish; target and base reads run together', async () => {
+    let finishPlatform!: (value: Awaited<ReturnType<VmServices['loadPlatformAccess']>>) => void
+    const platform = new Promise<Awaited<ReturnType<VmServices['loadPlatformAccess']>>>(resolve => { finishPlatform = resolve })
+    const ops = new VmController(settings, new VmIntents()); ops.visible = true
+    const read = ops.beginRead(ops.generation, false, 'synthetic-vm')!
+    const progress: Awaited<ReturnType<typeof readVmWorkspace>>[] = []
+    let detailLoaded = false
+    const pending = readVmWorkspace(settings, read, services({
+        loadPlatformAccess: async () => platform,
+        loadDetails: async () => { detailLoaded = true; return scoped(settings, null) },
+    }), snapshot => progress.push(snapshot))
+
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(detailLoaded).toBe(true)
+    expect(progress.some(snapshot => snapshot.inventory?.value.length === 1 && !snapshot.reads.platform)).toBe(true)
+    finishPlatform(scoped(settings, { canRead: true, canEdit: true }))
+    const result = await pending
+    expect(result.reads.inventory).toBe(true)
+    expect(result.reads.target).toBe(true)
+    expect(result.reads.platform).toBe(true)
+})
 test('each successful inventory survives a sibling failure, but cannot satisfy unknown reconciliation', async () => {
     for (const broken of ['loadInventory', 'loadAccessibleInventory'] as const) {
         const { ops, op } = opening(); ops.finish(op, false)
@@ -156,6 +177,7 @@ test('native target current-listener model replaces action/editor hosts at opera
 test('actual UI wiring pins host boundaries, private result guards, explicit effect calls and separate terminal/boot sinks', async () => {
     const [screen, detail, create, hook] = await Promise.all(['../../screens/VirtualMachinesScreen.tsx', './DetailPanel.tsx', './CreatePanel.tsx', './useWorkspace.ts'].map(path => Bun.file(new URL(path, import.meta.url)).text()))
     expect(screen).toContain('key={`workspace-controls:${g}`}'); expect(screen).toContain('w.refresh(g, true)')
+    expect(screen).toContain('style={{ marginBottom: 12 }}')
     expect(detail).toContain('key={`detail-controls:${g}:${target}`}'); expect(detail).toContain('memory={editorMemory}')
     expect(create).toContain('key={`create:${g}`}'); expect(create).toContain('setDraft(clearVmSuggestion)'); expect(create).toContain('setPackages(\'\'); setSummary(\'\'); setSuggestedKey(\'\')')
     expect(detail).toContain('TerminalSurface key={w.channel.id}'); expect(detail).toContain('w.channel?.close(); w.dismissPrivate()')

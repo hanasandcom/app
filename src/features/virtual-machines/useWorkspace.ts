@@ -27,7 +27,9 @@ export function useVmWorkspace(settings: AppSettings, services: VmServices) {
         if (!read) return
         setError(''); publish()
         try {
-            const value = await readVmWorkspace(settings, read, services)
+            const value = await readVmWorkspace(settings, read, services, partial => {
+                if (ops.current(read.generation)) setSnapshot(partial)
+            })
             if (!ops.current(read.generation)) return
             setSnapshot(value)
             if (read.intent && value.vm) { selection.current = read.target; setSelected(read.target) }
