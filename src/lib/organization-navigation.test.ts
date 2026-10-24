@@ -77,4 +77,12 @@ describe('organization menu navigation', () => {
         expect(open.indexOf('await selectWorkspace(id)')).toBeLessThan(open.indexOf('navigation.navigate(\'Organizations\''))
     })
 
+    it('opens the existing privacy and data deletion workflow from the selected organization', () => {
+        expect(screen).toContain('label: \'Privacy and data deletion\', onPress: () => onOpenPrivacy(selected.id)')
+        const open = app.slice(app.indexOf('async function openOrganizationPrivacy'), app.indexOf('function openWebsite'))
+        expect(open).toContain('await selectWorkspace(id)')
+        expect(open).toContain('navigation.navigate(\'Tools\', { tool: \'organization-privacy\'')
+        expect(app).toContain('onOpenPrivacy={id => void openOrganizationPrivacy(id)}')
+    })
+
 })

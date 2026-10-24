@@ -13,8 +13,8 @@ import { getThemePalette, spacing } from '../theme/tokens'
 export type { Organization } from '../lib/profile-api'
 const roles = ['admin', 'editor', 'reader'] as const
 
-export function OrganizationsScreen({ settings, selectedOrganizationId, onSelectOrganization, initialSection }: {
-    settings: AppSettings; selectedOrganizationId?: string; onSelectOrganization?: (id: string) => void; initialSection?: OrganizationSection
+export function OrganizationsScreen({ settings, selectedOrganizationId, onSelectOrganization, onOpenPrivacy, initialSection }: {
+    settings: AppSettings; selectedOrganizationId?: string; onSelectOrganization?: (id: string) => void; onOpenPrivacy?: (id: string) => void; initialSection?: OrganizationSection
 }) {
     const theme = getThemePalette(settings.themeMode)
     const styles = useMemo(() => ({
@@ -146,6 +146,7 @@ export function OrganizationsScreen({ settings, selectedOrganizationId, onSelect
                 <DropdownMenu label='Organization actions' title={`${selected.name} actions`} disabled={busy || detailsLoading} items={[
                     { label: 'Organization settings', onPress: () => setTab('Settings') },
                     { label: 'Manage team', onPress: () => setTab('Team') },
+                    ...(onOpenPrivacy ? [{ label: 'Privacy and data deletion', onPress: () => onOpenPrivacy(selected.id) }] : []),
                     ...(mayManage ? [{
                         label: (savedSettings?.lifecycleStatus || selected.lifecycleStatus || '').toLowerCase() === 'archived' ? 'Reactivate organization' : 'Archive organization',
                         destructive: (savedSettings?.lifecycleStatus || selected.lifecycleStatus || '').toLowerCase() !== 'archived',

@@ -188,6 +188,14 @@ export default function App() {
         navigation.navigate('Organizations', { section: 'Overview' })
     }
 
+    async function openOrganizationPrivacy(id: string) {
+        if (!await selectWorkspace(id)) {
+            Alert.alert('Unable to open organization privacy', 'Your workspace selection could not be saved. Try again.')
+            return
+        }
+        navigation.navigate('Tools', { tool: 'organization-privacy', caseId: undefined, query: undefined, handoffId: undefined })
+    }
+
     function openWebsite(path: string) {
         if (!settings) return
         try {
@@ -549,7 +557,7 @@ export default function App() {
                                 {() => <ExploreScreen settings={settings} access={navigationAccess} onOpen={openPage} />}
                             </Tab.Screen>
                             <Tab.Screen name='Organizations'>
-                                {({ route }) => <OrganizationsScreen initialSection={route.params?.section} settings={settings} selectedOrganizationId={activeOrganization?.id} onSelectOrganization={id => void selectWorkspace(id)} />}
+                                {({ route }) => <OrganizationsScreen initialSection={route.params?.section} settings={settings} selectedOrganizationId={activeOrganization?.id} onSelectOrganization={id => void selectWorkspace(id)} onOpenPrivacy={id => void openOrganizationPrivacy(id)} />}
                             </Tab.Screen>
                             <Tab.Screen name='Watchlists'>
                                 {() => <WatchlistsScreen settings={settings} />}
