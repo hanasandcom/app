@@ -18,12 +18,11 @@ export function savedSearchMutationOutcome(state: { visible: boolean; generation
 export function safeEvidenceUrl(value: unknown) {
     try { const url = new URL(text(value)); return url.protocol === 'https:' && !url.username && !url.password ? url.toString() : null } catch { return null }
 }
-function tiSiteBase(settings: AppSettings) {
-    const website = new URL(settings.siteBaseUrl)
-    const configured = process.env.EXPO_PUBLIC_TI_SITE_URL || (website.hostname === 'hanasand.com' ? 'https://ti.hanasand.com' : website.origin)
-    const base = new URL(configured)
-    if (base.protocol !== 'https:' || base.username || base.password || base.search || base.hash) throw new Error('Threat search requires an HTTPS TI website address.')
-    return base
+function tiApiUrl(settings: AppSettings, path: string) {
+    let base: URL
+    try { base = new URL(settings.apiBaseUrl) } catch { throw new Error('Threat search requires a valid API address.') }
+    if (base.protocol !== 'https:' || base.username || base.password || base.search || base.hash) throw new Error('Threat search requires an HTTPS API address.')
+    return new URL(path.replace(/^\/+/, ''), `${base.href.replace(/\/+$/, '')}/`)
 }
 /** A fresh budget belongs to one explicit user search or refresh. */
 export class ThreatRefreshBudget {
@@ -66,18 +65,16 @@ async function request(settings: AppSettings, url: URL, signal: AbortSignal, ini
     }
     return payload
 }
-export async function searchThreatIntel(settings: AppSettings, query: string, signal: AbortSignal, preferCached = true) {
+export async function searchThreatIntel(settings: AppSettings, query: string, signal: AbortSignal) {
     const clean = normalizeThreatQuery(query)
-    const url = new URL('/api/ti/search', tiSiteBase(settings))
-    url.searchParams.set('q', clean)
-    if (preferCached) url.searchParams.set('cached', 'true')
-    return normalizeThreatResult(await request(settings, url, signal), clean)
+    const url = tiApiUrl(settings, 'v1/ti/search')
+    return normalizeThreatResult(await request(settings, url, signal, { method: 'POST', body: JSON.stringify({ query: clean }) }), clean)
 }
 export type SavedThreatSearch = { query: string; savedAt: string }
 function savedSearchUrl(settings: AppSettings) {
     if (!settings.authToken || !settings.userId) throw new Error('Sign in to manage saved searches.')
     if (settings.impersonationToken || settings.impersonatingUserId) throw new Error('Return to your own account to manage saved searches.')
-    return new URL('/api/backend/ti/saved-searches', tiSiteBase(settings))
+    return tiApiUrl(settings, 'ti/saved-searches')
 }
 export async function loadSavedThreatSearches(settings: AppSettings, signal: AbortSignal): Promise<SavedThreatSearch[]> {
     const payload = object(await request(settings, savedSearchUrl(settings), signal))

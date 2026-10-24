@@ -24,7 +24,7 @@ export function DetailPanel({ workspace: w, settings, services, onOpenCheckout }
     const canAdmin = w.writable && w.snapshot.platform?.value.canEdit === true
     useEffect(() => w.ops.onClearPrivate(() => setPassword('')), [w.ops])
     const edit = (run: () => void) => { if (w.writable && w.ops.edit(g)) run() }
-    if (!vm) return <GlassCard><VmText>Selected VM details are unavailable. Refresh current access to view this machine.</VmText></GlassCard>
+    if (!vm) return <GlassCard><VmText>{w.ops.reading ? `Loading ${w.selected}…` : 'Selected VM details are unavailable. Refresh current access to view this machine.'}</VmText></GlassCard>
     const target = vm.name
     return <>
         <GlassCard>
