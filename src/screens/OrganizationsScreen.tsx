@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useIsFocused } from '@react-navigation/native'
 import { Alert, Text, View, type ScrollView } from 'react-native'
-import { Menu } from 'lucide-react-native'
 import type { AppSettings, OrganizationSection } from '../types'
-import { organizationLifecycleActions } from '../lib/organization-lifecycle-actions'
 import {
     accountRequest, fetchOrganizations, fetchOrganizationMembers, fetchOrganizationInvites,
     fetchOrganizationSettings, organizationPath, type Organization, type OrganizationInvite,
@@ -13,7 +11,7 @@ import { DropdownMenu, GlassCard, InlineNotice, LabeledInput, PillButton, Screen
 import { getThemePalette, spacing } from '../theme/tokens'
 
 export type { Organization } from '../lib/profile-api'
-const roles = ['owner', 'admin', 'editor', 'reader'] as const
+const roles = ['admin', 'editor', 'reader'] as const
 
 export function OrganizationsScreen({ settings, selectedOrganizationId, onSelectOrganization, initialSection }: {
     settings: AppSettings; selectedOrganizationId?: string; onSelectOrganization?: (id: string) => void; initialSection?: OrganizationSection
@@ -45,11 +43,8 @@ export function OrganizationsScreen({ settings, selectedOrganizationId, onSelect
     const [revision, setRevision] = useState(0)
     const [createName, setCreateName] = useState('')
     const [creating, setCreating] = useState(false)
-    const [confirmingDelete, setConfirmingDelete] = useState(false)
-    const [deleteName, setDeleteName] = useState('')
     const [inviteEmails, setInviteEmails] = useState('')
     const [inviteRole, setInviteRole] = useState('reader')
-    const [editingMemberId, setEditingMemberId] = useState('')
     const selected = organizations.find(item => item.id === selectedId)
     const impersonating = Boolean(settings.impersonationToken || settings.impersonatingUserId)
     const mayManage = !!selected && !impersonating && ['owner', 'admin'].includes(selected.role?.toLowerCase() || '')
@@ -86,7 +81,7 @@ export function OrganizationsScreen({ settings, selectedOrganizationId, onSelect
     }, [selected?.id, selected?.role, settings.apiBaseUrl, settings.authToken, settings.userId, settings.impersonationToken, revision])
 
     function choose(id: string) {
-        setSelectedId(id); setNotice(''); setError(''); setInviteEmails(''); setEditingMemberId(''); setConfirmingDelete(false); setDeleteName(''); onSelectOrganization?.(id)
+        setSelectedId(id); setNotice(''); setError(''); setInviteEmails(''); onSelectOrganization?.(id)
     }
     async function act(work: () => Promise<unknown>, success: string) {
         if (busy) return
@@ -95,6 +90,7 @@ export function OrganizationsScreen({ settings, selectedOrganizationId, onSelect
         catch (cause) { setError(errorMessage(cause)) } finally { setBusy(false) }
     }
     function mutation(suffix: string, method: string, body?: object) {
+        if (impersonating) return Promise.reject(new Error('Return to your own account before changing organization settings.'))
         if (!selected || !mayManage) return Promise.reject(new Error('An owner or admin role is required.'))
         return accountRequest(settings, organizationPath(selected.id, suffix), { method, ...(body ? { body: JSON.stringify(body) } : {}) }, settings.apiBaseUrl)
     }
@@ -110,12 +106,22 @@ export function OrganizationsScreen({ settings, selectedOrganizationId, onSelect
     }
 
     return <Screen title={selected && tab !== 'Overview' ? tab : 'Organizations'} subtitle={selected?.name || 'Your workspaces'} scrollViewRef={scrollViewRef} right={<PillButton small label='Refresh' disabled={busy || loading || detailsLoading} onPress={() => setRevision(value => value + 1)} />}>
-        {selected && <DropdownMenu label='Sections' title={`Organization sections · ${selected.name}`} icon={<Menu size={17} color={theme.textMuted} />} disabled={detailsLoading || busy} items={(['Overview', 'Team', 'Settings'] as const).map(item => ({ label: item, selected: tab === item, onPress: () => setTab(item) }))} />}
+        {selected && <DropdownMenu label={tab} title='Organization sections' disabled={busy} items={(['Overview', 'Team', 'Settings'] as const).map(item => ({ label: item, selected: tab === item, onPress: () => setTab(item) }))} />}
+        {impersonating && <InlineNotice tone='info' message='Organization changes are disabled while impersonating. Return to your own account first.' />}
         <InlineNotice message={error} /><InlineNotice message={notice} tone='success' />
         {(!selected || tab === 'Overview') && <GlassCard style={styles.card}>
             <SectionTitle eyebrow='Workspaces' title='Your organizations' body='Select an organization to view its team and settings.' />
-            <PillButton label={creating ? 'Cancel creation' : 'Create organization'} tone='accent' disabled={busy || impersonating} onPress={() => setCreating(value => !value)} />
-            {impersonating && <Text style={styles.meta}>Organization changes are disabled while you are impersonating another account.</Text>}
+            <View style={styles.row}>
+                <PillButton label={creating ? 'Cancel creation' : 'Create organization'} tone='accent' disabled={busy || impersonating} onPress={() => setCreating(value => !value)} />
+                <DropdownMenu label={selected?.name || 'Choose organization'} title='Your organizations' disabled={busy || loading} items={[
+                    { label: 'Personal workspace', selected: !selectedId, onPress: () => choose('') },
+                    ...organizations.map(organization => ({
+                        label: `${organization.name} · ${organization.lifecycleStatus || organization.status || 'active'}`,
+                        selected: selectedId === organization.id,
+                        onPress: () => choose(organization.id),
+                    })),
+                ]} />
+            </View>
             {creating && <>
                 <LabeledInput label='Organization name' value={createName} onChangeText={setCreateName} />
                 <PillButton label='Create organization' tone='accent' disabled={busy || impersonating || !createName.trim()} onPress={() => void act(async () => {
@@ -124,14 +130,8 @@ export function OrganizationsScreen({ settings, selectedOrganizationId, onSelect
                     setCreating(false); setCreateName(''); choose(payload.organization.id)
                 }, 'Organization created.')} />
             </>}
-            <PillButton label={selectedOrganizationId ? 'Use personal workspace' : 'Personal workspace'} disabled={busy} tone={!selectedOrganizationId ? 'accent' : 'default'} onPress={() => choose('')} />
             {loading && <Text style={styles.meta}>Loading organizations…</Text>}
             {!loading && !error && !organizations.length && <Text style={styles.meta}>You do not belong to an organization yet.</Text>}
-            {organizations.map(organization => <View key={organization.id} style={styles.item}>
-                <Text style={styles.text}>{organization.name}</Text>
-                <Text style={styles.meta}>{[organization.role, organization.status, organization.memberCount === undefined ? '' : `${organization.memberCount} members`].filter(Boolean).join(' · ')}</Text>
-                <PillButton label={selectedId === organization.id ? 'Selected workspace' : 'Select workspace'} disabled={busy} tone={selectedId === organization.id ? 'accent' : 'default'} onPress={() => choose(organization.id)} />
-            </View>)}
         </GlassCard>}
         {selected && <>
             {detailsLoading && <Text style={styles.meta}>Loading organization…</Text>}
@@ -139,10 +139,22 @@ export function OrganizationsScreen({ settings, selectedOrganizationId, onSelect
             {tab === 'Overview' && <GlassCard style={styles.card}>
                 <SectionTitle eyebrow={selected.role || 'Membership'} title={selected.name} body={selected.slug ? `@${selected.slug}` : undefined} />
                 <Text selectable style={styles.meta}>{selected.id}</Text>
-                <Text style={styles.meta}>Status: {selected.status || 'Active'}</Text>
+                <Text style={styles.meta}>Status: {selected.lifecycleStatus || selected.status || 'Active'}</Text>
                 {selected.activeMemberCount !== undefined && <Text style={styles.meta}>{selected.activeMemberCount} active members</Text>}
                 {selected.pendingInviteCount !== undefined && <Text style={styles.meta}>{selected.pendingInviteCount} pending invites</Text>}
                 {selected.sharedWatchlistCount !== undefined && <Text style={styles.meta}>{selected.sharedWatchlistCount} shared watchlists</Text>}
+                <DropdownMenu label='Organization actions' title={`${selected.name} actions`} disabled={busy || detailsLoading} items={[
+                    { label: 'Organization settings', onPress: () => setTab('Settings') },
+                    { label: 'Manage team', onPress: () => setTab('Team') },
+                    ...(mayManage ? [{
+                        label: (savedSettings?.lifecycleStatus || selected.lifecycleStatus || '').toLowerCase() === 'archived' ? 'Reactivate organization' : 'Archive organization',
+                        destructive: (savedSettings?.lifecycleStatus || selected.lifecycleStatus || '').toLowerCase() !== 'archived',
+                        onPress: () => {
+                            const archived = (savedSettings?.lifecycleStatus || selected.lifecycleStatus || '').toLowerCase() === 'archived'
+                            confirm(archived ? 'Reactivate organization?' : 'Archive organization?', archived ? `Reactivate ${selected.name}? Organization services will resume.` : `Archive ${selected.name}? Organization activity will pause. You can reactivate it later. Permanent deletion is not available through the organization API.`, () => mutation('settings', 'PUT', { lifecycleStatus: archived ? 'active' : 'archived' }), archived ? 'Organization reactivated.' : 'Organization archived.')
+                        },
+                    }] : []),
+                ]} />
             </GlassCard>}
             {tab === 'Team' && <>
                 <GlassCard style={styles.card}>
@@ -152,23 +164,18 @@ export function OrganizationsScreen({ settings, selectedOrganizationId, onSelect
                         <Text style={styles.text}>{member.name || member.email || member.userId}{member.userId === settings.userId ? ' · You' : ''}</Text>
                         {!!member.email && <Text selectable style={styles.meta}>{member.email}</Text>}
                         <Text style={styles.meta}>{member.role} · {member.status}{member.joinedAt ? ` · Joined ${formatDate(member.joinedAt)}` : ''}</Text>
-                        {mayManage && <View style={styles.row}>
-                            <PillButton small label='Change role' disabled={busy} onPress={() => setEditingMemberId(current => current === member.userId ? '' : member.userId)} />
-                            <PillButton small label='Remove member' tone='danger' disabled={busy} onPress={() => confirm('Remove member?', `Remove ${member.name || member.email || member.userId} from ${selected.name}?`, () => mutation(`members/${encodeURIComponent(member.userId)}`, 'DELETE', { reason: 'Member removed from mobile organization workspace.', requestId: requestId() }), 'Member removed.')} />
-                        </View>}
-                        {mayManage && editingMemberId === member.userId && <View style={styles.row}>
-                            {roles.map(role => <PillButton key={role} small label={role} disabled={busy || role === member.role} onPress={() => void act(async () => {
+                        {mayManage && <DropdownMenu label='Member actions' title={`${member.name || member.email || member.userId}`} disabled={busy} items={[
+                            ...roles.filter(role => (selected.role?.toLowerCase() === 'owner' && (member.role !== 'owner' || selected.ownerCount !== 1)) || (selected.role?.toLowerCase() === 'admin' && ['editor', 'reader'].includes(member.role) && ['editor', 'reader'].includes(role))).map(role => ({ label: `Change role to ${role}`, selected: role === member.role, disabled: role === member.role, onPress: () => void act(async () => {
                                 await mutation(`members/${encodeURIComponent(member.userId)}/role`, 'PATCH', { role, reason: 'Role updated from mobile organization workspace.', requestId: requestId() })
-                                setEditingMemberId('')
-                            }, 'Member role updated.')} />)}
-                            <PillButton small label='Cancel' disabled={busy} onPress={() => setEditingMemberId('')} />
-                        </View>}
+                            }, 'Member role updated.') })),
+                            ...((selected.role?.toLowerCase() === 'owner' && (member.role !== 'owner' || selected.ownerCount !== 1) || (selected.role?.toLowerCase() === 'admin' && ['editor', 'reader', 'member', 'viewer'].includes(member.role))) ? [{ label: 'Remove member', destructive: true, onPress: () => confirm('Remove member?', `Remove ${member.name || member.email || member.userId} from ${selected.name}?`, () => mutation(`members/${encodeURIComponent(member.userId)}`, 'DELETE', { reason: 'Member removed from mobile organization workspace.', requestId: requestId() }), 'Member removed.') }] : []),
+                        ]} />}
                     </View>)}
                 </GlassCard>
                 {mayManage && <GlassCard style={styles.card}>
                     <SectionTitle eyebrow='Team' title='Invitations' />
                     <LabeledInput label='Email addresses' value={inviteEmails} onChangeText={setInviteEmails} placeholder='name@example.com' keyboardType='email-address' autoCapitalize='none' autoCorrect={false} multiline />
-                    <View style={styles.row}>{roles.map(role => <PillButton small key={role} label={role} tone={inviteRole === role ? 'accent' : 'default'} onPress={() => setInviteRole(role)} />)}</View>
+                    <DropdownMenu label={`Invite role · ${inviteRole}`} title='Choose invitation role' items={roles.map(role => ({ label: role, selected: inviteRole === role, onPress: () => setInviteRole(role) }))} />
                     <PillButton label='Send invitations' disabled={busy || !inviteEmails.trim()} onPress={() => void act(async () => {
                         const emails = [...new Set(inviteEmails.split(/[,\n]/).map(value => value.trim().toLowerCase()).filter(Boolean))]
                         if (!emails.length || emails.some(email => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) throw new Error('Enter valid email addresses, separated by commas or new lines.')
@@ -177,10 +184,10 @@ export function OrganizationsScreen({ settings, selectedOrganizationId, onSelect
                     {!detailsLoading && !detailErrors.some(item => item.startsWith('Invites:')) && !invites.length && <Text style={styles.meta}>No invitations.</Text>}
                     {invites.map(invite => <View key={invite.id} style={styles.item}>
                         <Text style={styles.text}>{invite.email}</Text><Text style={styles.meta}>{invite.role} · {invite.status}{invite.expiresAt ? ` · Expires ${formatDate(invite.expiresAt)}` : ''}</Text>
-                        {invite.status !== 'accepted' && <View style={styles.row}>
-                            <PillButton small label='Resend' disabled={busy} onPress={() => void act(() => mutation(`invites/${encodeURIComponent(invite.id)}/actions`, 'POST', { action: 'resend', reason: 'Invite reissued from mobile workspace.', requestId: requestId() }), 'Invitation resent.')} />
-                            <PillButton small label='Revoke invitation' tone='danger' disabled={busy || invite.status === 'revoked'} onPress={() => confirm('Revoke invitation?', `Revoke the invitation for ${invite.email}?`, () => mutation(`invites/${encodeURIComponent(invite.id)}/actions`, 'POST', { action: 'revoke', reason: 'Access no longer required.', requestId: requestId() }), 'Invitation revoked.')} />
-                        </View>}
+                        {invite.status !== 'accepted' && <DropdownMenu label='Invitation actions' title={invite.email} disabled={busy || invite.status === 'revoked'} items={[
+                            { label: 'Resend invitation', disabled: invite.status === 'revoked', onPress: () => void act(() => mutation(`invites/${encodeURIComponent(invite.id)}/actions`, 'POST', { action: 'resend', reason: 'Invite reissued from mobile workspace.', requestId: requestId() }), 'Invitation resent.') },
+                            { label: 'Revoke invitation', destructive: true, disabled: invite.status === 'revoked', onPress: () => confirm('Revoke invitation?', `Revoke the invitation for ${invite.email}?`, () => mutation(`invites/${encodeURIComponent(invite.id)}/actions`, 'POST', { action: 'revoke', reason: 'Access no longer required.', requestId: requestId() }), 'Invitation revoked.') },
+                        ]} />}
                     </View>)}
                 </GlassCard>}
             </>}
@@ -196,27 +203,7 @@ export function OrganizationsScreen({ settings, selectedOrganizationId, onSelect
                     <PillButton label='Save settings' tone='accent' disabled={busy || detailsLoading || JSON.stringify(draft) === JSON.stringify(savedSettings)} onPress={() => void act(saveSettings, 'Organization settings updated.')} />
                     <View style={styles.item}>
                         <Text style={styles.text}>Organization lifecycle</Text>
-                        <Text style={styles.meta}>Archive pauses workspace activity and can be reversed. Delete disables the workspace and retains its records under the organization retention policy; it does not erase those records immediately.</Text>
-                        {organizationLifecycleActions(savedSettings.lifecycleStatus || selected.lifecycleStatus || selected.status).length > 0 && <DropdownMenu label='More' title={`Organization actions · ${selected.name}`} icon={<Menu size={17} color={theme.textMuted} />} disabled={busy || detailsLoading} items={organizationLifecycleActions(savedSettings.lifecycleStatus || selected.lifecycleStatus || selected.status).map(action => ({
-                            label: action === 'archive' ? 'Archive organization' : action === 'reactivate' ? 'Reactivate organization' : 'Delete organization',
-                            destructive: action !== 'reactivate',
-                            onPress: () => {
-                                if (action === 'delete') { setDeleteName(''); setConfirmingDelete(true); return }
-                                const archived = action === 'reactivate'
-                                confirm(archived ? 'Reactivate organization?' : 'Archive organization?', archived ? `Reactivate ${selected.name}? Workspace services will resume.` : `Archive ${selected.name}? Workspace activity will pause. You can reactivate it later.`, () => mutation('settings', 'PUT', { lifecycleStatus: archived ? 'active' : 'archived' }), archived ? 'Organization reactivated.' : 'Organization archived.')
-                            },
-                        }))} />}
-                        {confirmingDelete && <View style={{ gap: spacing.sm }}>
-                            <Text style={styles.meta}>Type {selected.name} to confirm. This marks the organization as deleted and disables its workspace. Records remain subject to the retention policy.</Text>
-                            <LabeledInput label={`Confirm ${selected.name}`} value={deleteName} onChangeText={setDeleteName} autoCapitalize='none' autoCorrect={false} />
-                            <View style={styles.row}>
-                                <PillButton label='Cancel' disabled={busy} onPress={() => { setConfirmingDelete(false); setDeleteName('') }} />
-                                <PillButton label='Delete organization' tone='danger' disabled={busy || deleteName.trim() !== selected.name} onPress={() => void act(async () => {
-                                    await mutation('settings', 'PUT', { lifecycleStatus: 'deleted' })
-                                    setConfirmingDelete(false); setDeleteName('')
-                                }, 'Organization deleted.')} />
-                            </View>
-                        </View>}
+                        <Text style={styles.meta}>Archiving pauses organization activity. An owner or admin can reactivate it later. Permanent deletion is not available through the organization API.</Text>
                     </View>
                 </> : <>
                     <Text style={styles.meta}>Name: {savedSettings.name || selected.name}</Text><Text style={styles.meta}>Slug: {savedSettings.slug || 'None'}</Text>

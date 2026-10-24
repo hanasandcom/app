@@ -133,6 +133,16 @@ describe('refreshHanasandSession error classification', () => {
 })
 
 describe('secure API transport', () => {
+    it('uses the current global fetch transport when no transport is injected', async () => {
+        let requested = ''
+        mockFetch(async (input) => {
+            requested = String(input)
+            return Response.json({ ok: true })
+        })
+        await apiFetch(settings, 'https://api.example.test/api/health')
+        expect(requested).toBe('https://api.example.test/api/health')
+    })
+
     it('rejects HTTP even when the target is on a private LAN', async () => {
         let requestCount = 0
         mockFetch(async () => {

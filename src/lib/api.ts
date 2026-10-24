@@ -48,7 +48,7 @@ function headers(settings: AppSettings) {
     return next
 }
 
-export async function apiFetch(settings: AppSettings | undefined, input: RequestInfo | URL, init: RequestInit = {}, transport: typeof fetch = fetch) {
+export async function apiFetch(settings: AppSettings | undefined, input: RequestInfo | URL, init: RequestInit = {}, transport: typeof fetch = globalThis.fetch) {
     const requestUrl = String(input)
     const url = new URL(requestUrl)
     const managed = url.protocol === 'https:' && (url.hostname === 'hanasand.com' || url.hostname.endsWith('.hanasand.com'))

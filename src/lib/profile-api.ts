@@ -61,7 +61,7 @@ export type SupportTicket = { id: string; subject: string; status: string; last_
 export type SupportMessage = { id: string; sender_id: string | null; sender_name: string; body: string; created_at: string }
 export type Organization = {
     id: string; tenantId?: string; name: string; slug?: string; role?: string; status?: string; lifecycleStatus?: string
-    memberCount?: number; activeMemberCount?: number; pendingInviteCount?: number; sharedWatchlistCount?: number
+    memberCount?: number; ownerCount?: number; activeMemberCount?: number; pendingInviteCount?: number; sharedWatchlistCount?: number
 }
 export type OrganizationMember = { userId: string; email?: string; name?: string; role: string; status: string; joinedAt?: string }
 export type OrganizationInvite = { id: string; email: string; role: string; status: string; expiresAt?: string }

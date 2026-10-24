@@ -62,6 +62,7 @@ function systemStorage() {
     return { cacheBytes: 1024 ** 3, reclaimableCacheBytes: 512 * 1024 ** 2, cacheBudgetBytes: 2 * 1024 ** 3, checkedAt: sampleTime(), lastSuccessAt: at, lastFreedBytes: 0, running: false, queued: cleanupQueued, stale: false, error: '', schedule: '03:00', timezone: 'Europe/Oslo', phase: cleanupQueued ? 'queued' : '', unusedImages: [{ id: 'synthetic-image', names: ['synthetic/image:old'], sizeBytes: 1024 ** 2, eligible: true, retainedReason: '' }] }
 }
 let hold = false, fail = false, release: (() => void) | undefined
+let reportSyntheticRequest: (value: string) => void = () => {}
 const sockets = new Set<LoadSocket>()
 const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
 const privacyRuns: Record<string, unknown>[] = [], privacyRequests: Record<string, unknown>[] = []
@@ -83,6 +84,7 @@ globalThis.fetch = Object.assign(async (...[input, init]: Parameters<typeof fetc
     const headers = new Headers(init?.headers)
     if (headers.get('authorization') !== 'Bearer synthetic-token' || headers.get('id') !== settings.userId) return json({ error: 'Synthetic actor headers missing.' }, 401)
     const method = init?.method || 'GET', body = init?.body ? JSON.parse(String(init.body)) : {}
+    reportSyntheticRequest(`${method.toUpperCase()} ${url.pathname}`)
     if (/^\/api\/vms\/(?:access\/)?synthetic-operator$/.test(url.pathname) && method === 'GET') return json(virtualMachines)
     if (url.pathname === '/api/vms/stop' && method === 'POST') return finishWrite({ success: true, message: 'Synthetic stop requests queued.', vms: virtualMachines.map(item => item.name) })
     if (url.pathname === '/api/billing/container-products' && method === 'GET') return json({ plans: [{ id: 'failover', name: 'Synthetic failover', priceNok: 99, currency: 'NOK', interval: 'month' }], containers: virtualMachines.map(item => ({ name: item.name, failover_premium: item.failover_premium, primary_host: item.primary_host })) })
@@ -315,12 +317,12 @@ const thesisServices: ThesisServices = {
     recovery: async () => ({ load: async () => recovered, save: async (draft, uncertain = false) => { recovered = { version: 1, scope: 'synthetic', sequence: (recovered?.sequence ?? 0) + 1, savedAt: Date.now(), draft, uncertain } } }),
 }
 const Stack = createNativeStackNavigator()
-const privacyTransport: PrivacyTransport = (_settings, url, init) => fetch(url, init)
+const privacyTransport: PrivacyTransport = (_settings, url, init) => globalThis.fetch(url, init)
 // No device files or share sheet are used by this synthetic callback.
 const privacyShare: typeof import('../src/features/privacy/export').sharePrivacyExport = async (_exported, isCurrent) => {
     if (isCurrent()) Alert.alert('Synthetic export', 'The verified archive reached the synthetic share callback.')
 }
-const publishingTransport: import('../src/features/publishing/api').PublishingFetch = (_settings, url, init) => fetch(url, init)
+const publishingTransport: import('../src/features/publishing/api').PublishingFetch = (_settings, url, init) => globalThis.fetch(url, init)
 const publishingDigest = (value: string) => Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, value)
 const articleServices = { api: createPublishingApi(settings, 'articles', publishingTransport), digest: publishingDigest }
 const thoughtServices = { api: createPublishingApi(settings, 'thoughts', publishingTransport), digest: publishingDigest }
@@ -334,7 +336,7 @@ const systemFixtureServices: SystemServices = {
         return stop
     },
 }
-const caseFixtureServices = caseServices(settings, { transport: (_settings, url, init) => fetch(url, init) })
+const caseFixtureServices = caseServices(settings, { transport: (_settings, url, init) => globalThis.fetch(url, init) })
 const syntheticVmSocket = (address: string): ConsoleSocket => {
     const url = new URL(address)
     if (url.origin !== 'wss://api.synthetic.invalid' || !/^\/api\/ws\/vm\/[a-z0-9-]+\/console$/.test(url.pathname)) throw new Error('External VM sockets are disabled.')
@@ -360,10 +362,13 @@ const syntheticVmSocket = (address: string): ConsoleSocket => {
 const vmFixtureServices: VmServices = { ...vmServices, openConsole: (s, ops, operation, nonce, options) => openVmConsole(s, ops, operation, nonce, { ...options, dependencies: { proof: async () => ({ proof: 'synthetic-proof' }), socket: syntheticVmSocket } }) }
 function Fixture() {
     const [mode, setMode] = useState('Users'), [event, setEvent] = useState('No synthetic operations yet')
+    const [request, setRequest] = useState('No requests yet')
+    reportSyntheticRequest = setRequest
     return <View style={{ flex: 1 }}>
         <View style={{ paddingTop: 52, paddingHorizontal: 16, gap: 6, backgroundColor: '#101418' }}>
             <Text style={{ color: '#b2b9c2' }}>Synthetic only · no external requests</Text>
             <Text style={{ color: '#b2b9c2' }}>{event}</Text>
+            <Text style={{ color: '#b2b9c2' }}>Last request: {request}</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                 {['Users', 'Load testing', 'Thesis', 'Privacy', 'Articles', 'Thoughts', 'System', 'Containers', 'Cases', 'VMs'].map(name => <PillButton key={name} small label={`Fixture ${name}`} onPress={() => setMode(name)} />)}
                 <PillButton small label='Finish synthetic cleanup' onPress={() => { cleanupQueued = false; setEvent('Synthetic cleanup idle') }} />
