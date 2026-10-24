@@ -2,7 +2,8 @@ import { expect, mock, test } from 'bun:test'
 import type { AppSettings } from '../../types'
 import type { Vm } from './model'
 mock.module('../../lib/api', () => ({ apiFetch: () => { throw new Error('No real transport is allowed') } }))
-const { readVmWorkspace } = await import('./read')
+const { emptySnapshot, preserveVmSnapshot, readVmWorkspace, safeVmMessage } = await import('./read')
+const { VmError } = await import('./transport')
 const { scoped, parseVm } = await import('./model')
 const { VmController, VmIntents } = await import('./controller')
 const { vmServices } = await import('./services')
@@ -36,6 +37,23 @@ test('complete inventory deduplicates owned/access; initial read is not a connec
     const ops = unlocked(), read = ops.beginRead(ops.generation, true, '')!
     const result = await readVmWorkspace(settings, read, services({ loadAccessibleInventory: async () => scoped(settings, [vm().value]), syncConnection: async () => { effects++; throw new Error() }, collectDetails: async () => { effects++; throw new Error() }, power: async () => { effects++; throw new Error() } }))
     expect(result.inventory?.value.length).toBe(1); expect(result.reads.inventory).toBe(true); expect(result.reads.target).toBe(true); expect(effects).toBe(0)
+})
+test('VM detail read reports the sanitized reason instead of hiding it behind a generic unavailable message', () => {
+    expect(safeVmMessage(new VmError('The response belongs to a different workspace.'))).toBe('The response belongs to a different workspace.')
+    expect(safeVmMessage(new Error('raw transport detail'))).toBe('This VM information is unavailable. Refresh to try again.')
+})
+test('VM refresh keeps scoped data on screen while marking its action receipts stale', () => {
+    const previous = emptySnapshot(), partial = emptySnapshot()
+    previous.inventory = scoped(settings, [vm().value])
+    previous.vm = vm()
+    previous.reads.inventory = true; previous.reads.target = true
+    partial.errors = ['A supplemental read failed.']
+    const visible = preserveVmSnapshot(previous, partial)
+    expect(visible.inventory).toBe(previous.inventory)
+    expect(visible.vm).toBe(previous.vm)
+    expect(visible.reads.inventory).toBe(false)
+    expect(visible.reads.target).toBe(false)
+    expect(visible.errors).toEqual(['A supplemental read failed.'])
 })
 test('owned and accessible inventory merge sparse VM fields independently of response timing', async () => {
     const rich = vm({ limits_cpu: '1', limits_memory: '2GB', organization_name: 'Cashflow', access_users: ['member'] }).value
@@ -193,13 +211,17 @@ test('native target current-listener model replaces action/editor hosts at opera
     ops.finish(op, true); mount(); targets.get(before)?.(); expect(text).toBe('retained'); expect(sends).toBe(0)
 })
 test('actual UI wiring pins host boundaries, private result guards, explicit effect calls and separate terminal/boot sinks', async () => {
-    const [screen, detail, create, hook] = await Promise.all(['../../screens/VirtualMachinesScreen.tsx', './DetailPanel.tsx', './CreatePanel.tsx', './useWorkspace.ts'].map(path => Bun.file(new URL(path, import.meta.url)).text()))
+    const [screen, detail, create, hook, reads] = await Promise.all(['../../screens/VirtualMachinesScreen.tsx', './DetailPanel.tsx', './CreatePanel.tsx', './useWorkspace.ts', './read.ts'].map(path => Bun.file(new URL(path, import.meta.url)).text()))
     expect(screen).toContain('key={`workspace-controls:${g}`}'); expect(screen).toContain('w.refresh(g, true)')
-    expect(screen).toContain('style={{ marginBottom: 16 }}')
+    expect(screen).toContain('<View style={{ gap: 16 }}>')
+    expect(screen).toContain('<GlassCard key={vm.name}>')
     expect(detail).toContain('key={`detail-controls:${g}:${target}`}'); expect(detail).toContain('memory={editorMemory}')
     expect(create).toContain('key={`create:${g}`}'); expect(create).toContain('setDraft(clearVmSuggestion)'); expect(create).toContain('setPackages(\'\'); setSummary(\'\'); setSuggestedKey(\'\')')
     expect(detail).toContain('TerminalSurface key={w.channel.id}'); expect(detail).toContain('w.channel?.close(); w.dismissPrivate()')
     expect(detail).toContain('Boot log · retained tail'); expect(detail).toContain('!acceptsVmResult(w.ops, op, settings)')
     expect(hook).toContain('acceptsVmResult(ops, op, settings)) setSecret'); expect(hook).toContain('acceptsVmResult(ops, op, settings)) setConnection')
     expect(hook).toContain('ops.beginRead(generation, manual, target)'); expect(hook).toContain('ops.finish(op, definite)')
+    expect(hook).toContain('setSnapshot(previous => preserveVmSnapshot(previous, partial))')
+    expect(reads).toContain('inventory: partial.inventory ?? previous.inventory')
+    expect(reads).toContain('organizations: partial.organizations ?? previous.organizations')
 })

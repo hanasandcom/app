@@ -65,18 +65,18 @@ export function Screen({
         <LinearGradient colors={appearance === 'quiet' ? [theme.background, theme.background, theme.background, theme.background] : [theme.backgroundRaised, theme.backgroundAlt, theme.background, theme.background]} locations={[0, 0.28, 0.72, 1]} style={styles.root}>
             {appearance !== 'quiet' && <View pointerEvents='none' style={styles.atmosphere}>
                 <LinearGradient
-                    colors={theme.background === '#e9eaec' ? ['rgba(36,38,42,0.035)', 'rgba(36,38,42,0.01)', 'rgba(0,0,0,0)'] : ['rgba(255,255,255,0.055)', 'rgba(255,255,255,0.012)', 'rgba(0,0,0,0)']}
+                    colors={theme.isLight ? ['rgba(36,38,42,0.035)', 'rgba(36,38,42,0.01)', 'rgba(0,0,0,0)'] : ['rgba(255,255,255,0.055)', 'rgba(255,255,255,0.012)', 'rgba(0,0,0,0)']}
                     locations={[0, 0.36, 1]}
                     style={styles.topSheen}
                 />
                 <LinearGradient
-                    colors={theme.background === '#e9eaec' ? ['rgba(36,38,42,0.025)', 'rgba(36,38,42,0.008)', 'rgba(0,0,0,0)'] : ['rgba(255,255,255,0.04)', 'rgba(255,255,255,0.01)', 'rgba(0,0,0,0)']}
+                    colors={theme.isLight ? ['rgba(36,38,42,0.025)', 'rgba(36,38,42,0.008)', 'rgba(0,0,0,0)'] : ['rgba(255,255,255,0.04)', 'rgba(255,255,255,0.01)', 'rgba(0,0,0,0)']}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                     style={styles.leftSheen}
                 />
                 <LinearGradient
-                    colors={theme.background === '#e9eaec' ? ['rgba(0,0,0,0)', 'rgba(36,38,42,0.035)'] : ['rgba(0,0,0,0)', 'rgba(0,0,0,0.34)']}
+                    colors={theme.isLight ? ['rgba(0,0,0,0)', 'rgba(36,38,42,0.035)'] : ['rgba(0,0,0,0)', 'rgba(0,0,0,0.34)']}
                     start={{ x: 0.5, y: 0 }}
                     end={{ x: 0.5, y: 1 }}
                     style={styles.bottomShade}

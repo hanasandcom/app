@@ -210,6 +210,20 @@ export function saveSettings(settings: AppSettings, expectedRevision?: number): 
     return save
 }
 
+/** Persist a non-secret theme preference without requiring a Keychain write. */
+export function saveThemePreference(settings: AppSettings, expectedRevision?: number): Promise<void> {
+    const previousRevision = settingsIntentRevision++
+    const superseded = () => new Error('Settings changed before this save could be applied.')
+    if (expectedRevision !== undefined && previousRevision !== expectedRevision) return Promise.reject(superseded())
+    const snapshot = { ...settings }
+    const save = settingsSaveQueue.then(async () => {
+        if (expectedRevision !== undefined && settingsIntentRevision !== expectedRevision + 1) throw superseded()
+        await setStoredValue(SETTINGS_KEY, JSON.stringify(settingsWithoutSecrets(snapshot)))
+    })
+    settingsSaveQueue = save.catch(() => {})
+    return save
+}
+
 function settingsWithoutSecrets(settings: AppSettings) {
     return { ...settings, authToken: '', impersonationToken: '' }
 }

@@ -4,7 +4,7 @@ import { useFocusEffect } from '@react-navigation/native'
 import { randomUUID } from 'expo-crypto'
 import type { AppSettings } from '../../types'
 import { VmController, type VmOperation, type VmOperationKind } from './controller'
-import { emptySnapshot, readVmWorkspace } from './read'
+import { emptySnapshot, preserveVmSnapshot, readVmWorkspace } from './read'
 import { acceptsVmResult, freshVmOperation, type FreshVm } from './action'
 import { canCreateVm } from './authority'
 import { ownAccount, VmError } from './transport'
@@ -28,7 +28,7 @@ export function useVmWorkspace(settings: AppSettings, services: VmServices) {
         setError(''); publish()
         try {
             const value = await readVmWorkspace(settings, read, services, partial => {
-                if (ops.current(read.generation)) setSnapshot(partial)
+                if (ops.current(read.generation)) setSnapshot(previous => preserveVmSnapshot(previous, partial))
             })
             if (!ops.current(read.generation)) return
             setSnapshot(value)
@@ -44,7 +44,7 @@ export function useVmWorkspace(settings: AppSettings, services: VmServices) {
     useFocusEffect(useCallback(() => {
         mounted.current = true; focused.current = true; ops.visible = foreground.current; setVisible(ops.visible)
         if (ops.visible) void refresh(ops.generation, false)
-        return () => { focused.current = false; ops.hide(); setVisible(false); setSnapshot(emptySnapshot()); publish() }
+        return () => { focused.current = false; ops.hide(); setVisible(false); publish() }
     }, [ops, refresh]))
     useEffect(() => {
         const sub = AppState.addEventListener('change', state => {

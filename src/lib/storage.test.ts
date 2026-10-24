@@ -47,6 +47,7 @@ const {
     loadAuthenticatorEntries,
     loadSettings,
     loadStoredThemeMode,
+    saveThemePreference,
     saveAuthenticatorEntries,
     saveSettings,
     settingsWriteRevision,
@@ -104,6 +105,16 @@ describe('secure local storage', () => {
     it('persists and restores the light appearance mode', async () => {
         await saveSettings({ ...defaultSettings, themeMode: 'light' })
         expect(await loadSettings()).toMatchObject({ themeMode: 'light' })
+    })
+
+    it('persists appearance without asking secure storage to rewrite credentials', async () => {
+        failSecureWrite = true
+
+        await saveThemePreference({ ...defaultSettings, authToken: 'never-write-this', themeMode: 'light' })
+
+        expect(JSON.parse(asyncValues.get('hanasand-mobile/settings')!)).toMatchObject({ themeMode: 'light', authToken: '', impersonationToken: '' })
+        expect(asyncValues.get('hanasand-mobile/settings')).not.toContain('never-write-this')
+        expect(operations).toEqual(['async:hanasand-mobile/settings'])
     })
 
     it('leaves legacy session data intact when secure migration fails', async () => {

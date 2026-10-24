@@ -33,7 +33,7 @@ import { nativeToolForPath } from './lib/native-tool-navigation'
 import { organizationSectionForPath } from './lib/organization-navigation'
 import { fetchOrganizationsWithRetry, type Organization } from './lib/profile-api'
 import type { SiteNavigationItem } from './data/site-navigation'
-import { loadAiChat, loadSettings, loadStoredThemeMode, saveAiChat, saveSettings, settingsWriteRevision } from './lib/storage'
+import { loadAiChat, loadSettings, loadStoredThemeMode, saveAiChat, saveSettings, saveThemePreference, settingsWriteRevision } from './lib/storage'
 import { getThemePalette, type ThemeMode } from './theme/tokens'
 import { AppThemeProvider } from './theme/context'
 import { PendingDeletionError, refreshHanasandSession, startDesktopAgentCoverTraffic, stopDesktopAgentCoverTraffic, stopMobileImpersonation } from './lib/api'
@@ -284,7 +284,13 @@ export default function App() {
     async function handleThemeChange(themeMode: AppSettings['themeMode']) {
         const current = currentSettings.current
         if (!current) throw new Error('Settings are not ready yet.')
-        await handleSaveSettings({ ...current, themeMode })
+        if (!sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)) throw new Error('Your session changed. Open Settings again before saving.')
+        const saveRevision = settingsWriteRevision()
+        const next = { ...current, themeMode }
+        await saveThemePreference(next, saveRevision)
+        if (!sessionTransition.current(sessionIntentVersion, settings, currentSettings.current) || settingsWriteRevision() !== saveRevision + 1) throw new Error('Settings changed before this theme could be applied.')
+        currentSettings.current = next
+        setSettings(next)
     }
 
     async function handleSaveAiMessages(next: AiChatMessage[]) {
@@ -516,25 +522,25 @@ export default function App() {
                                 sceneStyle: { backgroundColor: activePalette.background },
                             })}
                         >
-                            <Tab.Screen name='Home'>
-                                {() => <HomeScreen settings={settings} aiMessages={aiMessages} onSaveAiMessages={handleSaveAiMessages} />}
-                            </Tab.Screen>
-                            <Tab.Screen name='Profile'>
-                                {({ route }) => <ProfileScreen settings={settings} initialSection={route.params?.section} onLogout={clearSession} onDeleted={clearSession} />}
-                            </Tab.Screen>
                             <Tab.Screen name='Intelligence'>
                                 {() => <ThreatSearchScreen settings={settings} />}
+                            </Tab.Screen>
+                            <Tab.Screen name='Home'>
+                                {() => <HomeScreen settings={settings} aiMessages={aiMessages} onSaveAiMessages={handleSaveAiMessages} />}
                             </Tab.Screen>
                             <Tab.Screen name='Mail'>
                                 {() => <MailScreen settings={settings} />}
                             </Tab.Screen>
-                            <Tab.Screen name='Scan' component={ScannerScreen} />
-                            <Tab.Screen name='Notes'>
-                                {() => <NotesScreen settings={settings} />}
-                            </Tab.Screen>
                             <Tab.Screen name='Images'>{() => <ImagesScreen settings={settings} />}</Tab.Screen>
                             <Tab.Screen name='VirtualMachines'>
                                 {() => <VirtualMachinesScreen settings={settings} onOpenCheckout={openVmCheckout} />}
+                            </Tab.Screen>
+                            <Tab.Screen name='Profile'>
+                                {({ route }) => <ProfileScreen settings={settings} initialSection={route.params?.section} onLogout={clearSession} onDeleted={clearSession} />}
+                            </Tab.Screen>
+                            <Tab.Screen name='Scan' component={ScannerScreen} />
+                            <Tab.Screen name='Notes'>
+                                {() => <NotesScreen settings={settings} />}
                             </Tab.Screen>
                             <Tab.Screen name='Automations'>
                                 {({ route }) => <AutomationsScreen key={JSON.stringify([route.params?.automationId, route.params?.handoffId])} settings={settings} section={route.params?.section} initialAutomationId={route.params?.automationId} />}

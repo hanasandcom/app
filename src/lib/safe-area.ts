@@ -1,4 +1,4 @@
-const IOS_TOP_CUTOUT_FALLBACK = 62
+const IOS_TOP_CUTOUT_FALLBACK = 82
 
 // Keep modal content clear of the Dynamic Island if its host reports a reduced inset.
 export function safeAreaTopInset(reportedInset: number, platform: string) {

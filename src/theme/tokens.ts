@@ -1,5 +1,6 @@
 export const themeVariants = {
     obsidian: {
+        isLight: false,
         background: '#0b0c0b',
         backgroundAlt: '#121311',
         backgroundRaised: '#181917',
@@ -23,6 +24,7 @@ export const themeVariants = {
         shadow: 'rgba(0,0,0,0.42)',
     },
     graphite: {
+        isLight: false,
         background: '#101112',
         backgroundAlt: '#17181a',
         backgroundRaised: '#1f2023',
@@ -46,6 +48,7 @@ export const themeVariants = {
         shadow: 'rgba(0,0,0,0.42)',
     },
     forest: {
+        isLight: false,
         background: '#090c0a',
         backgroundAlt: '#0f1511',
         backgroundRaised: '#141c17',
@@ -69,13 +72,14 @@ export const themeVariants = {
         shadow: 'rgba(0,0,0,0.45)',
     },
     light: {
-        background: '#e9eaec',
-        backgroundAlt: '#f1f2f3',
-        backgroundRaised: '#f7f7f8',
-        surface: '#ffffff',
-        surfaceStrong: '#e4e5e7',
-        surfaceBorder: '#c9cbd0',
-        surfaceBorderSoft: '#d7d8dc',
+        isLight: true,
+        background: '#e3e5e7',
+        backgroundAlt: '#e9ebed',
+        backgroundRaised: '#f0f1f2',
+        surface: '#f5f5f4',
+        surfaceStrong: '#e0e2e5',
+        surfaceBorder: '#c5c8cc',
+        surfaceBorderSoft: '#d5d7da',
         text: '#24262a',
         textMuted: 'rgba(36,38,42,0.72)',
         textSoft: 'rgba(36,38,42,0.50)',

@@ -4,6 +4,7 @@ import type { VmRead, VmReadSet } from './controller'
 import type { VmServices } from './services'
 import type * as api from './api'
 import type { Scoped, Vm, VmDetails, VmMetric, VmManagement } from './model'
+import { VmError } from './transport'
 export type VmSnapshot = {
     inventory: Scoped<Vm[]> | null; vm: Scoped<Vm> | null; management: Scoped<VmManagement> | null
     platform: Awaited<ReturnType<typeof api.loadPlatformAccess>> | null
@@ -13,7 +14,20 @@ export type VmSnapshot = {
 }
 export const emptySnapshot = (): VmSnapshot => ({ inventory: null, vm: null, management: null, platform: null, products: null, details: null, metrics: null, organizations: null, errors: [],
     reads: { inventory: false, target: false, management: false, platform: false, products: false, details: false, services: false } })
-export const safeVmMessage = (error: unknown) => error instanceof Error && error.name !== 'AbortError' && error.message.startsWith('VM ') ? error.message : 'This VM information is unavailable. Refresh to try again.'
+export function preserveVmSnapshot(previous: VmSnapshot, partial: VmSnapshot): VmSnapshot {
+    return {
+        ...partial,
+        inventory: partial.inventory ?? previous.inventory,
+        vm: partial.vm ?? previous.vm,
+        management: partial.management ?? previous.management,
+        platform: partial.platform ?? previous.platform,
+        products: partial.products ?? previous.products,
+        details: partial.details ?? previous.details,
+        metrics: partial.metrics ?? previous.metrics,
+        organizations: partial.organizations ?? previous.organizations,
+    }
+}
+export const safeVmMessage = (error: unknown) => error instanceof VmError && error.name !== 'AbortError' ? error.message : 'This VM information is unavailable. Refresh to try again.'
 function mergeVmRecord(current: Vm, incoming: Vm): Vm {
     const merged = { ...current }
     for (const key of Object.keys(merged) as (keyof Vm)[]) {
