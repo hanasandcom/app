@@ -53,7 +53,7 @@ export function normalizeThreatResult(value: unknown, query: string) {
         targets: records(body.targets).map(row => ({ sector: text(row.sector), regions: strings(row.regions), rationale: text(row.rationale) })),
     }
 }
-async function request(settings: AppSettings, url: URL, signal: AbortSignal, init: RequestInit = {}) {
+async function request(settings: AppSettings | undefined, url: URL, signal: AbortSignal, init: RequestInit = {}) {
     if (url.protocol !== 'https:') throw new Error('Threat search requires HTTPS.')
     const response = await apiFetch(settings, url.toString(), { ...init, signal })
     const payload: unknown = await response.json().catch(() => null)
@@ -67,8 +67,13 @@ async function request(settings: AppSettings, url: URL, signal: AbortSignal, ini
 }
 export async function searchThreatIntel(settings: AppSettings, query: string, signal: AbortSignal) {
     const clean = normalizeThreatQuery(query)
-    const url = siteApiUrl(settings, 'ti/search')
-    return normalizeThreatResult(await request(settings, url, signal, {
+    const base = new URL(settings.apiBaseUrl)
+    if (base.protocol !== 'https:' || base.username || base.password || base.search || base.hash) throw new Error('Threat search requires an HTTPS API address.')
+    const url = new URL('ti/search', `${base.href.replace(/\/+$/, '')}/`)
+    // The website's public search route forwards to this canonical API endpoint.
+    // Call it directly without a session token; its website proxy expects browser
+    // sessions and rejects the native app's bearer token.
+    return normalizeThreatResult(await request(undefined, url, signal, {
         method: 'POST',
         body: JSON.stringify({ query: clean }),
     }), clean)

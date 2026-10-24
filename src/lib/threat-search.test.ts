@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
 import type { AppSettings } from '../types'
-const calls: Array<{ settings: AppSettings; url: string; init: RequestInit }> = []
+const calls: Array<{ settings: AppSettings | undefined; url: string; init: RequestInit }> = []
 let response = () => Response.json({})
 mock.module('./api', () => ({ apiFetch: async (settings: AppSettings, url: string, init: RequestInit) => { calls.push({ settings, url, init }); return response() } }))
 const api = await import('./threat-search')
@@ -11,12 +11,13 @@ const result = (extra: Record<string, unknown> = {}) => ({ query: 'Example actor
 beforeEach(() => { calls.length = 0; response = () => Response.json(result()) })
 
 describe('native threat search contract', () => {
-    it('uses the authenticated website search route and preserves source attribution', async () => {
+    it('uses the canonical public API search route without sending an app session', async () => {
         const data = await api.searchThreatIntel(settings, ' Example actor ', signal())
         const url = new URL(calls[0].url)
-        expect(url.hostname).toBe('hanasand.com')
+        expect(url.hostname).toBe('api.hanasand.com')
         expect(url.pathname).toBe('/api/ti/search')
         expect(url.search).toBe('')
+        expect(calls[0].settings).toBeUndefined()
         expect(calls[0].init.method).toBe('POST')
         expect(JSON.parse(String(calls[0].init.body))).toEqual({ query: 'Example actor' })
         expect(data.activity[0].sourceIds).toEqual(['s1'])
@@ -70,7 +71,7 @@ describe('native threat search contract', () => {
         expect(budget.take('Different actor')).toBe(true)
     })
     it('rejects insecure URLs and reports service errors without raw response rendering', async () => {
-        await expect(api.searchThreatIntel({ ...settings, siteBaseUrl: 'http://example.test' }, 'Example actor', signal())).rejects.toThrow('HTTPS')
+        await expect(api.searchThreatIntel({ ...settings, apiBaseUrl: 'http://example.test/api' }, 'Example actor', signal())).rejects.toThrow('HTTPS')
         response = () => Response.json({ error: { message: 'Access denied' } }, { status: 403 })
         await expect(api.searchThreatIntel(settings, 'Example actor', signal())).rejects.toThrow('Access denied')
         response = () => Response.json({ message: 'Route not found' }, { status: 404 })
