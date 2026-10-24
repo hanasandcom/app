@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useIsFocused } from '@react-navigation/native'
 import { Alert, Platform, Text, View } from 'react-native'
 import type { AppSettings } from '../types'
-import { deleteHanasandAccount, fetchProfileStats, type MobileProfileStats } from '../lib/api'
+import { deleteHanasandAccount, fetchProfileStats, friendlyPasskeyError, type MobileProfileStats } from '../lib/api'
 import {
     addAccountSshKey, fetchAccountIdentity, fetchAccountPasskeys, fetchAccountSessions, fetchAccountSshKeys,
     nativePasskeysSupported, registerAccountPasskey, removeAccountPasskey,
@@ -203,7 +203,7 @@ export function ProfileScreen({ settings, onLogout, onDeleted, initialSection }:
         </Screen>
     )
 }
-function message(error: unknown) { return error instanceof Error ? error.message : 'Unable to complete this request.' }
+function message(error: unknown) { return friendlyPasskeyError(error) || (error instanceof Error ? error.message : 'Unable to complete this request.') }
 function date(value: string | null) { const parsed = value ? new Date(value) : null; return parsed && !Number.isNaN(parsed.getTime()) ? parsed.toLocaleString() : 'Not recorded' }
 function recentActivity(days: MobileProfileStats['loginDays']) {
     const activity = new Map(days.map(day => [day.day, day.logins]))

@@ -6,7 +6,7 @@ import * as WebBrowser from 'expo-web-browser'
 import { isSupported as arePasskeysSupported } from 'react-native-passkeys'
 import { ArrowRight, X } from 'lucide-react-native'
 import type { AppSettings, HanasandAuthSession } from '../types'
-import { completePasswordReset, createHanasandAccount, createHanasandBrowserSignInUrl, exchangeHanasandMobileSsoCode, isHanasandGoogleSignInConfigured, loginToHanasand, loginWithHanasandPasskey, PendingDeletionError, requestPasswordResetCode, verifyPasswordResetCode } from '../lib/api'
+import { completePasswordReset, createHanasandAccount, createHanasandBrowserSignInUrl, exchangeHanasandMobileSsoCode, friendlyPasskeyError, isHanasandGoogleSignInConfigured, loginToHanasand, loginWithHanasandPasskey, PendingDeletionError, requestPasswordResetCode, verifyPasswordResetCode } from '../lib/api'
 import { getThemePalette, spacing, type ThemePalette } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
 import { InlineNotice } from '../components/ui'
@@ -112,7 +112,7 @@ export function LoginScreen({
             setStatus('')
             await onAuthenticated(session)
         } catch (error) {
-            setStatus(error instanceof Error ? error.message : 'Passkey sign-in failed.')
+            setStatus(friendlyPasskeyError(error) || (error instanceof Error ? error.message : 'Passkey sign-in failed.'))
         } finally {
             setBusy(false)
         }

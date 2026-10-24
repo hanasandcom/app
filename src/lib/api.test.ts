@@ -55,7 +55,7 @@ mock.module('expo-crypto', () => ({
     },
 }))
 
-const { startMobileImpersonation, stopMobileImpersonation, isHanasandOrganizationMember, apiFetch, askCodex, fetchAiModels, createHanasandBrowserSignInUrl, fetchNotes, AuthenticationError, exchangeHanasandMobileSsoCode, fetchDesktopAgentStatus, isHanasandGoogleSignInConfigured, loginToHanasand, loginWithHanasandPasskey, refreshHanasandSession, runDesktopAgentCommand } = await import('./api')
+const { startMobileImpersonation, stopMobileImpersonation, isHanasandOrganizationMember, apiFetch, askCodex, fetchAiModels, createHanasandBrowserSignInUrl, fetchNotes, AuthenticationError, exchangeHanasandMobileSsoCode, fetchDesktopAgentStatus, friendlyPasskeyError, isHanasandGoogleSignInConfigured, loginToHanasand, loginWithHanasandPasskey, refreshHanasandSession, runDesktopAgentCommand } = await import('./api')
 
 const settings: AppSettings = {
     themeMode: 'obsidian',
@@ -129,6 +129,16 @@ describe('refreshHanasandSession error classification', () => {
         mockFetch(async () => new Response('{}', { status: 200 }))
         await expect(refreshHanasandSession(settings)).rejects.toThrow('Unable to sign in.')
         await expect(refreshHanasandSession(settings)).rejects.not.toBeInstanceOf(AuthenticationError)
+    })
+})
+
+describe('passkey native errors', () => {
+    it('explains when device biometrics are not configured and keeps cancellation clear', () => {
+        expect(friendlyPasskeyError(new Error('Calling the \'get\' function has failed -> Caused by: Biometrics must be enabled')))
+            .toBe('Set up Face ID or Touch ID on this device to use passkeys.')
+        expect(friendlyPasskeyError(new Error('User cancelled the passkey interaction')))
+            .toBe('Passkey interaction was canceled.')
+        expect(friendlyPasskeyError(new Error('The passkey authorization failed'))).toBeNull()
     })
 })
 

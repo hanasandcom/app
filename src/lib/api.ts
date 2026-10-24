@@ -556,6 +556,18 @@ export async function loginToHanasand(settings: AppSettings, username: string, p
     return normalizeAuthSession(await readJsonResponse(response))
 }
 
+export function friendlyPasskeyError(error: unknown): string | null {
+    const message = error instanceof Error ? error.message : String(error ?? '')
+    const normalized = message.toLowerCase()
+    if (normalized.includes('biometrics must be enabled')) {
+        return 'Set up Face ID or Touch ID on this device to use passkeys.'
+    }
+    if (normalized.includes('user cancelled the passkey interaction')) {
+        return 'Passkey interaction was canceled.'
+    }
+    return null
+}
+
 export async function loginWithHanasandPasskey(settings: AppSettings, username: string) {
     const { get } = await import('react-native-passkeys')
     const optionsUrl = new URL(identityUrl(settings, 'auth/passkeys/authenticate/options'))
