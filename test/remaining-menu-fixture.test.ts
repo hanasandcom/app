@@ -5,6 +5,7 @@ test('remaining-menu fixture is opt-in and confines HTTP, sockets and mutations 
     expect(normal).not.toContain('remaining-menu-fixture')
     expect(fixture).toContain('].includes(url.origin)')
     expect(fixture).toContain('External requests are disabled')
+    expect(fixture).toContain('<SafeAreaProvider>')
     expect(fixture).toContain('Unsupported synthetic write blocked')
     expect(fixture).toContain('External sockets are disabled')
     expect(fixture).toContain('liveTransport={liveTransport}')

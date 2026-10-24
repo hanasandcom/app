@@ -4,6 +4,7 @@ import { registerRootComponent } from 'expo'
 import { NavigationContainer } from '@react-navigation/native'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
+import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { Text, View } from 'react-native'
 import { IntegrationsScreen } from '../src/screens/IntegrationsScreen'
 import { PillButton } from '../src/components/ui'
@@ -86,6 +87,6 @@ function Fixture() {
     </View>
 }
 const Stack = createNativeStackNavigator()
-registerRootComponent(() => <GestureHandlerRootView style={{ flex: 1 }}><AppThemeProvider mode='obsidian'><NavigationContainer>
+registerRootComponent(() => <GestureHandlerRootView style={{ flex: 1 }}><SafeAreaProvider><AppThemeProvider mode='obsidian'><NavigationContainer>
     <Stack.Navigator screenOptions={{ headerShown: false }}><Stack.Screen name='IntegrationsFixture' component={Fixture} /></Stack.Navigator>
-</NavigationContainer></AppThemeProvider></GestureHandlerRootView>)
+</NavigationContainer></AppThemeProvider></SafeAreaProvider></GestureHandlerRootView>)

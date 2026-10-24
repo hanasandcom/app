@@ -2,6 +2,7 @@
 // Bundle with EXPO_PUBLIC_SUPPORT_API=https://support.invalid/api; no account storage.
 import { registerRootComponent } from 'expo'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
+import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { Text } from 'react-native'
 import { ProfileSupportPanel } from '../src/components/ProfileSupportPanel'
 import { Screen } from '../src/components/ui'
@@ -76,9 +77,9 @@ globalThis.fetch = Object.assign(async (...[input, init]: Parameters<typeof fetc
     return json({ error: 'Unsupported synthetic operation.' }, 400)
 }, globalThis.fetch)
 
-registerRootComponent(() => <GestureHandlerRootView style={{ flex: 1 }}><AppThemeProvider mode='obsidian'>
+registerRootComponent(() => <GestureHandlerRootView style={{ flex: 1 }}><SafeAreaProvider><AppThemeProvider mode='obsidian'>
     <Screen title='Support fixture' subtitle='Synthetic data only'>
         <Text style={{ color: '#b2b9c2', fontSize: 13 }}>100 tickets. Open a conversation or New support ticket: the list must disappear. Back to conversations restores the list. Closed feedback first returns409: refresh, review the retained draft, then submit again. Reply containing “uncertain” saves once and disconnects; refresh then retry to test deduplication.</Text>
         <ProfileSupportPanel settings={settings} revision={0} />
     </Screen>
-</AppThemeProvider></GestureHandlerRootView>)
+</AppThemeProvider></SafeAreaProvider></GestureHandlerRootView>)

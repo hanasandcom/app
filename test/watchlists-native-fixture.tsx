@@ -4,6 +4,7 @@ import { registerRootComponent } from 'expo'
 import { NavigationContainer } from '@react-navigation/native'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
+import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { WatchlistsScreen } from '../src/screens/WatchlistsScreen'
 import { AppThemeProvider } from '../src/theme/context'
 import type { AppSettings } from '../src/types'
@@ -80,10 +81,10 @@ globalThis.fetch = Object.assign(async (...[input, init]: Parameters<typeof fetc
 }, globalThis.fetch)
 
 const Stack = createNativeStackNavigator()
-registerRootComponent(() => <GestureHandlerRootView style={{ flex: 1 }}>
+registerRootComponent(() => <GestureHandlerRootView style={{ flex: 1 }}><SafeAreaProvider>
     <AppThemeProvider mode='obsidian'><NavigationContainer>
         <Stack.Navigator screenOptions={{ headerShown: false }}><Stack.Screen name='WatchlistsFixture'>
             {() => <WatchlistsScreen settings={settings} />}
         </Stack.Screen></Stack.Navigator>
     </NavigationContainer></AppThemeProvider>
-</GestureHandlerRootView>)
+</SafeAreaProvider></GestureHandlerRootView>)

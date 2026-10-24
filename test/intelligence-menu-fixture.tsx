@@ -5,6 +5,7 @@ import { registerRootComponent } from 'expo'
 import { NavigationContainer } from '@react-navigation/native'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
+import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { AppThemeProvider } from '../src/theme/context'
 import { PillButton } from '../src/components/ui'
 import { FindingsScreen } from '../src/screens/FindingsScreen'
@@ -48,4 +49,4 @@ function Fixture() {
             : <ApiReferenceScreen settings={settings} mode={mode === 'JSON' ? 'json' : 'reference'} onOpenJson={() => setMode('JSON')} onOpenGuide={() => setHandoff('Public guide website requested')} />}
     </View>
 }
-registerRootComponent(() => <GestureHandlerRootView style={{ flex: 1 }}><AppThemeProvider mode='obsidian'><NavigationContainer><Stack.Navigator screenOptions={{ headerShown: false }}><Stack.Screen name='SyntheticIntelligence' component={Fixture} /></Stack.Navigator></NavigationContainer></AppThemeProvider></GestureHandlerRootView>)
+registerRootComponent(() => <GestureHandlerRootView style={{ flex: 1 }}><SafeAreaProvider><AppThemeProvider mode='obsidian'><NavigationContainer><Stack.Navigator screenOptions={{ headerShown: false }}><Stack.Screen name='SyntheticIntelligence' component={Fixture} /></Stack.Navigator></NavigationContainer></AppThemeProvider></SafeAreaProvider></GestureHandlerRootView>)

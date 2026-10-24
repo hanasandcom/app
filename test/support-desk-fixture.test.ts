@@ -7,6 +7,7 @@ test('operations fixture cannot enter normal startup or contact real services', 
     expect(normal).not.toContain('support-desk-fixture')
     expect(fixture).toContain('].includes(url.origin)')
     expect(fixture).toContain('External requests are disabled')
+    expect(fixture).toContain('<SafeAreaProvider>')
     expect(fixture).toContain('Unsupported synthetic write blocked')
     expect(fixture).not.toContain('https://hanasand.com')
     expect(fixture).not.toContain('loadSettings')

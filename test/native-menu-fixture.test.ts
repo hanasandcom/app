@@ -7,6 +7,7 @@ it('keeps synthetic menu UI out of the normal app and denies external requests',
     expect(normal).not.toContain('native-menu-fixture')
     expect(fixture).toContain('url.origin !== \'https://traffic.invalid\'')
     expect(fixture).toContain('External requests are disabled')
+    expect(fixture).toContain('<SafeAreaProvider>')
     expect(fixture).toContain('Unsupported synthetic write blocked')
     expect(fixture).not.toContain('https://api.hanasand.com')
     expect(fixture).not.toContain('loadSettings')

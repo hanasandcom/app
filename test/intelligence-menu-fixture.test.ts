@@ -7,6 +7,7 @@ test('intelligence UI fixture is opt-in and blocks external reads and all writes
     expect(normal).not.toContain('intelligence-menu-fixture')
     expect(fixture).toContain('].includes(url.origin)')
     expect(fixture).toContain('External requests are disabled')
+    expect(fixture).toContain('<SafeAreaProvider>')
     expect(fixture).toContain('Unsupported synthetic write blocked')
     expect(fixture).toContain('Unsupported synthetic read blocked')
     expect(fixture).toContain('FIXTURE_SENSITIVE_PROSE_MUST_NOT_RENDER')

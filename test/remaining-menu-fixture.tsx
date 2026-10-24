@@ -5,6 +5,7 @@ import { registerRootComponent } from 'expo'
 import { NavigationContainer } from '@react-navigation/native'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
+import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { AppThemeProvider } from '../src/theme/context'
 import { PillButton } from '../src/components/ui'
 import { UserManagementScreen } from '../src/screens/UserManagementScreen'
@@ -382,4 +383,4 @@ function Fixture() {
         {mode === 'VMs' ? <VirtualMachinesScreen settings={settings} services={vmFixtureServices} onOpenCheckout={() => setEvent('Synthetic checkout handoff; no browser opened')} /> : mode === 'Cases' ? <CasesScreen settings={settings} services={caseFixtureServices} onOpenHealth={id => setEvent(`Synthetic health check: ${id}`)} onOpenIntelligence={() => setEvent('Synthetic intelligence handoff')} /> : mode === 'Users' ? <UserManagementScreen settings={settings} onSelectOrganization={id => setEvent(`Open organization: ${id}`)} /> : mode === 'System' || mode === 'Containers' ? <SystemScreen settings={settings} mode={mode === 'System' ? 'overview' : 'containers'} services={systemFixtureServices} onOpenLogs={name => setEvent(`Synthetic Logs: ${name || 'all'}`)} onOpenVms={() => setEvent('Synthetic VM inventory handoff')} /> : mode === 'Articles' ? <ArticlesScreen settings={settings} services={articleServices} /> : mode === 'Thoughts' ? <ThoughtsScreen settings={settings} services={thoughtServices} /> : mode === 'Privacy' ? <OrganizationPrivacyScreen settings={settings} transport={privacyTransport} exportFile={privacyShare} /> : mode === 'Thesis' ? <ThesisScreen settings={settings} services={thesisServices} /> : <LoadTestsScreen settings={settings} liveTransport={liveTransport} />}
     </View>
 }
-registerRootComponent(() => <GestureHandlerRootView style={{ flex: 1 }}><AppThemeProvider mode='obsidian'><NavigationContainer><Stack.Navigator screenOptions={{ headerShown: false }}><Stack.Screen name='SyntheticRemainingMenu' component={Fixture} /></Stack.Navigator></NavigationContainer></AppThemeProvider></GestureHandlerRootView>)
+registerRootComponent(() => <GestureHandlerRootView style={{ flex: 1 }}><SafeAreaProvider><AppThemeProvider mode='obsidian'><NavigationContainer><Stack.Navigator screenOptions={{ headerShown: false }}><Stack.Screen name='SyntheticRemainingMenu' component={Fixture} /></Stack.Navigator></NavigationContainer></AppThemeProvider></SafeAreaProvider></GestureHandlerRootView>)
