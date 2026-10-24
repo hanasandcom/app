@@ -372,23 +372,27 @@ export default function App() {
 
     if (!settings && bootstrapError) {
         return (
-            <GestureHandlerRootView style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28, backgroundColor: shellPalette.background }}>
-                <StatusBar style={bootstrapThemeMode === 'light' ? 'dark' : 'light'} />
-                <Text style={{ color: shellPalette.text, fontSize: 17, fontWeight: '700', textAlign: 'center' }}>Secure local data is unavailable</Text>
-                <Text style={{ color: shellPalette.textSoft, marginTop: 10, textAlign: 'center' }}>{bootstrapError}</Text>
-                <Pressable onPress={() => setBootstrapAttempt(value => value + 1)} style={{ marginTop: 20, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 14, backgroundColor: shellPalette.surfaceStrong, borderWidth: 1, borderColor: shellPalette.surfaceBorder }}>
-                    <Text style={{ color: shellPalette.accent, fontWeight: '800' }}>Try again</Text>
-                </Pressable>
-            </GestureHandlerRootView>
+            <AppRoot backgroundColor={shellPalette.background}>
+                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28, backgroundColor: shellPalette.background }}>
+                    <StatusBar style={bootstrapThemeMode === 'light' ? 'dark' : 'light'} />
+                    <Text style={{ color: shellPalette.text, fontSize: 17, fontWeight: '700', textAlign: 'center' }}>Secure local data is unavailable</Text>
+                    <Text style={{ color: shellPalette.textSoft, marginTop: 10, textAlign: 'center' }}>{bootstrapError}</Text>
+                    <Pressable onPress={() => setBootstrapAttempt(value => value + 1)} style={{ marginTop: 20, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 14, backgroundColor: shellPalette.surfaceStrong, borderWidth: 1, borderColor: shellPalette.surfaceBorder }}>
+                        <Text style={{ color: shellPalette.accent, fontWeight: '800' }}>Try again</Text>
+                    </Pressable>
+                </View>
+            </AppRoot>
         )
     }
 
     if (!settings) {
         return (
-            <GestureHandlerRootView style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: shellPalette.background }}>
-                <StatusBar style={bootstrapThemeMode === 'light' ? 'dark' : 'light'} />
-                <Text style={{ color: shellPalette.text }}>Loading Hanasand App...</Text>
-            </GestureHandlerRootView>
+            <AppRoot backgroundColor={shellPalette.background}>
+                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: shellPalette.background }}>
+                    <StatusBar style={bootstrapThemeMode === 'light' ? 'dark' : 'light'} />
+                    <Text style={{ color: shellPalette.text }}>Loading Hanasand App...</Text>
+                </View>
+            </AppRoot>
         )
     }
 
@@ -397,7 +401,7 @@ export default function App() {
     if (!settings.authToken || !settings.userId) {
         if (pendingDeletion) {
             return (
-                <GestureHandlerRootView style={{ flex: 1, backgroundColor: activePalette.background }}>
+                <AppRoot backgroundColor={activePalette.background}>
                     <StatusBar style={settings.themeMode === 'light' ? 'dark' : 'light'} />
                     <AppThemeProvider mode={settings.themeMode}>
                         <PendingDeletionScreen
@@ -409,11 +413,11 @@ export default function App() {
                             onBack={handlePendingDeletion}
                         />
                     </AppThemeProvider>
-                </GestureHandlerRootView>
+                </AppRoot>
             )
         }
         return (
-            <GestureHandlerRootView style={{ flex: 1, backgroundColor: activePalette.background }}>
+            <AppRoot backgroundColor={activePalette.background}>
                 <StatusBar style={settings.themeMode === 'light' ? 'dark' : 'light'} />
                 <AppThemeProvider mode={settings.themeMode}>
                     <LoginScreen
@@ -422,7 +426,7 @@ export default function App() {
                         onPendingDeletion={handlePendingDeletion}
                     />
                 </AppThemeProvider>
-            </GestureHandlerRootView>
+            </AppRoot>
         )
     }
 
