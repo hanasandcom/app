@@ -184,11 +184,13 @@ export function DropdownMenu({
     label,
     title = 'More options',
     items,
+    icon,
     disabled = false,
 }: {
     label: string
     title?: string
     items: DropdownMenuItem[]
+    icon?: ReactNode
     disabled?: boolean
 }) {
     const theme = useAppTheme()
@@ -197,6 +199,7 @@ export function DropdownMenu({
     return <>
         <Pressable accessibilityRole='button' accessibilityLabel={`${title}: ${label}`} accessibilityState={{ disabled }} disabled={disabled}
             onPress={() => setVisible(true)} style={({ pressed }) => [styles.menuTrigger, disabled && styles.buttonDisabled, pressed && !disabled && { opacity: 0.8 }]}>
+            {icon}
             <Text numberOfLines={1} style={styles.menuTriggerText}>{label}</Text><ChevronDown size={16} color={theme.textMuted} />
         </Pressable>
         <Modal visible={visible} transparent animationType='fade' onRequestClose={() => setVisible(false)}>

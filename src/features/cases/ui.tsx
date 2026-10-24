@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ScrollView, Text, TextInput, View } from 'react-native'
+import { Text, TextInput, View } from 'react-native'
 import { useAppTheme } from '../../theme/context'
 import { PillButton } from '../../components/ui'
 import { text, type Row } from './model'
@@ -12,10 +12,8 @@ export function CaseText({ children, heading = false, numberOfLines }: { childre
         numberOfLines={numberOfLines}
     >{children}</Text>
 }
-export function Actions({ children, scroll = false }: { children: React.ReactNode; scroll?: boolean }) {
-    return scroll
-        ? <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps='handled' contentContainerStyle={{ flexDirection: 'row', gap: 8 }}>{children}</ScrollView>
-        : <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>{children}</View>
+export function Actions({ children }: { children: React.ReactNode }) {
+    return <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>{children}</View>
 }
 export function CaseInput({ label, value, onChange, ops, host, limit = 5000, multiline = false, disabled = false }: { label: string; value: string; onChange: (v: string) => void; ops: CaseController; host: number; limit?: number; multiline?: boolean; disabled?: boolean }) {
     const t = useAppTheme()

@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, AppState, View } from 'react-native'
 import { useFocusEffect } from '@react-navigation/native'
 import { randomUUID } from 'expo-crypto'
-import { GlassCard, InlineNotice, PillButton, Screen } from '../components/ui'
+import { Menu } from 'lucide-react-native'
+import { DropdownMenu, GlassCard, InlineNotice, PillButton, Screen } from '../components/ui'
+import { useAppTheme } from '../theme/context'
 import type { AppSettings } from '../types'
 import { caseServices, type CaseServices } from '../features/cases/api'
 import { CaseController, caseCallbackAllowed, caseReadComplete, type CaseIntent } from '../features/cases/controller'
@@ -23,6 +25,7 @@ function updatedLabel(value: string) {
 }
 function CasesWorkspace({ settings, initialCaseId, onOpenIntelligence, onOpenHealth, services: injected }: CasesScreenProps) {
     const services = useMemo(() => injected || caseServices(settings), [settings, injected])
+    const theme = useAppTheme()
     const ops = useRef(new CaseController(intentScope(settings))).current
     const [items, setItems] = useState<CaseItem[] | null>(null), [selected, setSelected] = useState(initialCaseId || ''), [detail, setDetail] = useState<CaseItem | null>(null)
     const [eventView, setEventView] = useState<Pick<CaseItem, 'events' | 'eventPage' | 'eventTotal' | 'eventSnapshot'> | null>(null)
@@ -192,9 +195,18 @@ function CasesWorkspace({ settings, initialCaseId, onOpenIntelligence, onOpenHea
 
             {selected ? <>
                 <PillButton label='Back to monitoring cases' disabled={!ops.idle(host)} onPress={() => navigate('')} />
-                <Actions scroll>
-                    {(['overview', 'comments', 'events', 'history', 'notifications', 'development'] as CasePanel[]).map(v => <PillButton key={v} label={`${panel === v ? '✓ ' : ''}${v}`} disabled={!ops.idle(host)} onPress={() => tab(v)} />)}
-                </Actions>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+                    {(['overview', 'events'] as CasePanel[]).map(v => <PillButton key={v} label={`${panel === v ? '✓ ' : ''}${casePanelLabel(v)}`} disabled={!ops.idle(host)} onPress={() => tab(v)} />)}
+                    <DropdownMenu
+                        label={panel === 'overview' || panel === 'events' ? 'More' : casePanelLabel(panel)}
+                        title='Case sections'
+                        icon={<Menu size={17} color={theme.textMuted} />}
+                        disabled={!ops.idle(host)}
+                        items={(['comments', 'history', 'notifications', 'development'] as CasePanel[]).map(v => ({
+                            label: casePanelLabel(v), selected: panel === v, onPress: () => tab(v),
+                        }))}
+                    />
+                </View>
                 {detail && panel !== 'development' && <CaseDetail
                     item={panel === 'events' && eventView ? { ...detail, ...eventView } : detail}
                     panel={panel}
@@ -344,3 +356,4 @@ function CasesWorkspace({ settings, initialCaseId, onOpenIntelligence, onOpenHea
     </Screen>
 }
 function message(cause: unknown) { return cause instanceof CaseError ? cause.message : 'Cases could not be loaded. Refresh to try again.' }
+function casePanelLabel(panel: CasePanel) { return panel.charAt(0).toUpperCase() + panel.slice(1) }
