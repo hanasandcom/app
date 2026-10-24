@@ -49,7 +49,7 @@ function VmWorkspaceScreen({ settings, onOpenCheckout, services: injected }: Vir
                     <VmField label='Minimum CPU cores' value={filter.cpu} onChange={cpu => input(() => { setFilter(v => ({ ...v, cpu })); setLimit(30) })} max={5} />
                     <VmField label='Minimum memory (GiB)' value={filter.memory} onChange={memory => input(() => { setFilter(v => ({ ...v, memory })); setLimit(30) })} max={8} />
                 </View>}
-                {!rows ? <VmText>Inventory unavailable.</VmText> : <>
+                {!rows ? <VmText>{w.ops.reading ? 'Loading VM inventory…' : 'Inventory unavailable.'}</VmText> : <>
                     <VmText>{filtered.length} matching / {rows.length} loaded VMs{w.snapshot.reads.inventory ? '' : ' · partial inventory; actions remain locked until a complete refresh'}.</VmText>
                     {!filtered.length && <VmText>No loaded VMs match these filters.</VmText>}
                     <View style={{ gap: 16 }}>
