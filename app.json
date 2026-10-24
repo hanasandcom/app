@@ -21,6 +21,7 @@
         "keychain-access-groups": ["$(AppIdentifierPrefix)$(CFBundleIdentifier)"]
       },
       "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": false,
           "NSAllowsLocalNetworking": false
