@@ -41,6 +41,7 @@ import { classifyRefreshFailure, sameSettingsSession, SessionTransition } from '
 import { caseId as monitoringCaseId } from './features/cases/model'
 
 const Tab = createBottomTabNavigator<RootTabParamList>()
+const primaryTabRoutes: Array<keyof RootTabParamList> = ['Home', 'Intelligence', 'Mail', 'Images', 'VirtualMachines']
 function AppRoot({ children, backgroundColor }: { children: ReactNode; backgroundColor: string }) {
     return <GestureHandlerRootView style={{ flex: 1, backgroundColor }}><SafeAreaProvider>{children}</SafeAreaProvider></GestureHandlerRootView>
 }
@@ -521,7 +522,7 @@ export default function App() {
                                 tabBarItemStyle: {
                                     borderRadius: 18,
                                     marginHorizontal: 2,
-                                    ...(!['Home', 'Mail', 'Intelligence', 'Images', 'VirtualMachines'].includes(route.name) ? { display: 'none' as const } : {}),
+                                    ...(!primaryTabRoutes.includes(route.name) ? { display: 'none' as const } : {}),
                                 },
                                 tabBarIcon: ({ color, focused }) => {
                                     const Icon = tabIcons[route.name as keyof typeof tabIcons] || Compass
@@ -530,18 +531,18 @@ export default function App() {
                                 sceneStyle: { backgroundColor: activePalette.background },
                             })}
                         >
+                            <Tab.Screen name='Home'>
+                                {() => <HomeScreen settings={settings} aiMessages={aiMessages} onSaveAiMessages={handleSaveAiMessages} />}
+                            </Tab.Screen>
                             <Tab.Screen name='Intelligence'>
                                 {() => <ThreatSearchScreen settings={settings} />}
                             </Tab.Screen>
-                            <Tab.Screen name='Images'>{() => <ImagesScreen settings={settings} />}</Tab.Screen>
                             <Tab.Screen name='Mail'>
                                 {() => <MailScreen settings={settings} />}
                             </Tab.Screen>
+                            <Tab.Screen name='Images'>{() => <ImagesScreen settings={settings} />}</Tab.Screen>
                             <Tab.Screen name='VirtualMachines'>
                                 {() => <VirtualMachinesScreen settings={settings} onOpenCheckout={openVmCheckout} />}
-                            </Tab.Screen>
-                            <Tab.Screen name='Home'>
-                                {() => <HomeScreen settings={settings} aiMessages={aiMessages} onSaveAiMessages={handleSaveAiMessages} />}
                             </Tab.Screen>
                             <Tab.Screen name='Profile'>
                                 {({ route }) => <ProfileScreen settings={settings} initialSection={route.params?.section} onLogout={clearSession} onDeleted={clearSession} />}

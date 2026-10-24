@@ -273,8 +273,8 @@ test('native target current-listener model replaces action/editor hosts at opera
 test('actual UI wiring pins host boundaries, private result guards, explicit effect calls and separate terminal/boot sinks', async () => {
     const [screen, detail, create, hook, reads] = await Promise.all(['../../screens/VirtualMachinesScreen.tsx', './DetailPanel.tsx', './CreatePanel.tsx', './useWorkspace.ts', './read.ts'].map(path => Bun.file(new URL(path, import.meta.url)).text()))
     expect(screen).toContain('key={`workspace-controls:${g}`}'); expect(screen).toContain('w.refresh(g, true)')
-    expect(screen).toContain('<View style={{ gap: 16 }}>')
-    expect(screen).toContain('<GlassCard key={vm.name}>')
+    expect(screen).toContain('style={{ marginBottom: 16 }}')
+    expect(screen).toContain('<GlassCard key={vm.name}')
     expect(detail).toContain('key={`detail-controls:${g}:${target}`}'); expect(detail).toContain('memory={editorMemory}')
     expect(create).toContain('key={`create:${g}`}'); expect(create).toContain('setDraft(clearVmSuggestion)'); expect(create).toContain('setPackages(\'\'); setSummary(\'\'); setSuggestedKey(\'\')')
     expect(detail).toContain('TerminalSurface key={w.channel.id}'); expect(detail).toContain('w.channel?.close(); w.dismissPrivate()')
