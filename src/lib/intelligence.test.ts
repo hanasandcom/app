@@ -40,6 +40,7 @@ describe('native intelligence routes and contracts', () => {
     it('uses timeliness scope, queue and exact returned cursor without conflating global and organization', async () => {
         payload = snapshot()
         const data = await intel.loadDeliveryHealth(settings, { scope: 'tenant', tenantId: 'org-123', status: 'unresolved_reference', query: 'Synthetic actor' }, '0', signal())
+        expect(calls[0].url.origin).toBe('https://hanasand.com')
         expect(calls[0].url.pathname).toBe('/api/ti/timeliness')
         expect([...calls[0].url.searchParams]).toEqual([['scope', 'tenant'], ['tenantId', 'org-123'], ['limit', '50'], ['q', 'Synthetic actor'], ['status', 'unresolved_reference'], ['cursor', '0']])
         expect(data.nextCursor).toBe('50')
@@ -70,6 +71,7 @@ describe('native intelligence routes and contracts', () => {
         expect(result.created).toBe(true)
         expect(calls).toHaveLength(1)
         expect(calls[0].init.method).toBe('POST')
+        expect(calls[0].url.origin).toBe('https://hanasand.com')
         expect(calls[0].url.pathname).toBe('/api/ti/timeliness')
         expect(calls[0].url.searchParams.get('tenantId')).toBe('org-123')
         expect(JSON.parse(calls[0].init.body as string)).toEqual({ recordId: 'record-1', ...evidence })

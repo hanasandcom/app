@@ -11,13 +11,15 @@ export function intelligenceAccountKey(settings: AppSettings) { return JSON.stri
 export function intelligenceSourceUrl(value: unknown) {
     try { const url = new URL(text(value)); return ['https:', 'http:'].includes(url.protocol) && !url.username && !url.password ? url.toString() : null } catch { return null }
 }
-function endpoint(settings: AppSettings, path: string) {
+function endpoint(settings: AppSettings, path: string, origin: 'api' | 'site' = 'api') {
     if (!settings.userId || !settings.authToken) throw new Error('Sign in to view intelligence.')
     // The existing TI session proxy reads impersonation from cookies only. Native uses headers.
     if (settings.impersonationToken) throw new Error('Return to your own account to view intelligence.')
     const website = new URL(settings.siteBaseUrl)
     const api = new URL(settings.apiBaseUrl)
-    const base = process.env.EXPO_PUBLIC_TI_SITE_URL || (website.hostname === 'hanasand.com' ? api.origin : website.origin)
+    const base = origin === 'site'
+        ? website.origin
+        : process.env.EXPO_PUBLIC_TI_SITE_URL || (website.hostname === 'hanasand.com' ? api.origin : website.origin)
     const url = new URL(path, base)
     if (url.protocol !== 'https:' || url.username || url.password) throw new Error('Intelligence requires a secure website address.')
     return url
@@ -60,7 +62,9 @@ export type DeliveryStatus = typeof deliveryStatuses[number]['value']
 export type DeliveryFilter = { scope: 'global' | 'tenant'; tenantId: string; status: DeliveryStatus; query: string }
 export const deliveryStages = ['observed', 'first_report', 'publication', 'collection', 'processing', 'first_visible', 'reviewed', 'alert_created', 'delivery_attempt', 'delivered'] as const
 function deliveryUrl(settings: AppSettings, filter: DeliveryFilter) {
-    const url = endpoint(settings, '/api/ti/timeliness')
+    // Timeliness workbench is a website proxy route. Calling it on api.hanasand.com
+    // resolves to a retired path and returns 404; apiFetch forwards native auth and proof.
+    const url = endpoint(settings, '/api/ti/timeliness', 'site')
     if (filter.scope !== 'global' && filter.scope !== 'tenant') throw new Error('Choose a global or tenant scope.')
     url.searchParams.set('scope', filter.scope)
     if (filter.scope === 'tenant') {
