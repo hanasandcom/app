@@ -11,14 +11,14 @@ const result = (extra: Record<string, unknown> = {}) => ({ query: 'Example actor
 beforeEach(() => { calls.length = 0; response = () => Response.json(result()) })
 
 describe('native threat search contract', () => {
-    it('uses the same cached website search route and preserves source attribution', async () => {
+    it('uses the authenticated website search route and preserves source attribution', async () => {
         const data = await api.searchThreatIntel(settings, ' Example actor ', signal())
         const url = new URL(calls[0].url)
         expect(url.hostname).toBe('hanasand.com')
         expect(url.pathname).toBe('/api/ti/search')
-        expect(url.searchParams.get('q')).toBe('Example actor')
-        expect(url.searchParams.get('cached')).toBe('true')
-        expect(calls[0].init.method).toBeUndefined()
+        expect(url.search).toBe('')
+        expect(calls[0].init.method).toBe('POST')
+        expect(JSON.parse(String(calls[0].init.body))).toEqual({ query: 'Example actor' })
         expect(data.activity[0].sourceIds).toEqual(['s1'])
         expect(data.activity[0].url).toBeNull()
         expect(data.sources[0].url).toBe('https://example.test/report')

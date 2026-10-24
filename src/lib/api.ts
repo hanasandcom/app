@@ -12,6 +12,7 @@ const defaultMailApiBaseUrl = process.env.EXPO_PUBLIC_MAIL_API_BASE_URL || 'http
 const desktopAgentCoverTrafficIntervalMs = 1_000
 const desktopAgentPresenceCacheMs = 15_000
 const desktopAgentDiscoveryTimeoutMs = 12_000
+const automationReadTimeoutMs = 30_000
 const desktopAgentStatusRetryDelayMs = 300
 const desktopAgentMaximumQueuedRequests = 32
 const desktopAgentMaximumInFlightRequests = 4
@@ -1513,7 +1514,17 @@ export async function fetchAutomations(settings: AppSettings, scope?: 'personal'
 
 export async function fetchAutomationOverview(settings: AppSettings, scope?: 'personal') {
     requireAppAuth(settings, 'load automations')
-    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, `automations${scope ? '?scope=personal' : ''}`), { headers: headers(settings) })
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), automationReadTimeoutMs)
+    let response: Response
+    try {
+        response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, `automations${scope ? '?scope=personal' : ''}`), { headers: headers(settings), signal: controller.signal })
+    } catch (error) {
+        if (controller.signal.aborted) throw new Error('Loading automations timed out. Check your connection and try again.', { cause: error })
+        throw error
+    } finally {
+        clearTimeout(timeout)
+    }
     const body = asRecord(await readJsonObject(response, {}))
     if (!response.ok) throw new Error(String(body.error || 'Unable to load automations.'))
     if (!Array.isArray(body.automations)) throw new Error('The automation service returned an invalid response.')
@@ -1522,10 +1533,20 @@ export async function fetchAutomationOverview(settings: AppSettings, scope?: 'pe
 
 export async function fetchAutomationDetails(settings: AppSettings, id: string) {
     requireAppAuth(settings, 'load automation runs')
-
-    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, `automations/${segment(id)}`), {
-        headers: headers(settings),
-    })
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), automationReadTimeoutMs)
+    let response: Response
+    try {
+        response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, `automations/${segment(id)}`), {
+            headers: headers(settings),
+            signal: controller.signal,
+        })
+    } catch (error) {
+        if (controller.signal.aborted) throw new Error('Loading automation details timed out. Check your connection and try again.', { cause: error })
+        throw error
+    } finally {
+        clearTimeout(timeout)
+    }
     const body = await readJsonObject(response, {})
     if (!response.ok) {
         throw new Error(String(asRecord(body).error || 'Unable to load automation.'))

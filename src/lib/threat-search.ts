@@ -68,9 +68,10 @@ async function request(settings: AppSettings, url: URL, signal: AbortSignal, ini
 export async function searchThreatIntel(settings: AppSettings, query: string, signal: AbortSignal) {
     const clean = normalizeThreatQuery(query)
     const url = siteApiUrl(settings, 'ti/search')
-    url.searchParams.set('q', clean)
-    url.searchParams.set('cached', 'true')
-    return normalizeThreatResult(await request(settings, url, signal), clean)
+    return normalizeThreatResult(await request(settings, url, signal, {
+        method: 'POST',
+        body: JSON.stringify({ query: clean }),
+    }), clean)
 }
 export type SavedThreatSearch = { query: string; savedAt: string }
 function savedSearchUrl(settings: AppSettings) {

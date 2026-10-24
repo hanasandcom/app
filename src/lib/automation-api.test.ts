@@ -23,6 +23,8 @@ test('health list retains permissions, personal scope is explicit and requests k
     expect(headers.get('dpop')).toBe('synthetic-proof')
     expect(headers.get('x-organization-id')).toBe('synthetic-org')
     expect(calls[0].init.credentials).toBe('omit')
+    expect(calls[0].init.signal).toBeInstanceOf(AbortSignal)
+    expect(calls[0].init.signal?.aborted).toBe(false)
 })
 test('create/update use exact existing contracts and preserve monitoring options in PUT', async () => {
     const draft = toAutomationDraft(normalizeAutomation(item)!)
