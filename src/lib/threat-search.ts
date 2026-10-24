@@ -18,11 +18,11 @@ export function savedSearchMutationOutcome(state: { visible: boolean; generation
 export function safeEvidenceUrl(value: unknown) {
     try { const url = new URL(text(value)); return url.protocol === 'https:' && !url.username && !url.password ? url.toString() : null } catch { return null }
 }
-function tiApiUrl(settings: AppSettings, path: string) {
+function siteApiUrl(settings: AppSettings, path: string) {
     let base: URL
-    try { base = new URL(settings.apiBaseUrl) } catch { throw new Error('Threat search requires a valid API address.') }
-    if (base.protocol !== 'https:' || base.username || base.password || base.search || base.hash) throw new Error('Threat search requires an HTTPS API address.')
-    return new URL(path.replace(/^\/+/, ''), `${base.href.replace(/\/+$/, '')}/`)
+    try { base = new URL(settings.siteBaseUrl) } catch { throw new Error('Threat search requires a valid website address.') }
+    if (base.protocol !== 'https:' || base.username || base.password || base.search || base.hash) throw new Error('Threat search requires an HTTPS website address.')
+    return new URL(`api/${path.replace(/^\/+/, '')}`, `${base.href.replace(/\/+$/, '')}/`)
 }
 /** A fresh budget belongs to one explicit user search or refresh. */
 export class ThreatRefreshBudget {
@@ -67,14 +67,16 @@ async function request(settings: AppSettings, url: URL, signal: AbortSignal, ini
 }
 export async function searchThreatIntel(settings: AppSettings, query: string, signal: AbortSignal) {
     const clean = normalizeThreatQuery(query)
-    const url = tiApiUrl(settings, 'v1/ti/search')
-    return normalizeThreatResult(await request(settings, url, signal, { method: 'POST', body: JSON.stringify({ query: clean }) }), clean)
+    const url = siteApiUrl(settings, 'ti/search')
+    url.searchParams.set('q', clean)
+    url.searchParams.set('cached', 'true')
+    return normalizeThreatResult(await request(settings, url, signal), clean)
 }
 export type SavedThreatSearch = { query: string; savedAt: string }
 function savedSearchUrl(settings: AppSettings) {
     if (!settings.authToken || !settings.userId) throw new Error('Sign in to manage saved searches.')
     if (settings.impersonationToken || settings.impersonatingUserId) throw new Error('Return to your own account to manage saved searches.')
-    return tiApiUrl(settings, 'ti/saved-searches')
+    return siteApiUrl(settings, 'backend/ti/saved-searches')
 }
 export async function loadSavedThreatSearches(settings: AppSettings, signal: AbortSignal): Promise<SavedThreatSearch[]> {
     const payload = object(await request(settings, savedSearchUrl(settings), signal))

@@ -11,13 +11,14 @@ const result = (extra: Record<string, unknown> = {}) => ({ query: 'Example actor
 beforeEach(() => { calls.length = 0; response = () => Response.json(result()) })
 
 describe('native threat search contract', () => {
-    it('uses the documented authenticated API search route and preserves source attribution', async () => {
+    it('uses the same cached website search route and preserves source attribution', async () => {
         const data = await api.searchThreatIntel(settings, ' Example actor ', signal())
         const url = new URL(calls[0].url)
-        expect(url.hostname).toBe('api.hanasand.com')
-        expect(url.pathname).toBe('/api/v1/ti/search')
-        expect(calls[0].init.method).toBe('POST')
-        expect(JSON.parse(String(calls[0].init.body))).toEqual({ query: 'Example actor' })
+        expect(url.hostname).toBe('hanasand.com')
+        expect(url.pathname).toBe('/api/ti/search')
+        expect(url.searchParams.get('q')).toBe('Example actor')
+        expect(url.searchParams.get('cached')).toBe('true')
+        expect(calls[0].init.method).toBeUndefined()
         expect(data.activity[0].sourceIds).toEqual(['s1'])
         expect(data.activity[0].url).toBeNull()
         expect(data.sources[0].url).toBe('https://example.test/report')
@@ -42,7 +43,7 @@ describe('native threat search contract', () => {
     it('uses maintained TI account-saved search CRUD and keeps it isolated from impersonation', async () => {
         response = () => Response.json({ savedSearches: [{ query: 'Example actor', saved_at: '2026-10-22' }] })
         expect(await api.loadSavedThreatSearches(settings, signal())).toEqual([{ query: 'Example actor', savedAt: '2026-10-22' }])
-        expect(calls[0].url).toBe('https://api.hanasand.com/api/ti/saved-searches')
+        expect(calls[0].url).toBe('https://hanasand.com/api/backend/ti/saved-searches')
         await api.changeSavedThreatSearch(settings, 'Example actor', true, signal())
         expect(calls[1].init.method).toBe('POST')
         expect(JSON.parse(String(calls[1].init.body))).toEqual({ query: 'Example actor' })
@@ -69,7 +70,7 @@ describe('native threat search contract', () => {
         expect(budget.take('Different actor')).toBe(true)
     })
     it('rejects insecure URLs and reports service errors without raw response rendering', async () => {
-        await expect(api.searchThreatIntel({ ...settings, apiBaseUrl: 'http://example.test/api' }, 'Example actor', signal())).rejects.toThrow('HTTPS')
+        await expect(api.searchThreatIntel({ ...settings, siteBaseUrl: 'http://example.test' }, 'Example actor', signal())).rejects.toThrow('HTTPS')
         response = () => Response.json({ error: { message: 'Access denied' } }, { status: 403 })
         await expect(api.searchThreatIntel(settings, 'Example actor', signal())).rejects.toThrow('Access denied')
         response = () => Response.json({ message: 'Route not found' }, { status: 404 })
