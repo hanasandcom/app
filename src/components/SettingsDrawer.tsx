@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, useWindowDimensions, type KeyboardTypeOptions } from 'react-native'
+import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, useWindowDimensions, type KeyboardTypeOptions } from 'react-native'
 import { ArrowLeft, CircleDot, Cog, Monitor, Palette, SlidersHorizontal } from 'lucide-react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { AppSettings } from '../types'
 import { getThemePalette, type ThemeMode, radius, spacing } from '../theme/tokens'
 
@@ -31,6 +32,7 @@ export function SettingsDrawer({
     onSave: (next: AppSettings) => Promise<void> | void
 }) {
     const { width } = useWindowDimensions()
+    const insets = useSafeAreaInsets()
     const [section, setSection] = useState<SettingsSection>('general')
     const [draft, setDraft] = useState(settings)
     const [saving, setSaving] = useState(false)
@@ -62,9 +64,12 @@ export function SettingsDrawer({
 
     return (
         <Modal visible={open} animationType='fade' transparent onRequestClose={onClose}>
-            <View style={styles.overlay}>
+            <View style={[styles.overlay, compactDrawer && {
+                paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 62 : 24) + spacing.sm,
+                paddingBottom: insets.bottom + spacing.sm,
+            }]}>
                 <Pressable style={styles.backdrop} onPress={onClose} />
-                <View style={[styles.drawer, compactDrawer && styles.drawerCompact, { width: drawerWidth, backgroundColor: theme.backgroundAlt, borderColor: theme.surfaceBorder }]}>
+                <View style={[styles.drawer, compactDrawer && styles.drawerCompact, { width: drawerWidth, backgroundColor: theme.backgroundAlt, borderColor: theme.surfaceBorder }, compactDrawer && { marginVertical: 0 }]}>
                     <View style={[
                         styles.sidebar,
                         compactDrawer && styles.sidebarCompact,
@@ -349,7 +354,6 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
     },
     drawerCompact: {
-        marginVertical: 12,
         flexDirection: 'column',
     },
     sidebar: {

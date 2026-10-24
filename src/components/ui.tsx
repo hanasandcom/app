@@ -1,7 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient'
-import { createContext, type ReactNode, type Ref, useContext, useMemo } from 'react'
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View, type KeyboardTypeOptions } from 'react-native'
-import { AlertCircle, CheckCircle2, ChevronDown, Info, Menu, Settings2 } from 'lucide-react-native'
+import { createContext, type ReactNode, type Ref, useContext, useMemo, useState } from 'react'
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type KeyboardTypeOptions } from 'react-native'
+import { AlertCircle, CheckCircle2, ChevronDown, Info, Menu, Settings2, X } from 'lucide-react-native'
 import Svg, { Circle, Line, Path } from 'react-native-svg'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { radius, spacing, type ThemePalette } from '../theme/tokens'
@@ -170,6 +170,56 @@ export function PillButton({
             <Text style={[styles.buttonLabel, tone === 'accent' && { color: theme.accent }, tone === 'danger' && { color: theme.danger }]}>{label}</Text>
         </Pressable>
     )
+}
+
+export type DropdownMenuItem = {
+    label: string
+    onPress: () => void
+    disabled?: boolean
+    destructive?: boolean
+    selected?: boolean
+}
+
+export function DropdownMenu({
+    label,
+    title = 'More options',
+    items,
+    disabled = false,
+}: {
+    label: string
+    title?: string
+    items: DropdownMenuItem[]
+    disabled?: boolean
+}) {
+    const theme = useAppTheme()
+    const [visible, setVisible] = useState(false)
+    const styles = useMemo(() => createStyles(theme), [theme])
+    return <>
+        <Pressable accessibilityRole='button' accessibilityLabel={`${title}: ${label}`} accessibilityState={{ disabled }} disabled={disabled}
+            onPress={() => setVisible(true)} style={({ pressed }) => [styles.menuTrigger, disabled && styles.buttonDisabled, pressed && !disabled && { opacity: 0.8 }]}>
+            <Text numberOfLines={1} style={styles.menuTriggerText}>{label}</Text><ChevronDown size={16} color={theme.textMuted} />
+        </Pressable>
+        <Modal visible={visible} transparent animationType='fade' onRequestClose={() => setVisible(false)}>
+            <View style={styles.menuBackdrop}>
+                <Pressable accessibilityRole='button' accessibilityLabel='Close menu' style={StyleSheet.absoluteFill} onPress={() => setVisible(false)} />
+                <View accessibilityRole='menu' style={styles.menuPanel}>
+                    <View style={styles.menuHeader}>
+                        <Text style={styles.menuTitle}>{title}</Text>
+                        <Pressable accessibilityRole='button' accessibilityLabel='Close menu' onPress={() => setVisible(false)} style={styles.menuClose}>
+                            <X size={18} color={theme.textMuted} />
+                        </Pressable>
+                    </View>
+                    <ScrollView keyboardShouldPersistTaps='handled' contentContainerStyle={styles.menuItems}>
+                        {items.map((item, index) => <Pressable key={`${item.label}-${index}`} accessibilityRole='menuitem' accessibilityState={{ disabled: !!item.disabled, selected: !!item.selected }} disabled={item.disabled}
+                            onPress={() => { setVisible(false); item.onPress() }} style={({ pressed }) => [styles.menuItem, item.disabled && styles.buttonDisabled, pressed && !item.disabled && { opacity: 0.75 }]}>
+                            <Text style={[styles.menuItemText, item.destructive && { color: theme.danger }, item.selected && { color: theme.accent }]}>{item.label}</Text>
+                            {item.selected && <Text style={{ color: theme.accent, fontSize: 13, fontWeight: '700' }}>Selected</Text>}
+                        </Pressable>)}
+                    </ScrollView>
+                </View>
+            </View>
+        </Modal>
+    </>
 }
 
 export function StatChip({ label, value }: { label: string; value: string }) {
@@ -512,6 +562,16 @@ function createStyles(theme: ThemePalette) {
         buttonDanger: { backgroundColor: theme.surfaceStrong, borderColor: theme.surfaceBorder },
         buttonDisabled: { opacity: 0.55 },
         buttonLabel: { color: theme.text, fontWeight: '600', fontSize: 14 },
+        menuTrigger: { minHeight: 44, borderRadius: radius.md, borderWidth: 1, borderColor: theme.surfaceBorder, backgroundColor: theme.surfaceStrong, paddingHorizontal: spacing.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+        menuTriggerText: { flexShrink: 1, color: theme.text, fontSize: 14, fontWeight: '600' },
+        menuBackdrop: { flex: 1, justifyContent: 'center', padding: spacing.lg, backgroundColor: 'rgba(0,0,0,0.56)' },
+        menuPanel: { maxHeight: '78%', borderRadius: radius.lg, borderWidth: 1, borderColor: theme.surfaceBorder, backgroundColor: theme.backgroundRaised, overflow: 'hidden' },
+        menuHeader: { minHeight: 56, paddingHorizontal: spacing.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: theme.surfaceBorderSoft },
+        menuTitle: { color: theme.text, fontSize: 17, fontWeight: '700' },
+        menuClose: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: radius.md, backgroundColor: theme.surface },
+        menuItems: { padding: spacing.sm, gap: spacing.xs },
+        menuItem: { minHeight: 48, paddingHorizontal: spacing.md, borderRadius: radius.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm, backgroundColor: theme.surfaceStrong },
+        menuItemText: { flex: 1, color: theme.text, fontSize: 15, fontWeight: '600' },
         statChip: { flex: 1, minWidth: 92, borderRadius: radius.md, borderWidth: 1, borderColor: theme.surfaceBorder, backgroundColor: theme.surfaceStrong, padding: spacing.md, gap: 6 },
         statLabel: { color: theme.textSoft, fontSize: 12 },
         statValue: { color: theme.text, fontSize: 18, fontWeight: '700' },

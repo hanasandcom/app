@@ -2,11 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Animated, Dimensions, FlatList, Image, Linking, Modal, PanResponder, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
 import { File as LocalFile } from 'expo-file-system'
 import * as MediaLibrary from 'expo-media-library'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { ImageReviewAsset, SwipeDecision } from '../types'
 import type { AppSettings } from '../types'
 import { favoriteGalleryFile, loadGalleryAlbums, loadGalleryPage, uploadGalleryPhoto, workspaceAccountKey, type GalleryAlbum, type GalleryFile, type GalleryFilter } from '../lib/workspace-data'
 import { GalleryAlbumImage, GalleryAlbumsScreen } from './GalleryAlbumsScreen'
-import { GlassCard, InlineNotice, PillButton, Screen, SectionTitle } from '../components/ui'
+import { DropdownMenu, GlassCard, InlineNotice, PillButton, Screen, SectionTitle } from '../components/ui'
 import { spacing } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
 
@@ -19,6 +20,7 @@ export function ImagesScreen({ settings }: { settings: AppSettings }) {
 
 function CloudLibrary({ settings }: { settings: AppSettings }) {
     const theme = useAppTheme()
+    const insets = useSafeAreaInsets()
     const [device, setDevice] = useState(false)
     const [uploadOpen, setUploadOpen] = useState(false)
     const [albumsOpen, setAlbumsOpen] = useState(false)
@@ -94,15 +96,19 @@ function CloudLibrary({ settings }: { settings: AppSettings }) {
                 <GlassCard>
                     <View style={{ gap: spacing.sm }}>
                         <TextInput accessibilityLabel='Search images' autoCorrect={false} autoCapitalize='none' placeholder='Search images or places' placeholderTextColor={theme.textSoft} value={filter.search} onChangeText={search => changeFilter({ ...filter, search })} style={{ color: theme.text, padding: 12, borderRadius: 12, backgroundColor: theme.ambientNeutral }} />
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }}>
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
                             <PillButton label='Upload photos' tone='accent' small onPress={() => setUploadOpen(true)} />
-                            <PillButton label='Manage albums' small onPress={() => setAlbumsOpen(true)} />
-                            <PillButton label='Library' tone={!filter.favorites && !filter.albumId ? 'accent' : 'default'} small onPress={() => changeFilter({ ...filter, favorites: false, albumId: '' })} />
-                            <PillButton label='Favorites' tone={filter.favorites ? 'accent' : 'default'} small onPress={() => changeFilter({ ...filter, favorites: true, albumId: '' })} />
-                            <PillButton label={loading ? 'Loading…' : 'Refresh'} small disabled={loading} onPress={() => void load(false)} />
-                            <PillButton label='Review device photos' small onPress={() => setDevice(true)} />
-                        </ScrollView>
-                        {!!albums.length && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm }}>{albums.map(album => <PillButton key={album.id} label={`${album.name} (${album.photo_count})`} small tone={filter.albumId === album.id ? 'accent' : 'default'} onPress={() => changeFilter({ ...filter, albumId: album.id, favorites: false })} />)}</ScrollView>}
+                            <DropdownMenu label='More' title='Image actions' disabled={loading} items={[
+                                { label: 'Manage albums', onPress: () => setAlbumsOpen(true) },
+                                { label: loading ? 'Loading…' : 'Refresh library', disabled: loading, onPress: () => void load(false) },
+                                { label: 'Review device photos', onPress: () => setDevice(true) },
+                            ]} />
+                        </View>
+                        <DropdownMenu label={filter.albumId ? `${albums.find(album => album.id === filter.albumId)?.name || 'Album'} (${albums.find(album => album.id === filter.albumId)?.photo_count ?? 0})` : filter.favorites ? 'Favorites' : 'All images'} title='Choose image collection' items={[
+                            { label: 'All images', selected: !filter.favorites && !filter.albumId, onPress: () => changeFilter({ ...filter, favorites: false, albumId: '' }) },
+                            { label: 'Favorites', selected: filter.favorites, onPress: () => changeFilter({ ...filter, favorites: true, albumId: '' }) },
+                            ...albums.map(album => ({ label: `${album.name} (${album.photo_count})`, selected: filter.albumId === album.id, onPress: () => changeFilter({ ...filter, albumId: album.id, favorites: false }) })),
+                        ]} />
                         {!!albumError && <><InlineNotice message={`Albums: ${albumError}`} /><PillButton label='Retry albums' small onPress={() => void loadAlbums()} /></>}
                         <Text style={{ color: theme.textMuted, fontSize: 12 }}>{files.length} images{hasMore ? ' loaded' : ''}</Text>
                     </View>
@@ -122,7 +128,7 @@ function CloudLibrary({ settings }: { settings: AppSettings }) {
             void loadAlbums()
         }} />}
         <Modal visible={!!preview} animationType='fade' onRequestClose={() => setPreview(null)}>
-            <View style={{ flex: 1, backgroundColor: theme.backgroundRaised, padding: 24, paddingTop: 64, gap: 16 }}>
+            <View style={{ flex: 1, backgroundColor: theme.backgroundRaised, paddingHorizontal: 24, paddingTop: insets.top + 16, paddingBottom: insets.bottom + 16, gap: 16 }}>
                 <PillButton label='Close image' onPress={() => setPreview(null)} />
                 {preview && <><Text style={{ color: theme.text }}>{preview.name}</Text><GalleryAlbumImage settings={settings} fileId={preview.id} thumbnail={false} resizeMode='contain' style={{ flex: 1 }} /></>}
             </View>
@@ -132,6 +138,7 @@ function CloudLibrary({ settings }: { settings: AppSettings }) {
 
 function PhotoUploadPicker({ settings, onClose, onUploaded }: { settings: AppSettings, onClose: () => void, onUploaded: () => void }) {
     const theme = useAppTheme()
+    const insets = useSafeAreaInsets()
     const [permission, requestPermission] = MediaLibrary.usePermissions()
     const [photos, setPhotos] = useState<MediaLibrary.Asset[]>([])
     const [selected, setSelected] = useState(new Set<string>())
@@ -213,7 +220,7 @@ function PhotoUploadPicker({ settings, onClose, onUploaded }: { settings: AppSet
     }
     const buttonStyle = { color: theme.text, fontSize: 12 } as const
     return <Modal visible animationType='slide' onRequestClose={() => { if (!uploading.current) onClose() }}>
-        <View style={{ flex: 1, backgroundColor: theme.backgroundRaised, padding: 20, paddingTop: 64, gap: spacing.md }}>
+        <View style={{ flex: 1, backgroundColor: theme.backgroundRaised, paddingHorizontal: 20, paddingTop: insets.top + spacing.md, paddingBottom: insets.bottom + spacing.md, gap: spacing.md }}>
             <Text style={{ color: theme.text, fontSize: 24, fontWeight: '700' }}>Upload photos</Text>
             <Text style={{ color: theme.textMuted }}>Select the photos to add to your Hanasand library.</Text>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>

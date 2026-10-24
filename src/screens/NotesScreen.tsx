@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { FileText, X } from 'lucide-react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { AppSettings, Note } from '../types'
 import { createNote, deleteNote, fetchNotes, updateNote } from '../lib/api'
 import { workspaceAccountKey } from '../lib/workspace-data'
@@ -92,6 +93,7 @@ export function NotesScreen({ settings }: { settings: AppSettings }) {
 
 function AccountNotes({ settings }: { settings: AppSettings }) {
     const theme = useAppTheme()
+    const insets = useSafeAreaInsets()
     const styles = useMemo(() => createStyles(theme), [theme])
     const [notes, setNotes] = useState<LocalNote[]>([])
     const [selectedId, setSelectedId] = useState('')
@@ -297,7 +299,7 @@ function AccountNotes({ settings }: { settings: AppSettings }) {
                     {selected && <PillButton label='Delete' tone='danger' small disabled={syncing} onPress={removeSelected} />}
                 </View>
                 <TextInput accessibilityLabel='Search notes' value={search} onChangeText={setSearch} placeholder='Search notes' placeholderTextColor={theme.textSoft} style={{ color: theme.text, padding: 10, borderRadius: 12, backgroundColor: theme.ambientNeutral }} />
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>{visibleNotes.map(note => <PillButton key={note.id} label={noteTitle(note)} tone={note.id === selectedId ? 'accent' : 'default'} small onPress={() => openNote(note)} />)}</ScrollView>
+                <PillButton label={selected ? noteTitle(selected) : `${visibleNotes.length} notes · Choose a note`} small onPress={() => setMenuOpen(true)} disabled={!visibleNotes.length} />
                 <Text style={{ color: theme.textMuted, fontSize: 12 }}>{syncStatus}</Text>
                 {!!selected?.deletedOnWebsite && <View style={{ gap: 8 }}><Text style={{ color: theme.textMuted }}>This note was deleted on the website. Your edits remain on this device.</Text><PillButton label='Keep as new note' small onPress={() => { const copy = { ...selected, id: createLocalNote().id, deletedOnWebsite: false, baseUpdatedAt: undefined }; replaceNotes([copy, ...notesRef.current.filter(note => note.id !== selected.id)]); choose(copy.id) }} /></View>}
                 {!!selected?.remoteVersion && <View style={{ gap: 8 }}><Text style={{ color: theme.textMuted }}>This note changed on the website. Keep your edits as a new note or use the website version.</Text><View style={{ flexDirection: 'row', gap: 8 }}><PillButton label='Keep both' small onPress={() => resolveConflict(false)} /><PillButton label='Use website' small onPress={() => resolveConflict(true)} /></View></View>}
@@ -326,7 +328,7 @@ function AccountNotes({ settings }: { settings: AppSettings }) {
             </View>
 
             <Modal visible={menuOpen} transparent animationType='fade' onRequestClose={() => setMenuOpen(false)}>
-                <View style={styles.modalBackdrop}>
+                <View style={[styles.modalBackdrop, { paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing.lg }]}>
                     <Pressable style={StyleSheet.absoluteFill} onPress={() => setMenuOpen(false)} />
                     <View style={styles.noteDrawer}>
                         <View style={styles.drawerHeader}>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { AppState, ScrollView, Text, View } from 'react-native'
+import { AppState, Text, View } from 'react-native'
 import { useFocusEffect } from '@react-navigation/native'
 import type { AppSettings } from '../types'
 import { GlassCard, InlineNotice, LabeledInput, PillButton, Screen } from '../components/ui'
@@ -107,13 +107,11 @@ function Directory({ settings, onSelectOrganization }: {
                 </Text>
                 {impersonating && <InlineNotice tone='info' message='Workspace switching is disabled while impersonating. Return to your own account first.' />}
                 <LabeledInput label='Search organizations' value={query} onChangeText={(value) => { setQuery(value); setShown(50) }} />
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }} style={{ flex: 1 }}>
-                        {directorySorts.map((item) => (
-                            <PillButton key={item.key} small label={item.label} tone={sort === item.key ? 'accent' : 'default'}
-                                onPress={() => { setSort(item.key); setShown(50) }} />
-                        ))}
-                    </ScrollView>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+                    {directorySorts.map((item) => (
+                        <PillButton key={item.key} small label={item.label} tone={sort === item.key ? 'accent' : 'default'}
+                            onPress={() => { setSort(item.key); setShown(50) }} />
+                    ))}
                     <PillButton small label={direction === 'asc' ? '↑ Asc' : '↓ Desc'}
                         onPress={() => { setDirection(direction === 'asc' ? 'desc' : 'asc'); setShown(50) }} />
                 </View>

@@ -109,6 +109,15 @@ export function OrganizationsScreen({ settings, selectedOrganizationId, onSelect
         <InlineNotice message={error} /><InlineNotice message={notice} tone='success' />
         {(!selected || tab === 'Overview') && <GlassCard style={styles.card}>
             <SectionTitle eyebrow='Workspaces' title='Your organizations' body='Select an organization to view its team and settings.' />
+            <PillButton label={creating ? 'Cancel creation' : 'Create organization'} tone='accent' disabled={busy} onPress={() => setCreating(value => !value)} />
+            {creating && <>
+                <LabeledInput label='Organization name' value={createName} onChangeText={setCreateName} />
+                <PillButton label='Create organization' tone='accent' disabled={busy || !createName.trim()} onPress={() => void act(async () => {
+                    const payload = await accountRequest<{ organization?: Organization }>(settings, 'organizations', { method: 'POST', body: JSON.stringify({ name: createName.trim() }) })
+                    if (!payload.organization?.id) throw new Error('Organization created, but no organization ID was returned. Refresh to view it.')
+                    setCreating(false); setCreateName(''); choose(payload.organization.id)
+                }, 'Organization created.')} />
+            </>}
             <PillButton label={selectedOrganizationId ? 'Use personal workspace' : 'Personal workspace'} disabled={busy} tone={!selectedOrganizationId ? 'accent' : 'default'} onPress={() => choose('')} />
             {loading && <Text style={styles.meta}>Loading organizations…</Text>}
             {!loading && !error && !organizations.length && <Text style={styles.meta}>You do not belong to an organization yet.</Text>}
@@ -117,15 +126,6 @@ export function OrganizationsScreen({ settings, selectedOrganizationId, onSelect
                 <Text style={styles.meta}>{[organization.role, organization.status, organization.memberCount === undefined ? '' : `${organization.memberCount} members`].filter(Boolean).join(' · ')}</Text>
                 <PillButton label={selectedId === organization.id ? 'Selected workspace' : 'Select workspace'} disabled={busy} tone={selectedId === organization.id ? 'accent' : 'default'} onPress={() => choose(organization.id)} />
             </View>)}
-            <PillButton label={creating ? 'Cancel creation' : 'Create organization'} disabled={busy} onPress={() => setCreating(value => !value)} />
-            {creating && <>
-                <LabeledInput label='Organization name' value={createName} onChangeText={setCreateName} />
-                <PillButton label='Create' tone='accent' disabled={busy || !createName.trim()} onPress={() => void act(async () => {
-                    const payload = await accountRequest<{ organization?: Organization }>(settings, 'organizations', { method: 'POST', body: JSON.stringify({ name: createName.trim() }) })
-                    if (!payload.organization?.id) throw new Error('Organization created, but no organization ID was returned. Refresh to view it.')
-                    setCreating(false); setCreateName(''); choose(payload.organization.id)
-                }, 'Organization created.')} />
-            </>}
         </GlassCard>}
         {selected && <>
             {detailsLoading && <Text style={styles.meta}>Loading organization…</Text>}
@@ -188,6 +188,14 @@ export function OrganizationsScreen({ settings, selectedOrganizationId, onSelect
                     <Text style={styles.meta}>Alert visibility: {draft.alertVisibilityPolicy || 'members'}</Text>
                     <Text style={styles.meta}>Lifecycle: {draft.lifecycleStatus || 'active'}</Text>
                     <PillButton label='Save settings' tone='accent' disabled={busy || detailsLoading || JSON.stringify(draft) === JSON.stringify(savedSettings)} onPress={() => void act(saveSettings, 'Organization settings updated.')} />
+                    <View style={styles.item}>
+                        <Text style={styles.text}>Organization lifecycle</Text>
+                        <Text style={styles.meta}>Archiving pauses organization activity. An owner or admin can reactivate it later. Permanent deletion is not available through the organization API.</Text>
+                        <PillButton label={(savedSettings.lifecycleStatus || selected.lifecycleStatus || '').toLowerCase() === 'archived' ? 'Reactivate organization' : 'Archive organization'} tone={(savedSettings.lifecycleStatus || selected.lifecycleStatus || '').toLowerCase() === 'archived' ? 'default' : 'danger'} disabled={busy || detailsLoading} onPress={() => {
+                            const archived = (savedSettings.lifecycleStatus || selected.lifecycleStatus || '').toLowerCase() === 'archived'
+                            confirm(archived ? 'Reactivate organization?' : 'Archive organization?', archived ? `Reactivate ${selected.name}? Organization services will resume.` : `Archive ${selected.name}? Organization activity will pause. You can reactivate it later.`, () => mutation('settings', 'PUT', { lifecycleStatus: archived ? 'active' : 'archived' }), archived ? 'Organization reactivated.' : 'Organization archived.')
+                        }} />
+                    </View>
                 </> : <>
                     <Text style={styles.meta}>Name: {savedSettings.name || selected.name}</Text><Text style={styles.meta}>Slug: {savedSettings.slug || 'None'}</Text>
                     <Text style={styles.meta}>Retention: {savedSettings.retentionDays ?? 365} days</Text>

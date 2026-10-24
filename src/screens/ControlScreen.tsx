@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Linking, ScrollView, Share, TextInput, View } from 'react-native'
+import { Alert, Linking, Share, TextInput, View } from 'react-native'
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import { generateSync } from 'otplib'
 import { assignDashboardUserRole, deleteShare as deleteShareRequest, fetchAiModels, fetchDashboardRoles, fetchDashboardUserRoles, fetchDashboardUsers, fetchServerText, fetchShareTree, fetchTopDomains, fetchUserShares, runDesktopAgentCommand, setDashboardUserActive, setShareLock, triggerServerAction, createShare as createShareRequest, unassignDashboardUserRole, updateShare as updateShareRequest } from '../lib/api'
 import type { AppSettings, AuthenticatorEntry, DashboardRole, DashboardUser, DashboardUserRoleAssignment, GptClient, ShareSummary, ShareTreeItem } from '../types'
-import { GlassCard, LabeledInput, NativeTile, PillButton, Screen, SectionTitle } from '../components/ui'
+import { DropdownMenu, GlassCard, LabeledInput, NativeTile, PillButton, Screen, SectionTitle } from '../components/ui'
 import { spacing, type ThemePalette } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
 import { routeShortcuts } from '../data/routes'
@@ -558,12 +558,10 @@ export function ControlScreen({
 
     return (
         <Screen title='Utilities' subtitle=''>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps='handled' contentContainerStyle={{ flexDirection: 'row', gap: spacing.sm }}>
-                {([
-                    ['authenticator', 'Authenticator'], ['users', 'Users & roles'], ['shares', 'Shares'],
-                    ['status', 'System status'], ['desktop', 'Desktop'], ['shortcuts', 'Shortcuts'], ['settings', 'Connection settings'],
-                ] as const).map(([value, label]) => <PillButton key={value} small label={label} tone={section === value ? 'accent' : 'default'} onPress={() => setSection(value)} />)}
-            </ScrollView>
+            <DropdownMenu label={section === 'authenticator' ? 'Authenticator' : section === 'users' ? 'Users & roles' : section === 'shares' ? 'Shares' : section === 'status' ? 'System status' : section === 'desktop' ? 'Desktop' : section === 'shortcuts' ? 'Shortcuts' : 'Connection settings'} title='Utilities' items={([
+                ['authenticator', 'Authenticator'], ['users', 'Users & roles'], ['shares', 'Shares'],
+                ['status', 'System status'], ['desktop', 'Desktop'], ['shortcuts', 'Shortcuts'], ['settings', 'Connection settings'],
+            ] as const).map(([value, label]) => ({ label, selected: section === value, onPress: () => setSection(value) }))} />
             {section === 'authenticator' && <GlassCard>
                 <SectionTitle eyebrow='Utilities' title='QR + authenticator' />
                 <View style={{ flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap', marginTop: spacing.md }}>
