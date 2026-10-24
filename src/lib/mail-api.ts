@@ -89,7 +89,7 @@ export async function pickMailAttachments(draft: MailDraft): Promise<MailDraftAt
     return attachments
 }
 
-const mailBaseUrl = (process.env.EXPO_PUBLIC_MAIL_API_BASE_URL || 'https://api.hanasand.com/api').replace(/\/+$/, '')
+const mailBaseUrl = (process.env.EXPO_PUBLIC_MAIL_API_BASE_URL || 'https://mail.hanasand.com/api').replace(/\/+$/, '')
 const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' ? value as Record<string, unknown> : {}
 const string = (value: unknown) => typeof value === 'string' ? value : ''
 const array = (value: unknown): unknown[] => Array.isArray(value) ? value : []

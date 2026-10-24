@@ -47,7 +47,7 @@ describe('native mail outgoing attachments', () => {
     it('loads inboxes from the authenticated Hanasand API route', async () => {
         responseBody = { mailboxUser: 'synthetic-user', accessibleAccounts: [], mailboxes: [], messages: [] }
         await api.loadMail(settings, {})
-        expect(calls[0].url).toBe('https://api.hanasand.com/api/mail/overview?')
+        expect(calls[0].url).toBe('https://mail.hanasand.com/api/mail/overview?')
     })
 
     it('preserves the composer and send key when Files selection is cancelled', async () => {
@@ -71,7 +71,7 @@ describe('native mail outgoing attachments', () => {
         expect(api.canSendMail(ready.draft)).toBe(true)
         expect(ready.idempotencyKey).not.toBe(composer.idempotencyKey)
         await api.sendMail(settings, ready.draft, ready.idempotencyKey)
-        expect(calls[0].url).toBe('https://api.hanasand.com/api/mail/send')
+        expect(calls[0].url).toBe('https://mail.hanasand.com/api/mail/send')
         const payload = JSON.parse(String(calls[0].init.body))
         expect(payload.attachments).toEqual(attachments)
         expect(payload.mailboxUser).toBe('shared:support')

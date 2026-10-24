@@ -52,11 +52,13 @@ function VmWorkspaceScreen({ settings, onOpenCheckout, services: injected }: Vir
                 {!rows ? <VmText>Inventory unavailable.</VmText> : <>
                     <VmText>{filtered.length} matching / {rows.length} loaded VMs{w.snapshot.reads.inventory ? '' : ' · partial inventory; actions remain locked until a complete refresh'}.</VmText>
                     {!filtered.length && <VmText>No loaded VMs match these filters.</VmText>}
-                    {filtered.slice(0, limit).map(vm => <GlassCard key={vm.name}>
-                        <VmText strong>{vm.name}</VmText><VmText>{vm.deleted_at ? 'Scheduled deletion' : vm.status || 'Status unavailable'} · {vm.limits_cpu || '?'} CPU · {vm.limits_memory || 'Memory unavailable'}</VmText>
-                        <VmText>{vm.organization_name || vm.organization_id || 'Personal'} · Owner {vm.owner}</VmText>
-                        <PillButton label={`Open ${vm.name}`} disabled={!w.ops.idle(g)} onPress={() => w.select(g, vm.name)} />
-                    </GlassCard>)}
+                    <View style={{ gap: 12 }}>
+                        {filtered.slice(0, limit).map(vm => <GlassCard key={vm.name}>
+                            <VmText strong>{vm.name}</VmText><VmText>{vm.deleted_at ? 'Scheduled deletion' : vm.status || 'Status unavailable'} · {vm.limits_cpu || '?'} CPU · {vm.limits_memory || 'Memory unavailable'}</VmText>
+                            <VmText>{vm.organization_name || vm.organization_id || 'Personal'} · Owner {vm.owner}</VmText>
+                            <PillButton label={`Open ${vm.name}`} disabled={!w.ops.idle(g)} onPress={() => w.select(g, vm.name)} />
+                        </GlassCard>)}
+                    </View>
                     {limit < filtered.length && <PillButton label='Show more loaded VMs' onPress={() => input(() => setLimit(n => n + 30))} />}
                 </>}
                 <PillButton label='Review stop all VMs' disabled={!w.writable || w.snapshot.platform?.value.canEdit !== true} tone='danger' onPress={() => w.request(g, 'stop_all', 'all-vms', 'Schedule all VM shutdowns?', 'This queues shutdowns for all VMs in 20 minutes. It is a global action, not limited by this list or workspace filter.', async (op, grant) => {

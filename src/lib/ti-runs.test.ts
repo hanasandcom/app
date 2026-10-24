@@ -46,6 +46,8 @@ describe('native TI collection run contract', () => {
         await expect(runsApi.loadTiCollectionRuns(settings, 1)).rejects.toThrow('requires access to internal pages')
         status = 503; payload = { error: { code: 'collection_runs_unavailable', message: 'Collection run history is temporarily unavailable.' } }
         await expect(runsApi.loadTiCollectionRuns(settings, 1)).rejects.toThrow('temporarily unavailable')
+        status = 404; payload = { message: 'Route not found' }
+        await expect(runsApi.loadTiCollectionRuns(settings, 1)).rejects.toThrow('temporarily unavailable')
     })
     it('keeps an unrecognized upstream status visible as unknown', async () => {
         payload = { runs: [{ ...run(), status: 'unknown' }], page: 2, limit: 50, total: 61, previousPage: 1, nextPage: 3 }

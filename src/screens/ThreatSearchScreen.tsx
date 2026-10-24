@@ -64,7 +64,7 @@ function AccountThreatSearch({ settings, initialQuery }: { settings: AppSettings
         attempt.current += 1; request.current?.abort(); refreshBudget.current.cancel(); setAutoRefreshPaused(true); if (pollTimer.current) clearTimeout(pollTimer.current); setBusy(false)
         if (clear) { setQuery(''); setResult(null); setError('') }
     }
-    async function search(value = query, preferCached = true, automatic = false) {
+    async function search(value = query, automatic = false) {
         if (!active.current) return
         if (!automatic) { refreshBudget.current.start(value); setAutoRefreshPaused(false) }
         request.current?.abort()
@@ -76,7 +76,7 @@ function AccountThreatSearch({ settings, initialQuery }: { settings: AppSettings
         if (!result || result.query.toLowerCase() !== value.trim().toLowerCase()) setResult(null)
         const timeout = setTimeout(() => controller.abort(), 20000)
         try {
-            const next = await searchThreatIntel(settings, value, controller.signal, preferCached)
+            const next = await searchThreatIntel(settings, value, controller.signal)
             if (active.current && attempt.current === id && !controller.signal.aborted) { setResult(next); setLimit(20) }
         } catch (cause) {
             if (active.current && attempt.current === id) setError(controller.signal.aborted ? 'Search timed out. Try again.' : cause instanceof Error ? cause.message : 'Threat search is unavailable.')
@@ -85,7 +85,7 @@ function AccountThreatSearch({ settings, initialQuery }: { settings: AppSettings
     useEffect(() => {
         if (!result?.refreshAfterSeconds || ['ready', 'unavailable', 'blocked_unsafe_target'].includes(result.status)) return
         if (!refreshBudget.current.take(result.query)) { setAutoRefreshPaused(true); return }
-        pollTimer.current = setTimeout(() => void search(result.query, false, true), result.refreshAfterSeconds * 1000)
+        pollTimer.current = setTimeout(() => void search(result.query, true), result.refreshAfterSeconds * 1000)
         return () => { if (pollTimer.current) clearTimeout(pollTimer.current) }
     }, [result])
     async function changeSaved(value: string, save: boolean) {
@@ -130,7 +130,7 @@ function AccountThreatSearch({ settings, initialQuery }: { settings: AppSettings
                 {result.candidates.map((candidate, index) => <View key={`${candidate.name}:${index}`} style={{ gap: 6 }}><Text style={heading}>{candidate.name}</Text><Text selectable style={text}>{candidate.description}</Text>{evidence(candidate.url)}</View>)}
                 {result.notes.map((note, index) => <Text selectable key={index} style={text}>{note}</Text>)}
                 {autoRefreshPaused && !['ready', 'unavailable', 'blocked_unsafe_target'].includes(result.status) && <Text style={text}>Automatic refresh is paused. Refresh the result to check again.</Text>}
-                <PillButton small label='Refresh result' disabled={busy} onPress={() => void search(result.query, false)} />
+                <PillButton small label='Refresh result' disabled={busy} onPress={() => void search(result.query)} />
             </GlassCard>
             <View style={row}>{(['activity', 'sources', 'techniques', 'targets'] as const).map(tab => <PillButton key={tab} small label={`${tab[0].toUpperCase()}${tab.slice(1)} · ${result[tab].length}`} tone={view === tab ? 'accent' : 'default'} onPress={() => { setView(tab); setLimit(20) }} />)}</View>
             <GlassCard style={{ gap: 16 }}>

@@ -5,18 +5,20 @@ const calls: Array<{ settings: AppSettings; url: string; init: RequestInit }> = 
 let response = () => Response.json({})
 mock.module('./api', () => ({ apiFetch: async (settings: AppSettings, url: string, init: RequestInit) => { calls.push({ settings, url, init }); return response() } }))
 const api = await import('./threat-search')
-const settings = { siteBaseUrl: 'https://hanasand.com', userId: 'synthetic-user', authToken: 'synthetic-token', impersonationToken: '', selectedOrganizationId: 'personal' } as AppSettings
+const settings = { siteBaseUrl: 'https://hanasand.com', apiBaseUrl: 'https://api.hanasand.com/api', userId: 'synthetic-user', authToken: 'synthetic-token', impersonationToken: '', selectedOrganizationId: 'personal' } as AppSettings
 const signal = () => new AbortController().signal
 const result = (extra: Record<string, unknown> = {}) => ({ query: 'Example actor', summary: 'Source-reported activity.', status: 'partial', sources: [{ id: 's1', name: 'Public source', url: 'https://example.test/report', secret: 'not-rendered' }], recentActivity: [{ title: 'Source claim', detail: 'Unverified claim', sourceIds: ['s1'], url: 'javascript:alert(1)' }], ...extra })
 beforeEach(() => { calls.length = 0; response = () => Response.json(result()) })
 
 describe('native threat search contract', () => {
-    it('uses the website query API and preserves source attribution with explicit fields only', async () => {
+    it('uses the TI website search route and preserves source attribution', async () => {
         const data = await api.searchThreatIntel(settings, ' Example actor ', signal())
         const url = new URL(calls[0].url)
+        expect(url.hostname).toBe('ti.hanasand.com')
         expect(url.pathname).toBe('/api/ti/search')
         expect(url.searchParams.get('q')).toBe('Example actor')
         expect(url.searchParams.get('cached')).toBe('true')
+        expect(calls[0].init.method).toBeUndefined()
         expect(data.activity[0].sourceIds).toEqual(['s1'])
         expect(data.activity[0].url).toBeNull()
         expect(data.sources[0].url).toBe('https://example.test/report')
@@ -71,6 +73,8 @@ describe('native threat search contract', () => {
         await expect(api.searchThreatIntel({ ...settings, siteBaseUrl: 'http://example.test' }, 'Example actor', signal())).rejects.toThrow('HTTPS')
         response = () => Response.json({ error: { message: 'Access denied' } }, { status: 403 })
         await expect(api.searchThreatIntel(settings, 'Example actor', signal())).rejects.toThrow('Access denied')
+        response = () => Response.json({ message: 'Route not found' }, { status: 404 })
+        await expect(api.searchThreatIntel(settings, 'Example actor', signal())).rejects.toThrow('temporarily unavailable')
         for (const url of ['javascript:alert(1)', 'https://user:password@example.test', 'http://example.test', 'not a url']) expect(api.safeEvidenceUrl(url)).toBeNull()
     })
 })

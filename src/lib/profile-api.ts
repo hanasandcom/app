@@ -37,6 +37,10 @@ export function describeAccountSession(session: AccountSession) {
     }
 }
 
+export function visibleSessionLocation(location: string) {
+    return location === 'Unavailable for private addresses' ? null : location
+}
+
 export function filterAccountSessions(sessions: AccountSession[], query: string) {
     const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean)
     if (!terms.length) return sessions

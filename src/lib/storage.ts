@@ -97,7 +97,7 @@ function normalizeSettings(value: unknown): AppSettings {
     }
 
     const partial = value as Partial<AppSettings>
-    const themeMode = partial.themeMode === 'graphite' || partial.themeMode === 'forest' || partial.themeMode === 'obsidian'
+    const themeMode = partial.themeMode === 'graphite' || partial.themeMode === 'forest' || partial.themeMode === 'obsidian' || partial.themeMode === 'light'
         ? partial.themeMode
         : defaultSettings.themeMode
     const workspaceMode = partial.workspaceMode === 'daily' || partial.workspaceMode === 'coding'

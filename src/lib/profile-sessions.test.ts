@@ -12,7 +12,7 @@ mock.module('./api', () => ({
         return response()
     },
 }))
-const { describeAccountSession, filterAccountSessions, fetchOrganizations, fetchOrganizationsWithRetry, fetchAccountSessions, revokeAccountSession, revokeOtherAccountSessions, logOutCurrentAccountSession } = await import('./profile-api')
+const { describeAccountSession, visibleSessionLocation, filterAccountSessions, fetchOrganizations, fetchOrganizationsWithRetry, fetchAccountSessions, revokeAccountSession, revokeOtherAccountSessions, logOutCurrentAccountSession } = await import('./profile-api')
 const settings = { apiBaseUrl: 'https://api.example.test/api/', authToken: 'synthetic-token', userId: 'synthetic-user', impersonationToken: '' } as AppSettings
 const session = (changes: Partial<AccountSession> = {}): AccountSession => ({
     token_id: 3, id: 'synthetic-user', ip: '203.0.113.10', current: false, user_agent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X) Version/18.0 Safari/605.1',
@@ -45,6 +45,8 @@ describe('native device session review', () => {
 
     it('preserves private addresses without assigning public geolocation or an ISP', () => {
         expect(describeAccountSession(session({ ip: null, private_ip: '10.0.0.7' }))).toMatchObject({ address: 'Private IP 10.0.0.7', network: 'Private network', location: 'Unavailable for private addresses' })
+        expect(visibleSessionLocation('Unavailable for private addresses')).toBeNull()
+        expect(visibleSessionLocation('Oslo, Norway')).toBe('Oslo, Norway')
     })
 
     it('reports missing network information explicitly', () => {

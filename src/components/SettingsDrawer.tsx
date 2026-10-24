@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Alert, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, useWindowDimensions, type KeyboardTypeOptions } from 'react-native'
 import { ArrowLeft, CircleDot, Cog, Monitor, Palette, SlidersHorizontal } from 'lucide-react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -18,6 +18,7 @@ const themeOptions: Array<{ id: ThemeMode; label: string; description: string }>
     { id: 'obsidian', label: 'Obsidian', description: 'Warm charcoal surfaces with restrained red details.' },
     { id: 'graphite', label: 'Graphite', description: 'Cool charcoal surfaces with restrained red details.' },
     { id: 'forest', label: 'Forest', description: 'Deep green surfaces with restrained red details.' },
+    { id: 'light', label: 'Light', description: 'Soft gray and off-white surfaces with dark text.' },
 ]
 
 export function SettingsDrawer({
@@ -25,26 +26,34 @@ export function SettingsDrawer({
     settings,
     onClose,
     onSave,
+    onThemeChange,
 }: {
     open: boolean
     settings: AppSettings
     onClose: () => void
     onSave: (next: AppSettings) => Promise<void> | void
+    onThemeChange: (mode: ThemeMode) => Promise<void> | void
 }) {
     const { width } = useWindowDimensions()
     const insets = useSafeAreaInsets()
     const [section, setSection] = useState<SettingsSection>('general')
     const [draft, setDraft] = useState(settings)
     const [saving, setSaving] = useState(false)
+    const settingsRef = useRef(settings)
+    settingsRef.current = settings
     const compactDrawer = width < 760
     const drawerWidth = compactDrawer ? Math.max(width - 24, 280) : Math.min(width * 0.88, 1040)
     const theme = useMemo(() => getThemePalette(draft.themeMode), [draft.themeMode])
 
     useEffect(() => {
         if (open) {
-            setDraft(settings)
+            setDraft(settingsRef.current)
         }
-    }, [open, settings])
+    }, [open])
+
+    useEffect(() => {
+        if (open) setDraft(current => ({ ...current, themeMode: settings.themeMode }))
+    }, [open, settings.themeMode])
 
     function update<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
         setDraft(current => ({ ...current, [key]: value }))
@@ -65,7 +74,7 @@ export function SettingsDrawer({
     return (
         <Modal visible={open} animationType='fade' transparent onRequestClose={onClose}>
             <View style={[styles.overlay, compactDrawer && {
-                paddingTop: Math.max(insets.top, Platform.OS === 'ios' ? 62 : 24) + spacing.sm,
+                paddingTop: Math.max(insets.top + spacing.lg, Platform.OS === 'ios' ? 86 : 24) + spacing.sm,
                 paddingBottom: insets.bottom + spacing.sm,
             }]}>
                 <Pressable style={styles.backdrop} onPress={onClose} />
@@ -73,7 +82,7 @@ export function SettingsDrawer({
                     <View style={[
                         styles.sidebar,
                         compactDrawer && styles.sidebarCompact,
-                        { backgroundColor: 'rgba(255,255,255,0.035)', borderRightColor: theme.surfaceBorderSoft, borderBottomColor: theme.surfaceBorderSoft },
+                        { backgroundColor: draft.themeMode === 'light' ? 'rgba(36,38,42,0.035)' : 'rgba(255,255,255,0.035)', borderRightColor: theme.surfaceBorderSoft, borderBottomColor: theme.surfaceBorderSoft },
                     ]}>
                         <Pressable onPress={onClose} style={({ pressed }) => [styles.backRow, pressed && styles.pressed]}>
                             <ArrowLeft color={theme.textSoft} size={18} strokeWidth={2} />
@@ -90,7 +99,7 @@ export function SettingsDrawer({
                                         style={({ pressed }) => [
                                             styles.navItem,
                                             {
-                                                backgroundColor: active ? 'rgba(255,255,255,0.08)' : 'transparent',
+                                                backgroundColor: active ? theme.accentSoft : 'transparent',
                                                 borderColor: active ? theme.surfaceBorder : 'transparent',
                                             },
                                             pressed && styles.pressed,
@@ -152,11 +161,14 @@ export function SettingsDrawer({
                                     {themeOptions.map(option => (
                                         <Pressable
                                             key={option.id}
-                                            onPress={() => update('themeMode', option.id)}
+                                            onPress={() => {
+                                                update('themeMode', option.id)
+                                                void Promise.resolve(onThemeChange(option.id)).catch(cause => Alert.alert('Theme could not be saved', cause instanceof Error ? cause.message : 'Try again.'))
+                                            }}
                                             style={({ pressed }) => [
                                                 styles.themeCard,
                                                 {
-                                                    backgroundColor: option.id === draft.themeMode ? theme.surface : 'rgba(255,255,255,0.03)',
+                                                    backgroundColor: option.id === draft.themeMode ? theme.surface : theme.accentSoft,
                                                     borderColor: option.id === draft.themeMode ? theme.surfaceBorder : theme.surfaceBorderSoft,
                                                 },
                                                 pressed && styles.pressed,
@@ -233,7 +245,7 @@ function ModeCard({
             style={({ pressed }) => [
                 styles.modeCard,
                 {
-                    backgroundColor: active ? theme.surface : 'rgba(255,255,255,0.03)',
+                    backgroundColor: active ? theme.surface : theme.accentSoft,
                     borderColor: active ? theme.surfaceBorder : theme.surfaceBorderSoft,
                 },
                 pressed && styles.pressed,
@@ -268,7 +280,7 @@ function PreferenceRow({
                 <Text style={[styles.preferenceTitle, { color: theme.text }]}>{title}</Text>
                 <Text style={[styles.preferenceBody, { color: theme.textMuted }]}>{body}</Text>
             </View>
-            <Switch value={value} onValueChange={onChange} disabled={disabled} thumbColor={value ? theme.accent : theme.textSoft} trackColor={{ false: 'rgba(255,255,255,0.10)', true: theme.surfaceBorder }} />
+            <Switch value={value} onValueChange={onChange} disabled={disabled} thumbColor={value ? theme.accent : theme.textSoft} trackColor={{ false: theme.accentSoft, true: theme.surfaceBorder }} />
         </View>
     )
 }

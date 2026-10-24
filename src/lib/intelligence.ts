@@ -25,6 +25,7 @@ async function request(settings: AppSettings, url: URL, signal: AbortSignal, ini
     const response = await apiFetch(settings, url.toString(), { ...init, signal, credentials: 'omit' })
     const payload: unknown = await response.json().catch(() => null)
     if (!response.ok) {
+        if (response.status === 404) throw new Error('Intelligence is temporarily unavailable. Try again later.')
         const body = object(payload)
         throw new Error(text(object(body.error).message) || text(body.message) || text(body.error) || `Intelligence is unavailable (${response.status}).`)
     }

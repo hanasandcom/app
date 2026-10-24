@@ -90,6 +90,9 @@ describe('native intelligence routes and contracts', () => {
     it('propagates authorization and cancellation and prevents wrong-account impersonation', async () => {
         status = 403; payload = { error: { code: 'timeliness_forbidden', message: 'Timeliness operations require an analyst role' } }
         await expect(intel.loadDeliveryHealth(settings, filter, null, signal())).rejects.toThrow('analyst role')
+        status = 404; payload = { message: 'Route not found' }
+        await expect(intel.loadActorProfiles(settings, { query: '', page: 1 }, signal())).rejects.toThrow('temporarily unavailable')
+        status = 200
         const controller = new AbortController(); controller.abort()
         await expect(intel.loadActorProfiles(settings, { query: '', page: 1 }, controller.signal)).rejects.toThrow('Aborted')
         calls.length = 0

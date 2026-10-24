@@ -7,7 +7,7 @@ import {
     addAccountSshKey, fetchAccountIdentity, fetchAccountPasskeys, fetchAccountSessions, fetchAccountSshKeys,
     nativePasskeysSupported, registerAccountPasskey, removeAccountPasskey,
     removeAccountSshKey, renameAccountPasskey, revokeAccountSession, revokeOtherAccountSessions, updateAccountIdentity,
-    describeAccountSession, filterAccountSessions, logOutCurrentAccountSession,
+    describeAccountSession, visibleSessionLocation, filterAccountSessions, logOutCurrentAccountSession,
     type AccountIdentity, type AccountPasskey, type AccountSession, type AccountSshKey,
 } from '../lib/profile-api'
 import { ProfileSupportPanel } from '../components/ProfileSupportPanel'
@@ -161,16 +161,17 @@ export function ProfileScreen({ settings, onLogout, onDeleted, initialSection }:
                 {!loading && !error && !!sessions.length && !visibleSessions.length && <Text style={styles.meta}>No sessions match your search.</Text>}
                 {visibleSessions.map(session => {
                     const details = describeAccountSession(session)
+                    const location = visibleSessionLocation(details.location)
                     const expanded = sessionDetailsId === session.token_id
                     return <View key={session.token_id} style={styles.item}>
                         <Text style={styles.title}>{details.device}</Text>
                         <Text style={styles.meta}>{session.current ? 'This device' : session.revoked_at ? 'Revoked' : 'Active'} · Last active {date(session.last_seen_at)}</Text>
-                        <Text style={styles.meta}>{details.location}</Text>
+                        {location && <Text style={styles.meta}>{location}</Text>}
                         <PillButton small label={expanded ? 'Hide device details' : 'View device details'} onPress={() => setSessionDetailsId(expanded ? null : session.token_id)} />
                         {expanded && <>
                             <Text selectable style={styles.meta}>{details.address}</Text>
                             <Text selectable style={styles.meta}>ISP / network: {details.network}</Text>
-                            <Text selectable style={styles.meta}>Approximate location: {details.location}</Text>
+                            {location && <Text selectable style={styles.meta}>Approximate location: {location}</Text>}
                             <Text style={styles.meta}>Signed in {date(session.created_at)}</Text>
                             <Text selectable style={styles.fingerprint}>User agent: {session.user_agent || 'Not recorded'}</Text>
                             {!session.revoked_at && (session.current

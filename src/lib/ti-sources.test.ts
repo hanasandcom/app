@@ -39,6 +39,8 @@ describe('native TI source contract', () => {
         await expect(api.loadTiSources(settings, 2, '')).rejects.toThrow('invalid response')
         status = 503; payload = { error: { message: 'The TI source inventory is temporarily unavailable.' } }
         await expect(api.loadTiSources(settings, 2, '')).rejects.toThrow('temporarily unavailable')
+        status = 404; payload = { message: 'Route not found' }
+        await expect(api.loadTiSources(settings, 2, '')).rejects.toThrow('temporarily unavailable')
     })
     it('uses the existing reviewed source-status control and requires a confirmed result', async () => {
         payload = { ok: true, payload: { source: { status: 'paused' } } }

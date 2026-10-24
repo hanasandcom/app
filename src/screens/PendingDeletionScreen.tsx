@@ -44,7 +44,7 @@ export function PendingDeletionScreen({
     }
 
     return (
-        <LinearGradient colors={[theme.backgroundRaised, theme.background, '#050605']} locations={[0, 0.58, 1]} style={styles.root}>
+        <LinearGradient colors={[theme.backgroundRaised, theme.background, theme.backgroundAlt]} locations={[0, 0.58, 1]} style={styles.root}>
             <View style={styles.wrap}>
                 <View style={styles.masthead}>
                     <Text style={styles.logo}>Hanasand</Text>

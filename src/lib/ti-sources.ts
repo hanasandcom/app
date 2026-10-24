@@ -60,6 +60,7 @@ async function request(settings: AppSettings, url: URL, init: RequestInit = {}, 
         })
         const body = object(await response.json().catch(() => null))
         if (!response.ok) {
+            if (response.status === 404) throw new Error('TI source inventory is temporarily unavailable. Try again later.')
             const detail = object(body.error)
             throw new Error(response.status === 401 ? 'Sign in again to view TI sources.'
                 : response.status === 403 ? 'TI source inventory requires access to internal pages.'

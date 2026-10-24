@@ -11,6 +11,7 @@ export type RootTabParamList = {
     Home: undefined
     Profile: { section?: 'Profile' | 'Security' | 'Sessions' | 'SSH keys' | 'Support' } | undefined
     Mail: undefined
+    Intelligence: undefined
     Scan: undefined
     Notes: undefined
     Images: undefined
@@ -23,7 +24,7 @@ export type RootTabParamList = {
 }
 
 export type AppSettings = {
-    themeMode: 'obsidian' | 'graphite' | 'forest'
+    themeMode: 'obsidian' | 'graphite' | 'forest' | 'light'
     workspaceMode: 'coding' | 'daily'
     siteBaseUrl: string
     apiBaseUrl: string

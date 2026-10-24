@@ -93,6 +93,11 @@ describe('secure local storage', () => {
         expect(settings.desktopAgentBaseUrl).toBe('')
     })
 
+    it('persists and restores the light appearance mode', async () => {
+        await saveSettings({ ...defaultSettings, themeMode: 'light' })
+        expect(await loadSettings()).toMatchObject({ themeMode: 'light' })
+    })
+
     it('leaves legacy session data intact when secure migration fails', async () => {
         const legacy = { ...defaultSettings, authToken: 'keep-on-failure' }
         const raw = JSON.stringify(legacy)

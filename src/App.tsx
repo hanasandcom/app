@@ -1,6 +1,6 @@
 import { caseWebsitePath, monitoringCaseInWorkspace, monitoredActorsWebsitePath, websitePageUrl, type WebsiteCaseRef } from './lib/workspace-links'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { NavigationContainer, DarkTheme, useNavigationContainerRef } from '@react-navigation/native'
+import { NavigationContainer, DarkTheme, DefaultTheme, useNavigationContainerRef } from '@react-navigation/native'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
@@ -8,7 +8,7 @@ import { Alert, AppState, Platform, Pressable, Text, View } from 'react-native'
 import * as WebBrowser from 'expo-web-browser'
 import { StatusBar } from 'expo-status-bar'
 import * as SystemUI from 'expo-system-ui'
-import { AlarmClockCheck, Bot, Compass, Images, Mail, ScanLine, StickyNote, UserRound } from 'lucide-react-native'
+import { AlarmClockCheck, Bot, Brain, Compass, Images, Mail, ScanLine, StickyNote, UserRound } from 'lucide-react-native'
 import type { AiChatMessage, AppSettings, RootTabParamList } from './types'
 import { SettingsDrawer } from './components/SettingsDrawer'
 import { WorkspacePicker } from './components/WorkspacePicker'
@@ -25,6 +25,7 @@ import { PendingDeletionScreen } from './screens/PendingDeletionScreen'
 import { AutomationsScreen } from './screens/AutomationsScreen'
 import { OrganizationsScreen } from './screens/OrganizationsScreen'
 import { WatchlistsScreen } from './screens/WatchlistsScreen'
+import { ThreatSearchScreen } from './screens/ThreatSearchScreen'
 import { WorkspacePageScreen } from './screens/WorkspacePageScreen'
 import { NativeToolsScreen } from './screens/NativeToolsScreen'
 import { nativeToolForPath } from './lib/native-tool-navigation'
@@ -48,6 +49,7 @@ const tabIcons = {
     Home: Bot,
     Profile: UserRound,
     Mail: Mail,
+    Intelligence: Brain,
     Scan: ScanLine,
     Notes: StickyNote,
     Images: Images,
@@ -274,6 +276,12 @@ export default function App() {
         currentSettings.current = safe; setSettings(safe)
     }
 
+    async function handleThemeChange(themeMode: AppSettings['themeMode']) {
+        const current = currentSettings.current
+        if (!current) throw new Error('Settings are not ready yet.')
+        await handleSaveSettings({ ...current, themeMode })
+    }
+
     async function handleSaveAiMessages(next: AiChatMessage[]) {
         await saveAiChat(next)
         setAiMessages(next)
@@ -385,7 +393,7 @@ export default function App() {
         if (pendingDeletion) {
             return (
                 <GestureHandlerRootView style={{ flex: 1, backgroundColor: activePalette.background }}>
-                    <StatusBar style='light' />
+                    <StatusBar style={settings.themeMode === 'light' ? 'dark' : 'light'} />
                     <AppThemeProvider mode={settings.themeMode}>
                         <PendingDeletionScreen
                             settings={settings}
@@ -401,7 +409,7 @@ export default function App() {
         }
         return (
             <GestureHandlerRootView style={{ flex: 1, backgroundColor: activePalette.background }}>
-                <StatusBar style='light' />
+                <StatusBar style={settings.themeMode === 'light' ? 'dark' : 'light'} />
                 <AppThemeProvider mode={settings.themeMode}>
                     <LoginScreen
                         settings={settings}
@@ -427,7 +435,7 @@ export default function App() {
 
     return (
         <AppRoot backgroundColor={activePalette.background}>
-            <StatusBar style='light' />
+            <StatusBar style={settings.themeMode === 'light' ? 'dark' : 'light'} />
             <AppThemeProvider mode={settings.themeMode}>
                 <SettingsDrawerProvider openSettings={() => setSettingsOpen(true)} openMenu={() => navigation.navigate('Explore')} openWorkspace={() => setWorkspaceOpen(true)} workspaceName={activeOrganization?.name || 'Personal'}>
                     <NavigationContainer
@@ -439,6 +447,7 @@ export default function App() {
                                     Home: 'home',
                                     Profile: 'profile',
                                     Mail: 'mail',
+                                    Intelligence: 'intelligence',
                                     Scan: 'scan',
                                     Notes: 'notes',
                                     Images: 'images',
@@ -450,7 +459,7 @@ export default function App() {
                             },
                         }}
                         theme={{
-                            ...DarkTheme,
+                            ...(settings.themeMode === 'light' ? DefaultTheme : DarkTheme),
                             colors: {
                                 ...DarkTheme.colors,
                                 background: activePalette.background,
@@ -466,7 +475,7 @@ export default function App() {
                             screenOptions={({ route }) => ({
                                 headerShown: false,
                                 tabBarShowLabel: true,
-                                tabBarLabel: route.name === 'Explore' ? 'Menu' : route.name === 'Home' ? 'AI' : route.name,
+                                tabBarLabel: route.name === 'Explore' ? 'Menu' : route.name === 'Home' ? 'AI' : route.name === 'Intelligence' ? 'Intel' : route.name,
                                 tabBarLabelStyle: { fontSize: 10, fontWeight: '600' },
                                 tabBarStyle: {
                                     position: 'absolute',
@@ -488,7 +497,7 @@ export default function App() {
                                 tabBarItemStyle: {
                                     borderRadius: 18,
                                     marginHorizontal: 2,
-                                    ...(!['Home', 'Mail', 'Notes', 'Images', 'Explore'].includes(route.name) ? { display: 'none' as const } : {}),
+                                    ...(!['Home', 'Mail', 'Intelligence', 'Images', 'Explore'].includes(route.name) ? { display: 'none' as const } : {}),
                                 },
                                 tabBarIcon: ({ color, focused }) => {
                                     const Icon = tabIcons[route.name as keyof typeof tabIcons] || Compass
@@ -505,6 +514,9 @@ export default function App() {
                             </Tab.Screen>
                             <Tab.Screen name='Mail'>
                                 {() => <MailScreen settings={settings} />}
+                            </Tab.Screen>
+                            <Tab.Screen name='Intelligence'>
+                                {() => <ThreatSearchScreen settings={settings} />}
                             </Tab.Screen>
                             <Tab.Screen name='Scan' component={ScannerScreen} />
                             <Tab.Screen name='Notes'>
@@ -561,6 +573,7 @@ export default function App() {
                             await handleSaveSettings(next)
                             setSettingsOpen(false)
                         }}
+                        onThemeChange={handleThemeChange}
                     />
                 </SettingsDrawerProvider>
             </AppThemeProvider>

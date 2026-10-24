@@ -74,6 +74,7 @@ export async function loadTiCollectionRuns(settings: AppSettings, page: number, 
         if (controller.signal.aborted) throw new Error('Collection history request was canceled.')
         const payload: unknown = await response.json().catch(() => null), body = object(payload)
         if (!response.ok) {
+            if (response.status === 404) throw new Error('Collection history is temporarily unavailable. Try again later.')
             const detail = object(body.error)
             throw new Error(response.status === 401 ? 'Sign in again to view collection history.'
                 : response.status === 403 ? 'Collection history requires access to internal pages.'
