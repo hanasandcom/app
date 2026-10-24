@@ -67,14 +67,17 @@ async function request(settings: AppSettings | undefined, url: URL, signal: Abor
 }
 export async function searchThreatIntel(settings: AppSettings, query: string, signal: AbortSignal) {
     const clean = normalizeThreatQuery(query)
-    const base = new URL(settings.apiBaseUrl)
-    if (base.protocol !== 'https:' || base.username || base.password || base.search || base.hash) throw new Error('Threat search requires an HTTPS API address.')
-    const url = new URL('ti/search', `${base.href.replace(/\/+$/, '')}/`)
-    // The website's public search route forwards to this canonical API endpoint.
-    // Call it directly without a session token; its website proxy expects browser
-    // sessions and rejects the native app's bearer token.
+    const website = new URL(settings.siteBaseUrl)
+    const configured = process.env.EXPO_PUBLIC_TI_SITE_URL || (website.hostname === 'hanasand.com' ? 'https://ti.hanasand.com' : website.origin)
+    const base = new URL(configured)
+    if (base.protocol !== 'https:' || base.username || base.password || base.search || base.hash) throw new Error('Threat search requires a secure TI website address.')
+    const url = new URL('api/v1/ti/search', `${base.href.replace(/\/+$/, '')}/`)
+    // Public search belongs to the standalone TI service; native requests do not
+    // use the browser-session proxy or carry the signed-in session token.
     return normalizeThreatResult(await request(undefined, url, signal, {
         method: 'POST',
+        credentials: 'omit',
+        redirect: 'error',
         body: JSON.stringify({ query: clean }),
     }), clean)
 }

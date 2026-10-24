@@ -11,14 +11,16 @@ const result = (extra: Record<string, unknown> = {}) => ({ query: 'Example actor
 beforeEach(() => { calls.length = 0; response = () => Response.json(result()) })
 
 describe('native threat search contract', () => {
-    it('uses the canonical public API search route without sending an app session', async () => {
+    it('uses the standalone public TI API route without sending an app session', async () => {
         const data = await api.searchThreatIntel(settings, ' Example actor ', signal())
         const url = new URL(calls[0].url)
-        expect(url.hostname).toBe('api.hanasand.com')
-        expect(url.pathname).toBe('/api/ti/search')
+        expect(url.hostname).toBe('ti.hanasand.com')
+        expect(url.pathname).toBe('/api/v1/ti/search')
         expect(url.search).toBe('')
         expect(calls[0].settings).toBeUndefined()
         expect(calls[0].init.method).toBe('POST')
+        expect(calls[0].init.credentials).toBe('omit')
+        expect(calls[0].init.redirect).toBe('error')
         expect(JSON.parse(String(calls[0].init.body))).toEqual({ query: 'Example actor' })
         expect(data.activity[0].sourceIds).toEqual(['s1'])
         expect(data.activity[0].url).toBeNull()
@@ -71,7 +73,7 @@ describe('native threat search contract', () => {
         expect(budget.take('Different actor')).toBe(true)
     })
     it('rejects insecure URLs and reports service errors without raw response rendering', async () => {
-        await expect(api.searchThreatIntel({ ...settings, apiBaseUrl: 'http://example.test/api' }, 'Example actor', signal())).rejects.toThrow('HTTPS')
+        await expect(api.searchThreatIntel({ ...settings, siteBaseUrl: 'http://example.test' }, 'Example actor', signal())).rejects.toThrow('secure TI website')
         response = () => Response.json({ error: { message: 'Access denied' } }, { status: 403 })
         await expect(api.searchThreatIntel(settings, 'Example actor', signal())).rejects.toThrow('Access denied')
         response = () => Response.json({ message: 'Route not found' }, { status: 404 })
