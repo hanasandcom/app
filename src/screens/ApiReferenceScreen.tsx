@@ -8,12 +8,12 @@ import { useAppTheme } from '../theme/context'
 import { applicationEndpoints } from '../data/api-reference-data'
 import { loadOpenApi, object, operations, operationMatches, referenceScope, ReferenceRequests, text, type ApiDocument } from '../lib/api-reference'
 
-type Props = { settings: AppSettings; mode: 'reference' | 'json'; onOpenJson: () => void; onOpenGuide: () => void }
+type Props = { settings: AppSettings; mode: 'reference' | 'json'; onOpenJson: () => void; onOpenGuide: () => void; transport?: typeof fetch }
 type Section = 'Public API' | 'Application API' | 'Schemas'
 export function ApiReferenceScreen(props: Props) {
     return <Reference key={referenceScope(props.settings, props.mode)} {...props} />
 }
-function Reference({ settings, mode, onOpenJson, onOpenGuide }: Props) {
+function Reference({ settings, mode, onOpenJson, onOpenGuide, transport }: Props) {
     const theme = useAppTheme()
     const [document, setDocument] = useState<ApiDocument | null>(null)
     const [busy, setBusy] = useState(false)
@@ -32,7 +32,7 @@ function Reference({ settings, mode, onOpenJson, onOpenGuide }: Props) {
         const operation = requests.current.start()
         running.current = true; setBusy(true); setError(''); setDocument(null)
         try {
-            const result = await loadOpenApi(settings.siteBaseUrl, operation.controller.signal)
+            const result = await loadOpenApi(settings.siteBaseUrl, operation.controller.signal, transport)
             if (requests.current.canApply(operation, visible())) setDocument(result)
         } catch (cause) {
             if (requests.current.canApply(operation, visible())) setError(cause instanceof Error ? cause.message : 'API documentation is unavailable. Refresh to retry.')

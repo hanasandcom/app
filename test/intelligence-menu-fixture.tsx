@@ -22,7 +22,11 @@ function finding(index: number) {
         evidence: Array.from({ length: 11 }, (_, item) => ({ id: `evidence-${index}-${item}`, sourceName: 'Synthetic source', captureMode: 'metadata', redactionState: item === 0 ? 'raw_sensitive' : 'redacted', contentHash: `fixture-hash-${item}`, observedAt: at,
             excerpt: item === 0 ? 'FIXTURE_SENSITIVE_PROSE_MUST_NOT_RENDER' : item === 1 ? 'Evidence: {"actor":"Fixture Actor","unknown":"FIXTURE_UNKNOWN_JSON_MUST_NOT_RENDER"}' : 'A synthetic public report mentions the example company.', provenance: { captureId: `capture-${item}`, collectedAt: at, publishedAt: at } })) }
 }
-const json = (value: unknown) => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } })
+const json = (value: unknown): Response => {
+    const payload = JSON.stringify(value)
+    return { ok: true, status: 200, headers: { get: (name: string) => name.toLowerCase() === 'content-type' ? 'application/json' : null }, body: null,
+        text: async () => payload, json: async () => value } as Response
+}
 globalThis.fetch = Object.assign(async (...[input, init]: Parameters<typeof fetch>) => {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url)
     if (!['https://api.synthetic.invalid', 'https://synthetic.invalid'].includes(url.origin) || url.username || url.password || url.hash)
@@ -46,7 +50,7 @@ function Fixture() {
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>{['Findings', 'Docs', 'JSON'].map(name => <PillButton small key={name} label={`Fixture ${name}`} onPress={() => setMode(name)} />)}</View>
         </View>
         {mode === 'Findings' ? <FindingsScreen settings={settings} onOpenActor={name => setHandoff(`Native actor search: ${name}`)} onOpenCase={ref => setHandoff(`Case ${ref.caseId} · Alert ${ref.alertId} · Organization ${ref.organizationId || 'Personal'}`)} onOpenMonitoredActors={id => setHandoff(`Monitored actors organization: ${id}`)} />
-            : <ApiReferenceScreen settings={settings} mode={mode === 'JSON' ? 'json' : 'reference'} onOpenJson={() => setMode('JSON')} onOpenGuide={() => setHandoff('Public guide website requested')} />}
+            : <ApiReferenceScreen settings={settings} mode={mode === 'JSON' ? 'json' : 'reference'} transport={globalThis.fetch} onOpenJson={() => setMode('JSON')} onOpenGuide={() => setHandoff('Public guide website requested')} />}
     </View>
 }
 registerRootComponent(() => <GestureHandlerRootView style={{ flex: 1 }}><SafeAreaProvider><AppThemeProvider mode='obsidian'><NavigationContainer><Stack.Navigator screenOptions={{ headerShown: false }}><Stack.Screen name='SyntheticIntelligence' component={Fixture} /></Stack.Navigator></NavigationContainer></AppThemeProvider></SafeAreaProvider></GestureHandlerRootView>)

@@ -8,6 +8,7 @@ import { documentLimit, jsonChunks, loadOpenApi, openApiUrl, operationMatches, o
 const originalFetch = globalThis.fetch
 const originalAbortController = globalThis.AbortController
 const originalSetTimeout = globalThis.setTimeout
+const originalTextDecoder = globalThis.TextDecoder
 const contract = () => ({ openapi: '3.1.0', info: { title: 'Synthetic public API', version: '1.0' },
     servers: [{ url: 'https://never-execute.example/api/v1' }], security: [{ apiKey: ['read'] }],
     paths: { '/actors': { parameters: [], get: { summary: 'List actors', operationId: 'getActors', responses: { '200': { $ref: '#/components/responses/Actors' } } } },
@@ -15,7 +16,7 @@ const contract = () => ({ openapi: '3.1.0', info: { title: 'Synthetic public API
     components: { responses: { Actors: { description: 'Actors page', content: { 'application/json': { schema: { $ref: '#/components/schemas/Actor' } } } } },
         schemas: { Actor: { type: 'object', properties: { id: { type: 'string' } } }, 'A/B~C': { type: 'string' } } } })
 const document = () => parseOpenApi(JSON.stringify(contract()))
-afterEach(() => { globalThis.fetch = originalFetch; globalThis.AbortController = originalAbortController })
+afterEach(() => { globalThis.fetch = originalFetch; globalThis.AbortController = originalAbortController; globalThis.TextDecoder = originalTextDecoder })
 
 describe('public API reference transport and validation', () => {
     it('uses canonical public TI for production and only the configured custom website route', () => {
@@ -43,6 +44,22 @@ describe('public API reference transport and validation', () => {
         expect('throwIfAborted' in controller.signal).toBe(false)
         globalThis.fetch = (async () => Response.json(contract())) as unknown as typeof fetch
         expect((await loadOpenApi('https://hanasand.com', controller.signal)).info.title).toBe('Synthetic public API')
+    })
+    it('uses the supplied native transport instead of the ambient fetch implementation', async () => {
+        const calls: string[] = []
+        const transport = (async (url: string | URL | Request) => {
+            calls.push(String(url))
+            return Response.json(contract())
+        }) as typeof fetch
+        globalThis.fetch = (async () => { throw new Error('Ambient fetch must not run.') }) as unknown as typeof fetch
+        const result = await loadOpenApi('https://synthetic.invalid', new AbortController().signal, transport)
+        expect(result.info.title).toBe('Synthetic public API')
+        expect(calls).toEqual(['https://synthetic.invalid/api/openapi/ti'])
+    })
+    it('uses a bounded text fallback when the native runtime has no TextDecoder', async () => {
+        globalThis.TextDecoder = undefined as unknown as typeof TextDecoder
+        globalThis.fetch = (async () => Response.json(contract())) as unknown as typeof fetch
+        expect((await loadOpenApi('https://hanasand.com', new AbortController().signal)).info.title).toBe('Synthetic public API')
     })
     it('rejects late native body completion after cancellation without requiring signal methods', async () => {
         globalThis.AbortController = NativeAbortController as unknown as typeof AbortController

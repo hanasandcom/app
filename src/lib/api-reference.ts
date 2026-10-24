@@ -9,6 +9,14 @@ export type ApiDocument = JsonObject & {
 export type ReferenceOperation = { method: string; path: string; operation: JsonObject }
 export const documentLimit = 2 * 1024 * 1024
 const methods = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'trace'])
+function utf8Length(value: string) {
+    let bytes = 0
+    for (const character of value) {
+        const point = character.codePointAt(0)!
+        bytes += point < 0x80 ? 1 : point < 0x800 ? 2 : point < 0x10000 ? 3 : 4
+    }
+    return bytes
+}
 export function object(value: unknown): value is JsonObject {
     return !!value && typeof value === 'object' && !Array.isArray(value)
 }
@@ -27,7 +35,7 @@ function validateSecurity(value: unknown) {
         !Array.isArray(scopes) || scopes.some((scope) => typeof scope !== 'string')))) throw new Error('Invalid API security requirements.')
 }
 export function parseOpenApi(raw: string): ApiDocument {
-    if (new TextEncoder().encode(raw).byteLength > documentLimit) throw new Error('The API contract exceeds the 2 MB display limit.')
+    if (utf8Length(raw) > documentLimit) throw new Error('The API contract exceeds the 2 MB display limit.')
     let parsed: unknown
     try { parsed = JSON.parse(raw) } catch { throw new Error('The API contract is not valid JSON.') }
     const pending = [{ value: parsed, depth: 0 }]
@@ -68,13 +76,13 @@ export function parseOpenApi(raw: string): ApiDocument {
 }
 async function readDocument(response: Response): Promise<string> {
     // Native fetch versions without a readable body still get the same size check before parsing.
-    if (!response.body || typeof response.body.getReader !== 'function') {
+    if (!response.body || typeof response.body.getReader !== 'function' || typeof globalThis.TextDecoder !== 'function') {
         const raw = await response.text()
-        if (new TextEncoder().encode(raw).byteLength > documentLimit) throw new Error('The API contract exceeds the 2 MB display limit.')
+        if (utf8Length(raw) > documentLimit) throw new Error('The API contract exceeds the 2 MB display limit.')
         return raw
     }
     const reader = response.body.getReader()
-    const decoder = new TextDecoder('utf-8', { fatal: true })
+    const decoder = new globalThis.TextDecoder('utf-8', { fatal: true })
     let raw = '', bytes = 0
     try {
         while (true) {
@@ -90,7 +98,7 @@ async function readDocument(response: Response): Promise<string> {
         return raw + decoder.decode()
     } finally { reader.releaseLock() }
 }
-export async function loadOpenApi(siteBaseUrl: string, signal: AbortSignal): Promise<ApiDocument> {
+export async function loadOpenApi(siteBaseUrl: string, signal: AbortSignal, transport: typeof fetch = globalThis.fetch): Promise<ApiDocument> {
     // Public documentation must never receive the active account or its device proof.
     const controller = new AbortController()
     const cancel = () => controller.abort()
@@ -99,7 +107,7 @@ export async function loadOpenApi(siteBaseUrl: string, signal: AbortSignal): Pro
     let expired = false
     const timeout = setTimeout(() => { expired = true; controller.abort() }, 20000)
     try {
-        const response = await fetch(openApiUrl(siteBaseUrl), {
+        const response = await transport(openApiUrl(siteBaseUrl), {
             method: 'GET', credentials: 'omit', redirect: 'error', cache: 'no-store', signal: controller.signal,
             headers: { Accept: 'application/json' }
         })
