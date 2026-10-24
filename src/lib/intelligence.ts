@@ -16,7 +16,8 @@ function endpoint(settings: AppSettings, path: string) {
     // The existing TI session proxy reads impersonation from cookies only. Native uses headers.
     if (settings.impersonationToken) throw new Error('Return to your own account to view intelligence.')
     const website = new URL(settings.siteBaseUrl)
-    const base = process.env.EXPO_PUBLIC_TI_SITE_URL || (website.hostname === 'hanasand.com' ? 'https://ti.hanasand.com' : website.origin)
+    const api = new URL(settings.apiBaseUrl)
+    const base = process.env.EXPO_PUBLIC_TI_SITE_URL || (website.hostname === 'hanasand.com' ? api.origin : website.origin)
     const url = new URL(path, base)
     if (url.protocol !== 'https:' || url.username || url.password) throw new Error('Intelligence requires a secure website address.')
     return url
