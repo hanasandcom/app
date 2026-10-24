@@ -22,14 +22,14 @@ export function useVmWorkspace(settings: AppSettings, services: VmServices) {
     useEffect(() => ops.onClearPrivate(() => {
         privateEpoch.current++; setSecret(''); setConnection(''); setChannel(null); setBoot(''); setBootStatus('')
     }), [ops])
-    const refresh = useCallback(async (generation: number, manual: boolean, target = selection.current) => {
+    const refresh = useCallback(async (generation: number, manual: boolean, target = selection.current, previous?: ReturnType<typeof emptySnapshot>) => {
         const read = ops.beginRead(generation, manual, target)
         if (!read) return
         setError(''); publish()
         try {
             const value = await readVmWorkspace(settings, read, services, partial => {
                 if (ops.current(read.generation)) setSnapshot(previous => preserveVmSnapshot(previous, partial))
-            })
+            }, previous)
             if (!ops.current(read.generation)) return
             setSnapshot(value)
             if (read.intent && value.vm) { selection.current = read.target; setSelected(read.target) }
@@ -57,7 +57,8 @@ export function useVmWorkspace(settings: AppSettings, services: VmServices) {
     const select = (generation: number, target: string) => {
         const switchedDuringRead = snapshot.reads.inventory && ops.reading && ops.switchTarget(generation)
         if (!switchedDuringRead && !ops.context(generation)) return
-        selection.current = target; setSelected(target); setMessage(''); setSnapshot(emptySnapshot()); publish(); void refresh(ops.generation, false, target)
+        const workspace = { ...snapshot, vm: null, management: null, details: null, metrics: null, errors: [], reads: { ...snapshot.reads, target: false, management: false, details: false, services: false } }
+        selection.current = target; setSelected(target); setMessage(''); setSnapshot(workspace); publish(); void refresh(ops.generation, false, target, workspace)
     }
     const request = (generation: number, kind: VmOperationKind, target: string, title: string, explanation: string,
         run: (op: VmOperation, grant: FreshVm) => Promise<string>, possibleStart = false) => {

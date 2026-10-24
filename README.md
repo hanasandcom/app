@@ -72,13 +72,15 @@ Mobile builds use [EAS Build](https://docs.expo.dev/build/introduction/) and the
 2. Add an Expo access token as the GitHub Actions repository secret `EXPO_TOKEN`. Keep this token in GitHub Secrets; do not put it in source, workflow variables, or app configuration. EAS also needs signing credentials for the selected platforms. Configure these for the EAS project before requesting builds; iOS device distribution requires Apple provisioning, and production store builds require the corresponding store signing setup.
 3. Run the workflow manually. Use `preview` to create installable internal builds (Android APK; iOS ad hoc distribution) or select `production` for App Store / Google Play artifacts. Store submission and release remain a separate, deliberate step.
 
-For an iOS Simulator artifact, use `bunx eas-cli build --platform ios --profile simulator`. The `preview` iOS profile targets registered physical devices.
+For an iOS Simulator artifact, run EAS Build on your Mac with `bunx eas-cli build --platform ios --profile simulator --local`. Local EAS builds require Expo authentication and the platform's local build tools. They do not use an EAS hosted build worker. The `preview` iOS profile targets registered physical devices.
 
-The same builds can be requested locally after linking the project and signing in:
+Local EAS builds support one platform per command. After linking the project and signing in, run:
 
 ```sh
-bunx eas-cli build --platform all --profile preview
-bunx eas-cli build --platform all --profile production
+bunx eas-cli build --platform ios --profile preview --local
+bunx eas-cli build --platform android --profile preview --local
+bunx eas-cli build --platform ios --profile production --local
+bunx eas-cli build --platform android --profile production --local
 ```
 
 See Expo's [build profiles](https://docs.expo.dev/build/eas-json/) and [programmatic access](https://docs.expo.dev/accounts/programmatic-access/) documentation for profile behavior and token setup.

@@ -4,7 +4,7 @@ import type { VmRead, VmReadSet } from './controller'
 import type { VmServices } from './services'
 import type * as api from './api'
 import type { Scoped, Vm, VmDetails, VmMetric, VmManagement } from './model'
-import { VmError } from './transport'
+import { VmError, vmScope } from './transport'
 export type VmSnapshot = {
     inventory: Scoped<Vm[]> | null; vm: Scoped<Vm> | null; management: Scoped<VmManagement> | null
     platform: Awaited<ReturnType<typeof api.loadPlatformAccess>> | null
@@ -27,6 +27,13 @@ export function preserveVmSnapshot(previous: VmSnapshot, partial: VmSnapshot): V
         organizations: partial.organizations ?? previous.organizations,
     }
 }
+function canReuseWorkspaceReads(settings: AppSettings, previous: VmSnapshot | undefined, target: string) {
+    if (!previous?.inventory || !previous.reads.inventory || previous.inventory.scope !== vmScope(settings)) return false
+    if (!previous.inventory.value.some(vm => vm.name.toLowerCase() === target.toLowerCase())) return false
+    if (!previous.platform || previous.platform.scope !== vmScope(settings) || previous.organizations === null) return false
+    if (!settings.impersonationToken && !settings.impersonatingUserId && (!previous.products || previous.products.scope !== vmScope(settings))) return false
+    return true
+}
 export const safeVmMessage = (error: unknown) => error instanceof VmError && error.name !== 'AbortError' ? error.message : 'This VM information is unavailable. Refresh to try again.'
 function mergeVmRecord(current: Vm, incoming: Vm): Vm {
     const merged = { ...current }
@@ -39,7 +46,7 @@ function mergeVmRecord(current: Vm, incoming: Vm): Vm {
     return merged
 }
 // A failed supplemental read stays unavailable. It never becomes a fabricated empty list or permission.
-export async function readVmWorkspace(settings: AppSettings, read: VmRead, services: VmServices, onProgress?: (snapshot: VmSnapshot) => void): Promise<VmSnapshot> {
+export async function readVmWorkspace(settings: AppSettings, read: VmRead, services: VmServices, onProgress?: (snapshot: VmSnapshot) => void, previous?: VmSnapshot): Promise<VmSnapshot> {
     const result = emptySnapshot(), signal = read.signal
     const publish = () => {
         if (!signal.aborted) onProgress?.({ ...result, errors: [...result.errors], reads: { ...result.reads } })
@@ -48,6 +55,18 @@ export async function readVmWorkspace(settings: AppSettings, read: VmRead, servi
         try { const value = await run(); if (!signal.aborted) accept(value) }
         catch (error) { if (!signal.aborted) result.errors.push(safeVmMessage(error)) }
         publish()
+    }
+    const hasTarget = !!read.target && read.kind !== 'stop_all' && read.kind !== 'setup_plan'
+    const reuseWorkspace = hasTarget && canReuseWorkspaceReads(settings, previous, read.target)
+    if (reuseWorkspace && previous) {
+        result.inventory = previous.inventory
+        result.platform = previous.platform
+        result.products = previous.products
+        result.organizations = previous.organizations
+        result.reads.inventory = true
+        result.reads.platform = previous.reads.platform
+        result.reads.products = !!previous.products?.value.plans.some(plan => plan.id === 'failover')
+            && !!previous.products.value.containers.some(vm => vm.name === read.target)
     }
     const inventories: { owned: Scoped<Vm[]> | null; accessible: Scoped<Vm[]> | null } = { owned: null, accessible: null }
     let inventoryRequestsSettled = 0
@@ -75,15 +94,16 @@ export async function readVmWorkspace(settings: AppSettings, read: VmRead, servi
         }
     }
 
-    const targetAvailable = !read.kind || read.kind === 'setup_plan'
-    const hasTarget = !!read.target && read.kind !== 'stop_all' && read.kind !== 'setup_plan'
+    const targetAvailable = !hasTarget
     result.reads.target = targetAvailable
     await Promise.all([
-        takeInventory('owned', () => services.loadInventory(settings, signal)),
-        takeInventory('accessible', () => services.loadAccessibleInventory(settings, signal)),
-        take(() => services.loadPlatformAccess(settings, signal), value => { result.platform = value; result.reads.platform = value.value.canEdit }),
-        take(() => services.organizations(settings, signal), value => { result.organizations = value }),
-        ...(!settings.impersonationToken && !settings.impersonatingUserId ? [take(() => services.loadProducts(settings, signal), value => {
+        ...(!reuseWorkspace ? [
+            takeInventory('owned', () => services.loadInventory(settings, signal)),
+            takeInventory('accessible', () => services.loadAccessibleInventory(settings, signal)),
+            take(() => services.loadPlatformAccess(settings, signal), value => { result.platform = value; result.reads.platform = value.value.canEdit }),
+            take(() => services.organizations(settings, signal), value => { result.organizations = value }),
+        ] : []),
+        ...(!reuseWorkspace && !settings.impersonationToken && !settings.impersonatingUserId ? [take(() => services.loadProducts(settings, signal), value => {
             result.products = value
             result.reads.products = value.value.plans.some(plan => plan.id === 'failover') && value.value.containers.some(vm => vm.name === read.target)
         })] : []),

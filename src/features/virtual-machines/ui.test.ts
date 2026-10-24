@@ -93,6 +93,66 @@ test('VM inventory renders before slower permission checks finish; target and ba
     expect(result.reads.target).toBe(true)
     expect(result.reads.platform).toBe(true)
 })
+test('opening a listed VM reuses complete workspace reads and refreshes only its target data', async () => {
+    const calls = { owned: 0, accessible: 0, platform: 0, organizations: 0, products: 0, vm: 0, management: 0, details: 0, metrics: 0 }
+    const api = services({
+        loadInventory: async s => { calls.owned++; return scoped(s, [vm().value]) },
+        loadAccessibleInventory: async s => { calls.accessible++; return scoped(s, []) },
+        loadPlatformAccess: async s => { calls.platform++; return scoped(s, { canRead: true, canEdit: true }) },
+        organizations: async () => { calls.organizations++; return [] },
+        loadProducts: async s => { calls.products++; return scoped(s, { plans: [{ id: 'failover', name: 'Failover', priceNok: 50, currency: 'NOK', interval: 'month' }], containers: [{ name: 'synthetic-vm', primary_host: 'host', failover_premium: false }] }) },
+        loadVm: async () => { calls.vm++; return vm() },
+        loadPublicServices: async s => { calls.management++; return scoped(s, { name: 'synthetic-vm', canManage: true, services: [] }) },
+        loadDetails: async s => { calls.details++; return scoped(s, null) },
+        loadMetrics: async s => { calls.metrics++; return scoped(s, []) },
+    })
+    const ops = new VmController(settings, new VmIntents()); ops.visible = true
+    const initialRead = ops.beginRead(ops.generation, false, '')!
+    const initial = await readVmWorkspace(settings, initialRead, api)
+    expect(ops.finishRead(initialRead, { target: '', authorized: true, reads: initial.reads })).toBe(true)
+    expect(calls).toEqual({ owned: 1, accessible: 1, platform: 1, organizations: 1, products: 1, vm: 0, management: 0, details: 0, metrics: 0 })
+
+    const targetRead = ops.beginRead(ops.generation, false, 'synthetic-vm')!
+    const target = await readVmWorkspace(settings, targetRead, api, undefined, initial)
+    expect(target.vm?.value.name).toBe('synthetic-vm')
+    expect(target.reads.inventory).toBe(true)
+    expect(target.reads.target).toBe(true)
+    expect(target.reads.products).toBe(true)
+    expect(calls).toEqual({ owned: 1, accessible: 1, platform: 1, organizations: 1, products: 1, vm: 1, management: 1, details: 1, metrics: 1 })
+})
+test('workspace reads are repeated when the inventory is incomplete or the session scope changes', async () => {
+    const calls = { inventory: 0, accessible: 0, platform: 0, organizations: 0, products: 0 }
+    const api = services({
+        loadInventory: async s => { calls.inventory++; return scoped(s, [vm().value]) },
+        loadAccessibleInventory: async s => { calls.accessible++; return scoped(s, []) },
+        loadPlatformAccess: async s => { calls.platform++; return scoped(s, { canRead: true, canEdit: true }) },
+        organizations: async () => { calls.organizations++; return [] },
+        loadProducts: async s => { calls.products++; return scoped(s, { plans: [], containers: [] }) },
+    })
+    const ops = new VmController(settings, new VmIntents()); ops.visible = true
+    const initialRead = ops.beginRead(ops.generation, false, '')!
+    const initial = await readVmWorkspace(settings, initialRead, api)
+    expect(ops.finishRead(initialRead, { target: '', authorized: true, reads: initial.reads })).toBe(true)
+    const incomplete = { ...initial, reads: { ...initial.reads, inventory: false } }
+    const incompleteRead = ops.beginRead(ops.generation, false, 'synthetic-vm')!
+    const incompleteResult = await readVmWorkspace(settings, incompleteRead, api, undefined, incomplete)
+    expect(ops.finishRead(incompleteRead, { target: incompleteRead.target, authorized: true, reads: incompleteResult.reads })).toBe(true)
+    expect(calls).toEqual({ inventory: 2, accessible: 2, platform: 2, organizations: 2, products: 2 })
+
+    const rotated = { ...settings, authToken: 'rotated-token' }
+    const rotatedRead = ops.beginRead(ops.generation, false, 'synthetic-vm')!
+    await readVmWorkspace(rotated, rotatedRead, api, undefined, initial)
+    expect(calls).toEqual({ inventory: 3, accessible: 3, platform: 3, organizations: 3, products: 3 })
+})
+test('a failed exact VM read stays locked and cannot be treated as a verified target', async () => {
+    const ops = new VmController(settings, new VmIntents()); ops.visible = true
+    const read = ops.beginRead(ops.generation, false, 'synthetic-vm')!
+    const result = await readVmWorkspace(settings, read, services({ loadVm: fail }))
+    expect(result.reads.inventory).toBe(true)
+    expect(result.reads.target).toBe(false)
+    expect(ops.finishRead(read, { target: read.target, authorized: true, reads: result.reads })).toBe(true)
+    expect(ops.locked).toBe(true)
+})
 test('each successful inventory survives a sibling failure, but cannot satisfy unknown reconciliation', async () => {
     for (const broken of ['loadInventory', 'loadAccessibleInventory'] as const) {
         const { ops, op } = opening(); ops.finish(op, false)
