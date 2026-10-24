@@ -14,6 +14,16 @@ export type VmSnapshot = {
 export const emptySnapshot = (): VmSnapshot => ({ inventory: null, vm: null, management: null, platform: null, products: null, details: null, metrics: null, organizations: null, errors: [],
     reads: { inventory: false, target: false, management: false, platform: false, products: false, details: false, services: false } })
 export const safeVmMessage = (error: unknown) => error instanceof Error && error.name !== 'AbortError' && error.message.startsWith('VM ') ? error.message : 'This VM information is unavailable. Refresh to try again.'
+function mergeVmRecord(current: Vm, incoming: Vm): Vm {
+    const merged = { ...current }
+    for (const key of Object.keys(merged) as (keyof Vm)[]) {
+        const currentValue = current[key], incomingValue = incoming[key]
+        const currentHasValue = currentValue !== null && currentValue !== '' && (!Array.isArray(currentValue) || currentValue.length > 0)
+        const incomingHasValue = incomingValue !== null && incomingValue !== '' && (!Array.isArray(incomingValue) || incomingValue.length > 0)
+        if (!currentHasValue && incomingHasValue) Object.assign(merged, { [key]: incomingValue })
+    }
+    return merged
+}
 // A failed supplemental read stays unavailable. It never becomes a fabricated empty list or permission.
 export async function readVmWorkspace(settings: AppSettings, read: VmRead, services: VmServices, onProgress?: (snapshot: VmSnapshot) => void): Promise<VmSnapshot> {
     const result = emptySnapshot(), signal = read.signal
@@ -25,23 +35,27 @@ export async function readVmWorkspace(settings: AppSettings, read: VmRead, servi
         catch (error) { if (!signal.aborted) result.errors.push(safeVmMessage(error)) }
         publish()
     }
-    const inventories: Scoped<Vm[]>[] = []
+    const inventories: { owned: Scoped<Vm[]> | null; accessible: Scoped<Vm[]> | null } = { owned: null, accessible: null }
     let inventoryRequestsSettled = 0
-    const takeInventory = async (load: () => Promise<Scoped<Vm[]>>) => {
+    const takeInventory = async (source: keyof typeof inventories, load: () => Promise<Scoped<Vm[]>>) => {
         try {
             const inventory = await load()
-            if (!signal.aborted) inventories.push(inventory)
+            if (!signal.aborted) inventories[source] = inventory
         } catch (error) {
             if (!signal.aborted) result.errors.push(safeVmMessage(error))
         } finally {
             inventoryRequestsSettled++
             if (!signal.aborted) {
-                if (inventories.length) {
+                const available = [inventories.owned, inventories.accessible].filter((inventory): inventory is Scoped<Vm[]> => inventory !== null)
+                if (available.length) {
                     const rows = new Map<string, Vm>()
-                    for (const inventory of inventories) for (const vm of inventory.value) if (!rows.has(vm.name)) rows.set(vm.name, vm)
-                    result.inventory = { ...inventories[0], value: [...rows.values()] }
+                    for (const inventory of available) for (const vm of inventory.value) {
+                        const identity = vm.name.toLowerCase(), current = rows.get(identity)
+                        rows.set(identity, current ? mergeVmRecord(current, vm) : vm)
+                    }
+                    result.inventory = { ...(inventories.owned ?? inventories.accessible!), value: [...rows.values()] }
                 }
-                result.reads.inventory = inventoryRequestsSettled === 2 && inventories.length === 2
+                result.reads.inventory = inventoryRequestsSettled === 2 && inventories.owned !== null && inventories.accessible !== null
                 publish()
             }
         }
@@ -51,8 +65,8 @@ export async function readVmWorkspace(settings: AppSettings, read: VmRead, servi
     const hasTarget = !!read.target && read.kind !== 'stop_all' && read.kind !== 'setup_plan'
     result.reads.target = targetAvailable
     await Promise.all([
-        takeInventory(() => services.loadInventory(settings, signal)),
-        takeInventory(() => services.loadAccessibleInventory(settings, signal)),
+        takeInventory('owned', () => services.loadInventory(settings, signal)),
+        takeInventory('accessible', () => services.loadAccessibleInventory(settings, signal)),
         take(() => services.loadPlatformAccess(settings, signal), value => { result.platform = value; result.reads.platform = value.value.canEdit }),
         take(() => services.organizations(settings, signal), value => { result.organizations = value }),
         ...(!settings.impersonationToken && !settings.impersonatingUserId ? [take(() => services.loadProducts(settings, signal), value => {

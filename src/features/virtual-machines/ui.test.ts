@@ -1,5 +1,6 @@
 import { expect, mock, test } from 'bun:test'
 import type { AppSettings } from '../../types'
+import type { Vm } from './model'
 mock.module('../../lib/api', () => ({ apiFetch: () => { throw new Error('No real transport is allowed') } }))
 const { readVmWorkspace } = await import('./read')
 const { scoped, parseVm } = await import('./model')
@@ -35,6 +36,23 @@ test('complete inventory deduplicates owned/access; initial read is not a connec
     const ops = unlocked(), read = ops.beginRead(ops.generation, true, '')!
     const result = await readVmWorkspace(settings, read, services({ loadAccessibleInventory: async () => scoped(settings, [vm().value]), syncConnection: async () => { effects++; throw new Error() }, collectDetails: async () => { effects++; throw new Error() }, power: async () => { effects++; throw new Error() } }))
     expect(result.inventory?.value.length).toBe(1); expect(result.reads.inventory).toBe(true); expect(result.reads.target).toBe(true); expect(effects).toBe(0)
+})
+test('owned and accessible inventory merge sparse VM fields independently of response timing', async () => {
+    const rich = vm({ limits_cpu: '1', limits_memory: '2GB', organization_name: 'Cashflow', access_users: ['member'] }).value
+    const sparse = vm({ limits_cpu: null, limits_memory: null, organization_name: null, access_users: [] }).value
+    const readResult = async (owned: typeof rich, accessible: typeof rich, ownedDelay: number, accessibleDelay: number) => {
+        const ops = unlocked(), read = ops.beginRead(ops.generation, false, '')!
+        const delayed = (value: typeof rich, delay: number) => new Promise<ReturnType<typeof scoped<Vm[]>>>(resolve => setTimeout(() => resolve(scoped(settings, [value])), delay))
+        return readVmWorkspace(settings, read, services({
+            loadInventory: async () => delayed(owned, ownedDelay),
+            loadAccessibleInventory: async () => delayed(accessible, accessibleDelay),
+        }))
+    }
+    for (const result of [await readResult(rich, sparse, 5, 0), await readResult(sparse, rich, 0, 5)]) {
+        expect(result.inventory?.value).toHaveLength(1)
+        expect(result.inventory?.value[0]).toMatchObject({ limits_cpu: '1', limits_memory: '2GB', organization_name: 'Cashflow', access_users: ['member'] })
+        expect(result.reads.inventory).toBe(true)
+    }
 })
 test('VM inventory renders before slower permission checks finish; target and base reads run together', async () => {
     let finishPlatform!: (value: Awaited<ReturnType<VmServices['loadPlatformAccess']>>) => void
