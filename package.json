@@ -1,6 +1,6 @@
 {
   "name": "hanasand-app",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "private": true,
   "main": "index.ts",
   "expo": {
