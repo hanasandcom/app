@@ -9,12 +9,3 @@ export function isSandboxFirstPartyNavigation(value: string) {
         return false
     }
 }
-
-export function isSandboxCookieOrigin(value: string) {
-    try {
-        const url = new URL(value)
-        return url.protocol === 'https:' && url.hostname.toLowerCase() === hanasandDomain
-    } catch {
-        return false
-    }
-}
