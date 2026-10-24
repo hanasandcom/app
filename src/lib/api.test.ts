@@ -276,11 +276,11 @@ describe('mobile authentication route contracts', () => {
 
         await expect(createHanasandAccount(settings, ' analyst ', ' Analyst ', ' Analyst@Example.test ', 'strong-password'))
             .resolves.toEqual({ verificationRequired: true, challengeId: 'challenge-1' })
-        expect(requestUrl).toBe('https://example.test/api/user')
+        expect(requestUrl).toBe('https://example.test/api/auth/register')
         expect(requestBody).toEqual({ id: 'analyst', name: 'Analyst', email: 'analyst@example.test', password: 'strong-password' })
     })
 
-    it('sends new production signup requests directly to Identity, without requiring an existing API session', async () => {
+    it('uses the website signup proxy in production without requiring an existing API session', async () => {
         let requestUrl = ''
         mockFetch(async input => {
             requestUrl = String(input)
@@ -290,7 +290,7 @@ describe('mobile authentication route contracts', () => {
 
         await expect(createHanasandAccount(production, 'analyst', 'User', 'user@example.test', 'strong-password'))
             .resolves.toMatchObject({ verificationRequired: true, challengeId: 'identity-challenge' })
-        expect(requestUrl).toBe('https://identity.hanasand.com/api/user')
+        expect(requestUrl).toBe('https://hanasand.com/api/auth/register')
     })
 
     it('keeps account creation anonymous when a stale session is saved in app settings', async () => {

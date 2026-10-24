@@ -621,7 +621,7 @@ export async function createHanasandAccount(settings: AppSettings, username: str
     // Signup is anonymous. A stale token left in settings must not make Identity reject
     // account creation before it reaches the email-verification handler.
     const anonymousSettings = { ...settings, authToken: '', userId: '', impersonationToken: '' }
-    const response = await apiFetch(anonymousSettings, joinUrl(organizationListBase(settings), 'user'), {
+    const response = await apiFetch(anonymousSettings, identityUrl(settings, 'auth/register'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ id, name: displayName, email: normalizedEmail, password, ...(verification ? verification : {}) }),
