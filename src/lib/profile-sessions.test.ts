@@ -48,6 +48,8 @@ describe('native device session review', () => {
         expect(visibleSessionLocation('Unavailable for private addresses')).toBeNull()
         expect(visibleSessionLocation('Unavailable')).toBeNull()
         expect(visibleSessionLocation('  unavailable  ')).toBeNull()
+        expect(visibleSessionLocation('Approximate location: Unavailable for private addresses')).toBeNull()
+        expect(visibleSessionLocation(' Approximate location: Oslo, Norway ')).toBe('Oslo, Norway')
         expect(visibleSessionLocation('Oslo, Norway')).toBe('Oslo, Norway')
     })
 

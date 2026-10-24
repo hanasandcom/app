@@ -195,6 +195,7 @@ export function DropdownMenu({
     disabled?: boolean
 }) {
     const theme = useAppTheme()
+    const insets = useSafeAreaInsets()
     const [visible, setVisible] = useState(false)
     const styles = useMemo(() => createStyles(theme), [theme])
     return <>
@@ -204,7 +205,10 @@ export function DropdownMenu({
             <Text numberOfLines={1} style={styles.menuTriggerText}>{label}</Text><ChevronDown size={16} color={theme.textMuted} />
         </Pressable>
         <Modal visible={visible} transparent animationType='fade' onRequestClose={() => setVisible(false)}>
-            <View style={styles.menuBackdrop}>
+            <View style={[styles.menuBackdrop, {
+                paddingTop: safeAreaTopInset(insets.top, Platform.OS) + spacing.md,
+                paddingBottom: insets.bottom + spacing.md,
+            }]}>
                 <Pressable accessibilityRole='button' accessibilityLabel='Close menu' style={StyleSheet.absoluteFill} onPress={() => setVisible(false)} />
                 <View accessibilityRole='menu' style={styles.menuPanel}>
                     <View style={styles.menuHeader}>

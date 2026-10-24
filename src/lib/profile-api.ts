@@ -38,8 +38,8 @@ export function describeAccountSession(session: AccountSession) {
 }
 
 export function visibleSessionLocation(location: string) {
-    const value = location.trim()
-    return /^unavailable(?:\s+for\s+private\s+addresses)?$/i.test(value) ? null : value
+    const value = location.trim().replace(/^approximate\s+location\s*:\s*/i, '').trim()
+    return !value || /^unavailable(?:\s+for\s+private\s+addresses)?$/i.test(value) ? null : value
 }
 
 export function filterAccountSessions(sessions: AccountSession[], query: string) {

@@ -533,15 +533,15 @@ export default function App() {
                             <Tab.Screen name='Intelligence'>
                                 {() => <ThreatSearchScreen settings={settings} />}
                             </Tab.Screen>
-                            <Tab.Screen name='Home'>
-                                {() => <HomeScreen settings={settings} aiMessages={aiMessages} onSaveAiMessages={handleSaveAiMessages} />}
-                            </Tab.Screen>
+                            <Tab.Screen name='Images'>{() => <ImagesScreen settings={settings} />}</Tab.Screen>
                             <Tab.Screen name='Mail'>
                                 {() => <MailScreen settings={settings} />}
                             </Tab.Screen>
-                            <Tab.Screen name='Images'>{() => <ImagesScreen settings={settings} />}</Tab.Screen>
                             <Tab.Screen name='VirtualMachines'>
                                 {() => <VirtualMachinesScreen settings={settings} onOpenCheckout={openVmCheckout} />}
+                            </Tab.Screen>
+                            <Tab.Screen name='Home'>
+                                {() => <HomeScreen settings={settings} aiMessages={aiMessages} onSaveAiMessages={handleSaveAiMessages} />}
                             </Tab.Screen>
                             <Tab.Screen name='Profile'>
                                 {({ route }) => <ProfileScreen settings={settings} initialSection={route.params?.section} onLogout={clearSession} onDeleted={clearSession} />}
