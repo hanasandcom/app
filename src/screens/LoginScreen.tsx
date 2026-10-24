@@ -50,7 +50,10 @@ export function LoginScreen({
     const [authMode, setAuthMode] = useState<AuthMode>('login')
     const [username, setUsername] = useState('')
     const [name, setName] = useState('')
+    const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
+    const [signupChallenge, setSignupChallenge] = useState('')
+    const [signupCode, setSignupCode] = useState('')
     const [busy, setBusy] = useState(false)
     const [status, setStatus] = useState('')
     const [resetStep, setResetStep] = useState<ResetStep>('idle')
@@ -63,6 +66,7 @@ export function LoginScreen({
 
     const cleanUsername = username.trim()
     const cleanName = name.trim()
+    const cleanEmail = email.trim().toLowerCase()
     const passwordCounts = countPassword(password)
     const passwordIsValid =
         password.length >= 16
@@ -71,12 +75,21 @@ export function LoginScreen({
         && passwordCounts.lowercase >= 2
         && passwordCounts.uppercase >= 2
     const reservedUsername = reservedUsernames.has(cleanUsername.toLowerCase())
-    const canCreateAccount = Boolean(cleanUsername && cleanName && passwordIsValid && !reservedUsername)
-    const statusTone = status.includes('accepted') || status.includes('Check') || status.includes('reset') ? 'success' : status.includes('Signing') || status.includes('Creating') || status.includes('Sending') || status.includes('Checking') || status.includes('Setting') ? 'info' : 'error'
+    const canCreateAccount = Boolean(cleanUsername && cleanName && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail) && passwordIsValid && !reservedUsername)
+    const statusTone = status.includes('accepted') || status.includes('Check') || status.includes('reset') ? 'success' : status.includes('Signing') || status.includes('Creating') || status.includes('Sending') || status.includes('Checking') || status.includes('Setting') || status.includes('Verifying') ? 'info' : 'error'
 
     function setMode(nextMode: AuthMode) {
         setAuthMode(nextMode)
         setResetStep('idle')
+        setSignupChallenge('')
+        setSignupCode('')
+        setStatus('')
+    }
+
+    function updateSignupDetails(update: (value: string) => void, value: string) {
+        update(value)
+        setSignupChallenge('')
+        setSignupCode('')
         setStatus('')
     }
 
@@ -172,7 +185,7 @@ export function LoginScreen({
         }
     }
 
-    async function submitSignup() {
+    async function submitSignup(resendCode = false) {
         if (busy) return
         if (reservedUsername) {
             setStatus('This username is reserved.')
@@ -183,11 +196,17 @@ export function LoginScreen({
             return
         }
         setBusy(true)
-        setStatus('Creating account')
+        setStatus(signupChallenge && !resendCode ? 'Verifying email' : 'Sending verification code')
         try {
-            const session = await createHanasandAccount(settings, cleanUsername, cleanName, password)
+            const result = await createHanasandAccount(settings, cleanUsername, cleanName, cleanEmail, password, signupChallenge && !resendCode ? { challengeId: signupChallenge, code: signupCode } : undefined)
+            if ('verificationRequired' in result) {
+                setSignupChallenge(result.challengeId)
+                setSignupCode('')
+                setStatus('Check your email for the 6 digit verification code.')
+                return
+            }
             setStatus('')
-            await onAuthenticated(session)
+            await onAuthenticated(result)
         } catch (error) {
             setStatus(error instanceof Error ? error.message : 'Signup failed.')
         } finally {
@@ -290,7 +309,7 @@ export function LoginScreen({
                     <View style={styles.card}>
                         <LoginField
                             value={username}
-                            onChangeText={setUsername}
+                            onChangeText={value => authMode === 'signup' ? updateSignupDetails(setUsername, value) : setUsername(value)}
                             placeholder='Username'
                             textContentType='username'
                             returnKeyType='next'
@@ -300,34 +319,63 @@ export function LoginScreen({
                                 {reservedUsername ? <Text style={styles.inlineHint}>Reserved username.</Text> : null}
                                 <LoginField
                                     value={name}
-                                    onChangeText={setName}
+                                    onChangeText={value => updateSignupDetails(setName, value)}
                                     placeholder='Name'
                                     textContentType='name'
+                                    returnKeyType='next'
+                                />
+                                <LoginField
+                                    value={email}
+                                    onChangeText={value => updateSignupDetails(setEmail, value)}
+                                    placeholder='Email address'
+                                    keyboardType='email-address'
+                                    textContentType='emailAddress'
+                                    autoCapitalize='none'
+                                    maxLength={254}
                                     returnKeyType='next'
                                 />
                             </>
                         ) : null}
                         <LoginField
                             value={password}
-                            onChangeText={setPassword}
+                            onChangeText={value => authMode === 'signup' ? updateSignupDetails(setPassword, value) : setPassword(value)}
                             placeholder='Password'
                             secureTextEntry
-                            textContentType='password'
+                            textContentType={authMode === 'signup' ? 'newPassword' : 'password'}
                             returnKeyType='send'
                             onSubmitEditing={() => void (authMode === 'signup' ? submitSignup() : submitLogin())}
                         />
                         {authMode === 'signup' && password && !passwordIsValid ? (
                             <Text style={styles.inlineHint}>16 chars, 2 lowercase, 2 uppercase, 2 numbers, 2 symbols.</Text>
                         ) : null}
+                        {authMode === 'signup' && signupChallenge ? (
+                            <>
+                                <LoginField
+                                    value={signupCode}
+                                    onChangeText={value => setSignupCode(value.replace(/\D/g, '').slice(0, 6))}
+                                    placeholder='6 digit email code'
+                                    keyboardType='number-pad'
+                                    textContentType='oneTimeCode'
+                                    autoComplete='one-time-code'
+                                    maxLength={6}
+                                    returnKeyType='send'
+                                    onSubmitEditing={() => void submitSignup()}
+                                />
+                                <Text style={styles.inlineHint}>Enter the latest code sent to {cleanEmail}.</Text>
+                                <Pressable accessibilityRole='button' disabled={busy} onPress={() => void submitSignup(true)} style={({ pressed }) => [styles.linkButton, busy && styles.disabled, pressed && !busy && styles.pressed]}>
+                                    <Text style={styles.linkText}>Send a new code</Text>
+                                </Pressable>
+                            </>
+                        ) : null}
                         <View style={styles.actionRow}>
                             <Pressable
-                                disabled={busy || (authMode === 'signup' && !canCreateAccount)}
+                                disabled={busy || (authMode === 'signup' && (!canCreateAccount || (!!signupChallenge && !/^\d{6}$/.test(signupCode))))}
                                 onPress={() => void (authMode === 'signup' ? submitSignup() : submitLogin())}
-                                style={({ pressed }) => [styles.primaryButton, (busy || (authMode === 'signup' && !canCreateAccount)) && styles.disabled, pressed && !busy && styles.pressed]}
+                                style={({ pressed }) => [styles.primaryButton, (busy || (authMode === 'signup' && (!canCreateAccount || (!!signupChallenge && !/^\d{6}$/.test(signupCode))))) && styles.disabled, pressed && !busy && styles.pressed]}
                             >
                                 <Text style={styles.primaryText}>
                                     {authMode === 'signup'
-                                        ? busy ? 'Creating' : 'Create account'
+                                        ? busy ? (signupChallenge ? 'Verifying' : 'Sending code') : signupChallenge ? 'Verify email' : 'Create account'
                                         : busy && resetStep === 'idle' ? 'Logging in' : 'Log in'}
                                 </Text>
                             </Pressable>

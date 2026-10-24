@@ -55,7 +55,7 @@ mock.module('expo-crypto', () => ({
     },
 }))
 
-const { startMobileImpersonation, stopMobileImpersonation, isHanasandOrganizationMember, apiFetch, askCodex, fetchAiModels, createHanasandBrowserSignInUrl, fetchNotes, AuthenticationError, exchangeHanasandMobileSsoCode, fetchDesktopAgentStatus, friendlyPasskeyError, isHanasandGoogleSignInConfigured, loginToHanasand, loginWithHanasandPasskey, refreshHanasandSession, runDesktopAgentCommand } = await import('./api')
+const { startMobileImpersonation, stopMobileImpersonation, isHanasandOrganizationMember, apiFetch, askCodex, fetchAiModels, createHanasandBrowserSignInUrl, createHanasandAccount, fetchNotes, AuthenticationError, exchangeHanasandMobileSsoCode, fetchDesktopAgentStatus, friendlyPasskeyError, isHanasandGoogleSignInConfigured, loginToHanasand, loginWithHanasandPasskey, refreshHanasandSession, runDesktopAgentCommand } = await import('./api')
 
 const settings: AppSettings = {
     themeMode: 'obsidian',
@@ -265,6 +265,67 @@ describe('Google sign-in availability route', () => {
 })
 
 describe('mobile authentication route contracts', () => {
+    it('starts the website-aligned email verification step for account creation', async () => {
+        let requestUrl = ''
+        let requestBody: unknown
+        mockFetch(async (input, init) => {
+            requestUrl = String(input)
+            requestBody = JSON.parse(String(init?.body))
+            return new Response(JSON.stringify({ verificationRequired: true, challengeId: 'challenge-1' }), { status: 202 })
+        })
+
+        await expect(createHanasandAccount(settings, ' analyst ', ' Analyst ', ' Analyst@Example.test ', 'strong-password'))
+            .resolves.toEqual({ verificationRequired: true, challengeId: 'challenge-1' })
+        expect(requestUrl).toBe('https://example.test/api/user')
+        expect(requestBody).toEqual({ id: 'analyst', name: 'Analyst', email: 'analyst@example.test', password: 'strong-password' })
+    })
+
+    it('sends new production signup requests directly to Identity, without requiring an existing API session', async () => {
+        let requestUrl = ''
+        mockFetch(async input => {
+            requestUrl = String(input)
+            return new Response(JSON.stringify({ verificationRequired: true, challengeId: 'identity-challenge' }), { status: 202 })
+        })
+        const production = { ...settings, apiBaseUrl: 'https://api.hanasand.com/api', siteBaseUrl: 'https://hanasand.com' }
+
+        await expect(createHanasandAccount(production, 'analyst', 'User', 'user@example.test', 'strong-password'))
+            .resolves.toMatchObject({ verificationRequired: true, challengeId: 'identity-challenge' })
+        expect(requestUrl).toBe('https://identity.hanasand.com/api/user')
+    })
+
+    it('keeps account creation anonymous when a stale session is saved in app settings', async () => {
+        const capturedHeaders: Headers[] = []
+        mockFetch(async (_input, init) => {
+            capturedHeaders.push(new Headers(init?.headers))
+            return new Response(JSON.stringify({ verificationRequired: true, challengeId: 'identity-challenge' }), { status: 202 })
+        })
+        const staleSession = { ...settings, authToken: 'expired-session', userId: 'old-user', impersonationToken: 'old-impersonation' }
+
+        await createHanasandAccount(staleSession, 'analyst', 'User', 'user@example.test', 'strong-password')
+
+        expect(capturedHeaders[0]?.get('authorization')).toBeNull()
+        expect(capturedHeaders[0]?.get('id')).toBeNull()
+        expect(capturedHeaders[0]?.get('x-impersonation-token')).toBeNull()
+        expect(capturedHeaders[0]?.get('dpop')).toBeNull()
+    })
+
+    it('submits the email code and returns the created native session', async () => {
+        let requestBody: unknown
+        mockFetch(async (_input, init) => {
+            requestBody = JSON.parse(String(init?.body))
+            return new Response(JSON.stringify({ id: 'user-1', name: 'User', token: 'session-token' }), { status: 201 })
+        })
+
+        await expect(createHanasandAccount(settings, 'analyst', 'User', 'user@example.test', 'strong-password', { challengeId: 'challenge-1', code: '123456' }))
+            .resolves.toMatchObject({ id: 'user-1', token: 'session-token' })
+        expect(requestBody).toEqual({ id: 'analyst', name: 'User', email: 'user@example.test', password: 'strong-password', challengeId: 'challenge-1', code: '123456' })
+    })
+
+    it('requires an email before sending a signup request', async () => {
+        mockFetch(async () => { throw new Error('Signup must not call the network without an email.') })
+        await expect(createHanasandAccount(settings, 'analyst', 'User', '', 'strong-password')).rejects.toThrow('Enter username, name, email, and password.')
+    })
+
     it('posts password credentials to the API login route and normalizes the session', async () => {
         let requestUrl = ''
         let requestBody: unknown

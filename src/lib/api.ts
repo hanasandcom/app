@@ -611,18 +611,26 @@ export async function isHanasandGoogleSignInConfigured(settings: AppSettings) {
     })
 }
 
-export async function createHanasandAccount(settings: AppSettings, username: string, name: string, password: string) {
+export async function createHanasandAccount(settings: AppSettings, username: string, name: string, email: string, password: string, verification?: { challengeId: string; code: string }) {
     const id = username.trim()
     const displayName = name.trim()
-    if (!id || !displayName || !password) {
-        throw new Error('Enter username, name, and password.')
+    const normalizedEmail = email.trim().toLowerCase()
+    if (!id || !displayName || !normalizedEmail || !password) {
+        throw new Error('Enter username, name, email, and password.')
     }
-    const response = await apiFetch(settings, joinUrl(settings.apiBaseUrl, 'user'), {
+    // Signup is anonymous. A stale token left in settings must not make Identity reject
+    // account creation before it reaches the email-verification handler.
+    const anonymousSettings = { ...settings, authToken: '', userId: '', impersonationToken: '' }
+    const response = await apiFetch(anonymousSettings, joinUrl(organizationListBase(settings), 'user'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ id, name: displayName, password }),
+        body: JSON.stringify({ id, name: displayName, email: normalizedEmail, password, ...(verification ? verification : {}) }),
     })
-    return normalizeAuthSession(await readJsonResponse(response))
+    const payload = asRecord(await readJsonResponse(response))
+    if (payload.verificationRequired === true && typeof payload.challengeId === 'string' && payload.challengeId) {
+        return { verificationRequired: true as const, challengeId: payload.challengeId }
+    }
+    return normalizeAuthSession(payload)
 }
 
 export async function refreshHanasandSession(settings: AppSettings) {
