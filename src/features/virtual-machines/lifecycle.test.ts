@@ -19,6 +19,16 @@ const machine = (state = 'Running') => scoped(settings, parseVm({ name: 'synthet
 const permission = (canManage = true) => scoped(settings, { name: 'synthetic-vm', canManage, services: [] })
 const nonce = '11111111-1111-1111-1111-111111111111'
 const tick = () => new Promise(resolve => setTimeout(resolve, 2))
+test('a completed inventory can switch targets while slower optional reads are still pending', () => {
+    const controller = new VmController(settings, new VmIntents()); controller.visible = true
+    const read = controller.beginRead(controller.generation, false, '')!
+    const signal = read.signal
+    expect(controller.switchTarget(read.generation)).toBe(true)
+    expect(signal.aborted).toBe(true)
+    expect(controller.reading).toBe(false)
+    expect(controller.locked).toBe(true)
+    expect(controller.context(controller.generation)).toBe(true)
+})
 class Socket {
     readyState = 0; bufferedAmount = 0; sent: string[] = []; closes = 0
     onopen: (() => void) | null = null; onmessage: ((event: { data: unknown }) => void) | null = null

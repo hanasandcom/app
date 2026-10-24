@@ -33,8 +33,8 @@ import { nativeToolForPath } from './lib/native-tool-navigation'
 import { organizationSectionForPath } from './lib/organization-navigation'
 import { fetchOrganizationsWithRetry, type Organization } from './lib/profile-api'
 import type { SiteNavigationItem } from './data/site-navigation'
-import { loadAiChat, loadSettings, saveAiChat, saveSettings, settingsWriteRevision } from './lib/storage'
-import { getThemePalette, palette } from './theme/tokens'
+import { loadAiChat, loadSettings, loadStoredThemeMode, saveAiChat, saveSettings, settingsWriteRevision } from './lib/storage'
+import { getThemePalette, type ThemeMode } from './theme/tokens'
 import { AppThemeProvider } from './theme/context'
 import { PendingDeletionError, refreshHanasandSession, startDesktopAgentCoverTraffic, stopDesktopAgentCoverTraffic, stopMobileImpersonation } from './lib/api'
 import { classifyRefreshFailure, sameSettingsSession, SessionTransition } from './lib/session'
@@ -59,8 +59,6 @@ const tabIcons = {
     Explore: Compass,
 } as const
 
-void SystemUI.setBackgroundColorAsync(palette.background)
-
 async function safeLoad<T>(loader: () => Promise<T>, fallback: T) {
     try {
         return await loader()
@@ -73,6 +71,7 @@ export default function App() {
     const navigation = useNavigationContainerRef<RootTabParamList>()
     const navigationHandoff = useRef(0)
     const [settings, setSettings] = useState<AppSettings | null>(null)
+    const [bootstrapThemeMode, setBootstrapThemeMode] = useState<ThemeMode>('obsidian')
     const currentSettings = useRef(settings)
     currentSettings.current = settings
     const sessionTransition = useRef(new SessionTransition()).current
@@ -91,6 +90,9 @@ export default function App() {
 
     useEffect(() => {
         let active = true
+        void loadStoredThemeMode().then(mode => {
+            if (active) setBootstrapThemeMode(mode)
+        }).catch(() => {})
         void (async () => {
             setBootstrapError('')
             try {
@@ -136,10 +138,10 @@ export default function App() {
         return () => { active = false }
     }, [bootstrapAttempt])
 
+    const shellPalette = getThemePalette(settings?.themeMode ?? bootstrapThemeMode)
     useEffect(() => {
-        if (!settings) return
-        void SystemUI.setBackgroundColorAsync(getThemePalette(settings.themeMode).background)
-    }, [settings])
+        void SystemUI.setBackgroundColorAsync(shellPalette.background)
+    }, [shellPalette.background])
 
     useEffect(() => {
         if (!settings?.authToken || !settings.userId) { setOrganizations([]); return }
@@ -370,12 +372,12 @@ export default function App() {
 
     if (!settings && bootstrapError) {
         return (
-            <GestureHandlerRootView style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28, backgroundColor: palette.background }}>
-                <StatusBar style='light' />
-                <Text style={{ color: palette.text, fontSize: 17, fontWeight: '700', textAlign: 'center' }}>Secure local data is unavailable</Text>
-                <Text style={{ color: palette.textSoft, marginTop: 10, textAlign: 'center' }}>{bootstrapError}</Text>
-                <Pressable onPress={() => setBootstrapAttempt(value => value + 1)} style={{ marginTop: 20, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 14, backgroundColor: palette.surfaceStrong, borderWidth: 1, borderColor: palette.surfaceBorder }}>
-                    <Text style={{ color: palette.accent, fontWeight: '800' }}>Try again</Text>
+            <GestureHandlerRootView style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28, backgroundColor: shellPalette.background }}>
+                <StatusBar style={bootstrapThemeMode === 'light' ? 'dark' : 'light'} />
+                <Text style={{ color: shellPalette.text, fontSize: 17, fontWeight: '700', textAlign: 'center' }}>Secure local data is unavailable</Text>
+                <Text style={{ color: shellPalette.textSoft, marginTop: 10, textAlign: 'center' }}>{bootstrapError}</Text>
+                <Pressable onPress={() => setBootstrapAttempt(value => value + 1)} style={{ marginTop: 20, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 14, backgroundColor: shellPalette.surfaceStrong, borderWidth: 1, borderColor: shellPalette.surfaceBorder }}>
+                    <Text style={{ color: shellPalette.accent, fontWeight: '800' }}>Try again</Text>
                 </Pressable>
             </GestureHandlerRootView>
         )
@@ -383,9 +385,9 @@ export default function App() {
 
     if (!settings) {
         return (
-            <GestureHandlerRootView style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.background }}>
-                <StatusBar style='light' />
-                <Text style={{ color: palette.text }}>Loading Hanasand App...</Text>
+            <GestureHandlerRootView style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: shellPalette.background }}>
+                <StatusBar style={bootstrapThemeMode === 'light' ? 'dark' : 'light'} />
+                <Text style={{ color: shellPalette.text }}>Loading Hanasand App...</Text>
             </GestureHandlerRootView>
         )
     }
@@ -516,11 +518,11 @@ export default function App() {
                             <Tab.Screen name='Profile'>
                                 {({ route }) => <ProfileScreen settings={settings} initialSection={route.params?.section} onLogout={clearSession} onDeleted={clearSession} />}
                             </Tab.Screen>
-                            <Tab.Screen name='Mail'>
-                                {() => <MailScreen settings={settings} />}
-                            </Tab.Screen>
                             <Tab.Screen name='Intelligence'>
                                 {() => <ThreatSearchScreen settings={settings} />}
+                            </Tab.Screen>
+                            <Tab.Screen name='Mail'>
+                                {() => <MailScreen settings={settings} />}
                             </Tab.Screen>
                             <Tab.Screen name='Scan' component={ScannerScreen} />
                             <Tab.Screen name='Notes'>

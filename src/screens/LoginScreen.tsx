@@ -11,6 +11,8 @@ import { getThemePalette, spacing, type ThemePalette } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
 import { InlineNotice } from '../components/ui'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { loginFieldColors } from './login-theme'
+import { safeAreaTopInset } from '../lib/safe-area'
 
 type AuthMode = 'login' | 'signup'
 type ResetStep = 'idle' | 'code' | 'password'
@@ -279,7 +281,7 @@ export function LoginScreen({
     return (
         <LinearGradient colors={[theme.backgroundRaised, theme.background, theme.backgroundAlt]} locations={[0, 0.58, 1]} style={styles.root}>
             <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.keyboard}>
-                <ScrollView keyboardShouldPersistTaps='handled' contentContainerStyle={[styles.content, { paddingTop: Math.max(54, insets.top + 20), paddingBottom: 54 + insets.bottom }]}>
+                <ScrollView keyboardShouldPersistTaps='handled' contentContainerStyle={[styles.content, { paddingTop: Math.max(54, safeAreaTopInset(insets.top, Platform.OS) + 20), paddingBottom: 54 + insets.bottom }]}>
                     <View style={styles.masthead}>
                         <Text style={styles.logo}>Hanasand</Text>
                         <View style={styles.logoRule} />
@@ -450,7 +452,7 @@ function LoginField({
             autoCapitalize='none'
             autoCorrect={false}
             placeholderTextColor={theme.textSoft}
-            style={[loginFieldStyles.input, style]}
+            style={[loginFieldStyles.input, loginFieldColors(theme), style]}
         />
     )
 }
@@ -484,9 +486,6 @@ const loginFieldStyles = StyleSheet.create({
         minHeight: 58,
         borderRadius: 18,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.10)',
-        backgroundColor: 'rgba(255,255,255,0.055)',
-        color: '#f3f0e8',
         paddingHorizontal: 18,
         fontSize: 17,
         fontWeight: '600',

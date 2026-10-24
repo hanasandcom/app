@@ -71,6 +71,15 @@ export class VmController {
         if (!this.idle(generation)) return false
         this.generation++; this.inputRevision++; this.reviewed = undefined; this.clearPrivate(); return true
     }
+    switchTarget(generation: number) {
+        if (!this.current(generation) || !this.reading || this.writing) return false
+        this.pending?.abort()
+        this.pending = undefined
+        this.reading = false
+        this.needsRead = true
+        this.generation++; this.inputRevision++; this.reviewed = undefined; this.clearPrivate()
+        return true
+    }
     edit(generation: number) {
         if (!this.idle(generation) || this.locked) return false
         this.inputRevision++; return true // Draft state is outside this controller; ordinary typing does not renew native hosts.

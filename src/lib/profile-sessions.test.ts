@@ -46,6 +46,8 @@ describe('native device session review', () => {
     it('preserves private addresses without assigning public geolocation or an ISP', () => {
         expect(describeAccountSession(session({ ip: null, private_ip: '10.0.0.7' }))).toMatchObject({ address: 'Private IP 10.0.0.7', network: 'Private network', location: 'Unavailable for private addresses' })
         expect(visibleSessionLocation('Unavailable for private addresses')).toBeNull()
+        expect(visibleSessionLocation('Unavailable')).toBeNull()
+        expect(visibleSessionLocation('  unavailable  ')).toBeNull()
         expect(visibleSessionLocation('Oslo, Norway')).toBe('Oslo, Norway')
     })
 

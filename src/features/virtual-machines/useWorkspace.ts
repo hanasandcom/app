@@ -55,7 +55,8 @@ export function useVmWorkspace(settings: AppSettings, services: VmServices) {
         return () => { mounted.current = false; ops.hide(); sub.remove() }
     }, [ops, refresh])
     const select = (generation: number, target: string) => {
-        if (!ops.context(generation)) return
+        const switchedDuringRead = snapshot.reads.inventory && ops.reading && ops.switchTarget(generation)
+        if (!switchedDuringRead && !ops.context(generation)) return
         selection.current = target; setSelected(target); setMessage(''); setSnapshot(emptySnapshot()); publish(); void refresh(ops.generation, false, target)
     }
     const request = (generation: number, kind: VmOperationKind, target: string, title: string, explanation: string,

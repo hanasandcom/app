@@ -174,6 +174,12 @@ export async function loadSettings() {
     return nextSettings
 }
 
+/** Loads the non-secret palette preference before SecureStore is available. */
+export async function loadStoredThemeMode(): Promise<AppSettings['themeMode']> {
+    const raw = await getStoredValue(SETTINGS_KEY)
+    return raw ? normalizeSettings(parseJSON(raw)).themeMode : defaultSettings.themeMode
+}
+
 let settingsSaveQueue: Promise<void> = Promise.resolve()
 let settingsIntentRevision = 0
 

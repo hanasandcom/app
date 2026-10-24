@@ -46,6 +46,7 @@ const {
     defaultSettings,
     loadAuthenticatorEntries,
     loadSettings,
+    loadStoredThemeMode,
     saveAuthenticatorEntries,
     saveSettings,
     settingsWriteRevision,
@@ -66,6 +67,13 @@ beforeEach(() => {
 })
 
 describe('secure local storage', () => {
+    it('loads the saved theme without waiting for secure credentials', async () => {
+        asyncValues.set('hanasand-mobile/settings', JSON.stringify({ ...defaultSettings, themeMode: 'light' }))
+
+        expect(await loadStoredThemeMode()).toBe('light')
+        expect(operations).toEqual([])
+    })
+
     it('moves legacy session tokens to secure storage before scrubbing AsyncStorage', async () => {
         const legacy = { ...defaultSettings, authToken: 'legacy-auth', impersonationToken: 'legacy-impersonation' }
         asyncValues.set('hanasand-mobile/settings', JSON.stringify(legacy))
