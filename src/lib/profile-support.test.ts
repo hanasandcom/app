@@ -20,6 +20,27 @@ test('Support customer feed retains server lifecycle, ownership and resolution d
     expect(new Headers(calls[0].init.headers).get('id')).toBe(settings.userId)
     expect(new Headers(calls[0].init.headers).get('x-organization-id')).toBeNull()
 })
+test('customer Support read retries one transient network failure and keeps HTTP authorization failures single-shot', async () => {
+    let first = true
+    respond = () => {
+        if (first) { first = false; throw new TypeError('Network request failed') }
+        return Response.json({ tickets: [ticket()] })
+    }
+    expect(await fetchAccountSupportTickets(settings)).toEqual([ticket()])
+    expect(calls).toHaveLength(2)
+    expect(calls.every(call => call.url === 'https://support.hanasand.com/api/support/my-tickets')).toBe(true)
+
+    calls = []
+    respond = () => Response.json({ error: 'Sign in again.' }, { status: 401 })
+    await expect(fetchAccountSupportTickets(settings)).rejects.toThrow('Sign in again.')
+    expect(calls).toHaveLength(1)
+})
+test('cancelled Support network failures do not schedule a retry', async () => {
+    const controller = new AbortController()
+    respond = () => { controller.abort(); throw new TypeError('Network request failed') }
+    await expect(fetchAccountSupportTickets(settings, controller.signal)).rejects.toThrow()
+    expect(calls).toHaveLength(1)
+})
 test('message read uses exact route and detaches caller cancellation after settlement', async () => {
     respond = () => Response.json({ messages: [] })
     const controller = new AbortController()

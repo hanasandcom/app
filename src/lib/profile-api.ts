@@ -164,6 +164,26 @@ export function supportTicketAccess(settings: AppSettings, ticket?: SupportTicke
     return { ownAccount, canReply: owned && ticket?.status === 'open', canFeedback: owned && ticket?.status === 'closed'
         && Number.isSafeInteger(ticket.resolution_version) && Number(ticket.resolution_version) >= 0 && ticket.feedback_rating === null }
 }
+function retryableSupportReadFailure(error: unknown) {
+    if (error instanceof AccountRequestError) return error.status === 429 || error.status >= 500
+    return error instanceof TypeError && /network request failed|failed to fetch|network error/i.test(error.message)
+}
+function waitForSupportRetry(signal: AbortSignal | undefined, delayMs: number) {
+    return new Promise<void>((resolve, reject) => {
+        if (signal?.aborted) { reject(signal.reason || new Error('Support request was cancelled.')); return }
+        const timer = setTimeout(() => { signal?.removeEventListener('abort', cancel); resolve() }, delayMs)
+        const cancel = () => { clearTimeout(timer); reject(signal?.reason || new Error('Support request was cancelled.')) }
+        signal?.addEventListener('abort', cancel, { once: true })
+    })
+}
+async function supportReadWithRetry<T>(read: () => Promise<T>, signal?: AbortSignal, retryDelayMs = 500) {
+    try { return await read() }
+    catch (error) {
+        if (signal?.aborted || !retryableSupportReadFailure(error)) throw error
+        await waitForSupportRetry(signal, retryDelayMs)
+        return read()
+    }
+}
 function supportWrite(settings: AppSettings) {
     if (!supportTicketAccess(settings).ownAccount) throw new Error('Return to your own account to write to Support.')
 }
@@ -171,8 +191,12 @@ function supportId(id: string) {
     if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(id)) throw new Error('Choose a valid support conversation.')
     return encodeURIComponent(id)
 }
-export const fetchAccountSupportTickets = async (settings: AppSettings, signal?: AbortSignal) => list<SupportTicket>(await accountRequest(settings, 'support/my-tickets', { signal, credentials: 'omit' }, supportBase()), 'tickets')
-export const fetchSupportMessages = async (settings: AppSettings, id: string, signal?: AbortSignal) => list<SupportMessage>(await accountRequest(settings, `support/tickets/${supportId(id)}/messages`, { signal, credentials: 'omit' }, supportBase()), 'messages')
+export const fetchAccountSupportTickets = async (settings: AppSettings, signal?: AbortSignal) => supportReadWithRetry(
+    async () => list<SupportTicket>(await accountRequest(settings, 'support/my-tickets', { signal, credentials: 'omit' }, supportBase()), 'tickets'), signal,
+)
+export const fetchSupportMessages = async (settings: AppSettings, id: string, signal?: AbortSignal) => supportReadWithRetry(
+    async () => list<SupportMessage>(await accountRequest(settings, `support/tickets/${supportId(id)}/messages`, { signal, credentials: 'omit' }, supportBase()), 'messages'), signal,
+)
 export function sendSupportMessage(settings: AppSettings, id: string, subject: string, message: string, requestId?: string) {
     supportWrite(settings)
     if (!message.trim() || message.length > 10000 || subject.length > 160) throw new Error('Keep the subject under 160 characters and the message under 10,000 characters.')
