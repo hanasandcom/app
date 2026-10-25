@@ -95,7 +95,7 @@ export function Screen({
                 <View style={[styles.header, compactHeader && styles.compactHeader, { paddingTop: safeAreaTopInset(insets.top, Platform.OS) + spacing.sm }]}>
                     {settingsDrawer?.openMenu && <Pressable accessibilityRole='button' accessibilityLabel='Open navigation menu' onPress={settingsDrawer.openMenu} style={styles.settingsButton}><Menu color={theme.textMuted} size={20} /></Pressable>}
                     {left ? <View style={styles.headerLeft}>{left}</View> : null}
-                    <View style={{ flex: 1 }}>
+                    <View style={{ flex: 1, minWidth: 112 }}>
                         <Text style={[styles.title, compactHeader && styles.compactTitle]}>{title}</Text>
                         {!!subtitle && <Text style={styles.subtitle}>{subtitle}</Text>}
                         {settingsDrawer?.openWorkspace && <Pressable accessibilityRole='button' accessibilityLabel={`Switch workspace, ${settingsDrawer.workspaceName || 'Personal'}`} onPress={settingsDrawer.openWorkspace} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingTop: 5 }}><Text numberOfLines={1} style={{ color: theme.textMuted, fontSize: 12 }}>{settingsDrawer.workspaceName || 'Personal'}</Text><ChevronDown size={12} color={theme.textMuted} /></Pressable>}
@@ -543,10 +543,10 @@ function createStyles(theme: ThemePalette) {
             ...StyleSheet.absoluteFillObject,
             opacity: 0.36,
         },
-        header: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: 6, flexDirection: 'row', alignItems: 'flex-start' },
+        header: { paddingHorizontal: spacing.lg, paddingBottom: spacing.md, gap: 6, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start' },
         compactHeader: { paddingBottom: spacing.xs, alignItems: 'center' },
         headerLeft: { marginRight: spacing.xs },
-        headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+        headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginLeft: 'auto', alignSelf: 'flex-end' },
         content: { paddingHorizontal: spacing.lg, paddingBottom: 168, gap: spacing.md },
         staticContent: { flex: 1 },
         eyebrow: { color: theme.textSoft, fontSize: 12, textTransform: 'uppercase', letterSpacing: 2 },

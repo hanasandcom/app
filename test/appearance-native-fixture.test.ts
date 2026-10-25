@@ -7,5 +7,6 @@ test('appearance simulator fixture is opt-in, isolated from normal app startup, 
     expect(fixture).toContain("import { SettingsDrawer }")
     expect(fixture).toContain('onThemeChange={themeMode => setSettings')
     expect(fixture).toContain('useAppTheme()')
+    expect(fixture).toContain('<AppThemeProvider mode={settings.themeMode}>')
     expect(fixture).not.toContain('fetch(')
 })

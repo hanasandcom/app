@@ -41,7 +41,7 @@ import { classifyRefreshFailure, sameSettingsSession, SessionTransition } from '
 import { caseId as monitoringCaseId } from './features/cases/model'
 
 const Tab = createBottomTabNavigator<RootTabParamList>()
-const primaryTabRoutes: Array<keyof RootTabParamList> = ['Home', 'Intelligence', 'Mail', 'Images', 'VirtualMachines']
+const primaryTabRoutes: Array<keyof RootTabParamList> = ['Intelligence', 'Images', 'Mail', 'VirtualMachines', 'Home']
 function AppRoot({ children, backgroundColor }: { children: ReactNode; backgroundColor: string }) {
     return <GestureHandlerRootView style={{ flex: 1, backgroundColor }}><SafeAreaProvider>{children}</SafeAreaProvider></GestureHandlerRootView>
 }
@@ -291,15 +291,33 @@ export default function App() {
     }
 
     async function handleThemeChange(themeMode: AppSettings['themeMode']) {
-        const current = currentSettings.current
-        if (!current) throw new Error('Settings are not ready yet.')
-        if (!sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)) throw new Error('Your session changed. Open Settings again before saving.')
-        const saveRevision = settingsWriteRevision()
-        const next = { ...current, themeMode }
-        await saveThemePreference(next, saveRevision)
-        if (!sessionTransition.current(sessionIntentVersion, settings, currentSettings.current) || settingsWriteRevision() !== saveRevision + 1) throw new Error('Settings changed before this theme could be applied.')
-        currentSettings.current = next
-        setSettings(next)
+        let saveRevision = settingsWriteRevision()
+        for (let attempt = 0; attempt < 8; attempt++) {
+            const current = currentSettings.current
+            if (!current) throw new Error('Settings are not ready yet.')
+            if (!sessionTransition.current(sessionIntentVersion, settings, current)) throw new Error('Your session changed. Open Settings again before saving.')
+            const next = { ...current, themeMode }
+            try {
+                await saveThemePreference(next, saveRevision)
+            } catch (error) {
+                if (!sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)) throw new Error('Your session changed. Open Settings again before saving.')
+                const latestRevision = settingsWriteRevision()
+                if (latestRevision === saveRevision + 1) throw error
+                saveRevision = latestRevision
+                continue
+            }
+            if (!sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)) throw new Error('Your session changed. Open Settings again before saving.')
+            const latestRevision = settingsWriteRevision()
+            if (latestRevision !== saveRevision + 1) {
+                saveRevision = latestRevision
+                continue
+            }
+            const applied = { ...currentSettings.current!, themeMode }
+            currentSettings.current = applied
+            setSettings(applied)
+            return
+        }
+        throw new Error('Settings kept changing. Reopen Appearance and try again.')
     }
 
     async function handleSaveAiMessages(next: AiChatMessage[]) {
@@ -486,7 +504,7 @@ export default function App() {
                         theme={{
                             ...(settings.themeMode === 'light' ? DefaultTheme : DarkTheme),
                             colors: {
-                                ...DarkTheme.colors,
+                                ...(settings.themeMode === 'light' ? DefaultTheme.colors : DarkTheme.colors),
                                 background: activePalette.background,
                                 card: activePalette.backgroundAlt,
                                 text: activePalette.text,
@@ -496,7 +514,7 @@ export default function App() {
                         }}
                     >
                         <Tab.Navigator
-                            initialRouteName='Home'
+                            initialRouteName='Intelligence'
                             screenOptions={({ route }) => ({
                                 headerShown: false,
                                 tabBarShowLabel: true,
@@ -531,18 +549,18 @@ export default function App() {
                                 sceneStyle: { backgroundColor: activePalette.background },
                             })}
                         >
-                            <Tab.Screen name='Home'>
-                                {() => <HomeScreen settings={settings} aiMessages={aiMessages} onSaveAiMessages={handleSaveAiMessages} />}
-                            </Tab.Screen>
                             <Tab.Screen name='Intelligence'>
                                 {() => <ThreatSearchScreen settings={settings} />}
                             </Tab.Screen>
+                            <Tab.Screen name='Images'>{() => <ImagesScreen settings={settings} />}</Tab.Screen>
                             <Tab.Screen name='Mail'>
                                 {() => <MailScreen settings={settings} />}
                             </Tab.Screen>
-                            <Tab.Screen name='Images'>{() => <ImagesScreen settings={settings} />}</Tab.Screen>
                             <Tab.Screen name='VirtualMachines'>
                                 {() => <VirtualMachinesScreen settings={settings} onOpenCheckout={openVmCheckout} />}
+                            </Tab.Screen>
+                            <Tab.Screen name='Home'>
+                                {() => <HomeScreen settings={settings} aiMessages={aiMessages} onSaveAiMessages={handleSaveAiMessages} />}
                             </Tab.Screen>
                             <Tab.Screen name='Profile'>
                                 {({ route }) => <ProfileScreen settings={settings} initialSection={route.params?.section} onLogout={clearSession} onDeleted={clearSession} />}

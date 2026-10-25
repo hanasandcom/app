@@ -12,8 +12,7 @@ import { defaultSettings } from '../src/lib/storage'
 import type { AppSettings } from '../src/types'
 import { AppThemeProvider, useAppTheme } from '../src/theme/context'
 
-function Fixture() {
-    const [settings, setSettings] = useState<AppSettings>({ ...defaultSettings, userId: 'synthetic-user', authToken: 'synthetic-token' })
+function Fixture({ settings, setSettings }: { settings: AppSettings; setSettings: (update: (current: AppSettings) => AppSettings) => void }) {
     const [open, setOpen] = useState(false)
     const theme = useAppTheme()
     return <View style={{ flex: 1, padding: 24, paddingTop: 96, gap: 16, backgroundColor: theme.background }}>
@@ -21,9 +20,14 @@ function Fixture() {
         <Text style={{ color: theme.textMuted }}>Changing Appearance must update this screen too.</Text>
         <PillButton label='Open app settings' onPress={() => setOpen(true)} />
         <SettingsDrawer open={open} settings={settings} onClose={() => setOpen(false)}
-            onSave={next => setSettings(next)} onThemeChange={themeMode => setSettings(current => ({ ...current, themeMode }))} />
+            onSave={next => setSettings(() => next)} onThemeChange={themeMode => setSettings(current => ({ ...current, themeMode }))} />
     </View>
 }
 
+function AppearanceRoot() {
+    const [settings, setSettings] = useState<AppSettings>({ ...defaultSettings, userId: 'synthetic-user', authToken: 'synthetic-token' })
+    return <AppThemeProvider mode={settings.themeMode}><Fixture settings={settings} setSettings={setSettings} /></AppThemeProvider>
+}
+
 const Stack = createNativeStackNavigator()
-registerRootComponent(() => <GestureHandlerRootView style={{ flex: 1 }}><SafeAreaProvider><AppThemeProvider mode='obsidian'><NavigationContainer><Stack.Navigator screenOptions={{ headerShown: false }}><Stack.Screen name='SyntheticAppearance' component={Fixture} /></Stack.Navigator></NavigationContainer></AppThemeProvider></SafeAreaProvider></GestureHandlerRootView>)
+registerRootComponent(() => <GestureHandlerRootView style={{ flex: 1 }}><SafeAreaProvider><NavigationContainer><Stack.Navigator screenOptions={{ headerShown: false }}><Stack.Screen name='SyntheticAppearance' component={AppearanceRoot} /></Stack.Navigator></NavigationContainer></SafeAreaProvider></GestureHandlerRootView>)
