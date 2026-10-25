@@ -1,4 +1,5 @@
 import type { AppSettings } from '../../types'
+import { getHeader } from '../../lib/headers'
 import { apiFetch } from '../../lib/api'
 import { CaseError, caseId, changeBody, endpoint, mergeIds, needsHumanReview, organization, own, parseCase, parseRepository, repositoryId, row, rows, safeUrl, text, type CaseChange } from './model'
 export type Transport = (settings: AppSettings, url: string, init: RequestInit) => Promise<Response>
@@ -22,7 +23,7 @@ async function request(s: AppSettings, path: string, signal: AbortSignal, option
         if (controller.signal.aborted) throw new CaseError('Case request cancelled.')
         dispatched = true
         const res = await (options.transport || apiFetch)(s, url, { method, signal: controller.signal, credentials: 'omit', redirect: 'error', cache: 'no-store', headers: { Accept: 'application/json', Authorization: `Bearer ${s.authToken}`, id: s.userId, ...(s.impersonationToken ? { 'x-impersonation-token': s.impersonationToken } : {}), ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) })
-        if (Number(res.headers.get('content-length')) > 8 * 1024 * 1024) throw new CaseError('Case response exceeded the 8 MiB limit.', res.status, mutation)
+        if (Number(getHeader(res.headers, 'content-length')) > 8 * 1024 * 1024) throw new CaseError('Case response exceeded the 8 MiB limit.', res.status, mutation)
         const content = await res.text()
         if (content.length > 8 * 1024 * 1024 || utf8Size(content) > 8 * 1024 * 1024) throw new CaseError('Case response exceeded the 8 MiB limit.', res.status, mutation)
         if (!res.ok) throw new CaseError(res.status === 409 ? 'The case or repository changed. Refresh and review before trying again.' : [401, 403].includes(res.status) ? 'Current case access could not be verified. Refresh manually.' : res.status === 404 ? 'This case or repository is no longer available.' : res.status === 400 ? 'The service rejected this change. Check its required fields.' : 'Cases is temporarily unavailable.', res.status, mutation && (res.status >= 500 || res.status === 408))

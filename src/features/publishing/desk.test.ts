@@ -24,6 +24,17 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 0))
 function deferred<T>() { let resolve!: (value: T) => void; const promise = new Promise<T>(r => { resolve = r }); return { promise, resolve } }
 async function open(f: ReturnType<typeof fixture>) { f.desk.activate(); await tick(); await f.desk.select(f.item.id, f.desk.state.host) }
 
+test('opening an item keeps a successful list fresh after its detail read succeeds', async () => {
+    const f = fixture()
+    f.desk.activate(); await tick()
+    expect(f.desk.state.fresh).toBe(true)
+    await f.desk.select(f.item.id, f.desk.state.host)
+    expect(f.desk.state.mode).toBe('detail')
+    expect(f.desk.state.selected?.id).toBe(f.item.id)
+    expect(f.desk.state.fresh).toBe(true)
+    expect(f.desk.state.error).toBe('')
+})
+
 test('editing preserves native input identity; operation boundaries remove old target and reject captured confirmation', async () => {
     const f = fixture(); await open(f)
     const host = f.desk.state.host

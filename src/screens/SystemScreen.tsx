@@ -113,9 +113,16 @@ function SystemWorkspace({ settings, mode, onOpenLogs, onOpenVms, services: inje
         Alert.alert(kind === 'restart' ? `Restart ${name}?` : 'Clear unused Docker storage?', kind === 'restart' ? 'Active requests may be interrupted. Closing this screen does not cancel the restart.' : 'The host cleanup service will clear eligible build cache and unused images, preserving its rollback policy.', [
             { text: 'Cancel', style: 'cancel' }, { text: kind === 'restart' ? 'Restart' : 'Queue cleanup', style: 'destructive', onPress: () => {
                 const current = latest.current
-                if (!ops.usable(generation) || ops.locked || !current.access?.canWrite || !current.snapshot || staleTelemetry(current.snapshot)
-                    || kind === 'cleanup' && !storageObservation.current(storageRevision)
-                    || kind === 'restart' && (current.selected !== target || !current.snapshot.containers.some(c => c.id === target && c.name === name))) return
+                if (!ops.usable(generation) || ops.locked || !current.access?.canWrite || !current.snapshot || staleTelemetry(current.snapshot)) {
+                    if (ops.current(generation)) { setError('System state changed while the confirmation was open. Refresh and review before acting.'); publish() }
+                    return
+                }
+                if (kind === 'cleanup' && !storageObservation.current(storageRevision)) {
+                    setError('Storage figures changed while the confirmation was open. Refresh and review cleanup again.'); publish(); return
+                }
+                if (kind === 'restart' && (current.selected !== target || !current.snapshot.containers.some(c => c.id === target && c.name === name))) {
+                    setError('The selected container changed while the confirmation was open. Refresh and select it again.'); publish(); return
+                }
                 void perform({ token: randomUUID(), kind, target }, generation, storageRevision)
             } },
         ])

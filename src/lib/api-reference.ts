@@ -1,4 +1,5 @@
 import type { AppSettings } from '../types'
+import { getHeader } from './headers'
 
 export type JsonObject = Record<string, unknown>
 export type ApiDocument = JsonObject & {
@@ -112,7 +113,7 @@ export async function loadOpenApi(siteBaseUrl: string, signal: AbortSignal, tran
             headers: { Accept: 'application/json' }
         })
         if (!response.ok) throw new Error(`API documentation is unavailable (${response.status}). Refresh to retry.`)
-        const length = response.headers.get('content-length')
+        const length = getHeader(response.headers, 'content-length')
         if (length && Number(length) > documentLimit) throw new Error('The API contract exceeds the 2 MB display limit.')
         const raw = await readDocument(response)
         if (controller.signal.aborted) throw new Error('API documentation request cancelled.')

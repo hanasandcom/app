@@ -1,5 +1,6 @@
 import { fetch as expoFetch } from 'expo/fetch'
 import type { AppSettings } from '../types'
+import { getHeader } from './headers'
 import { apiFetch } from './api'
 
 export type TrafficBatch = { iso: string; count: number; max_id: string; timestamp: string }
@@ -79,7 +80,7 @@ export async function openTrafficStream(settings: AppSettings, input: { domain: 
         void pending.then(response => { if (controller.signal.aborted) void response.body?.cancel().catch(() => {}) }, () => {})
         response = await Promise.race([pending, aborted])
         if (!response.ok) throw new TrafficStreamError(response.status === 401 || response.status === 403 ? 'Sign in or refresh access before reconnecting live traffic.' : `Live traffic is unavailable (${response.status}).`, response.status)
-        if (!response.headers.get('content-type')?.toLowerCase().startsWith('text/event-stream') || !response.body?.getReader) throw new TrafficStreamError('Live streaming is unavailable; snapshots remain available.')
+        if (!getHeader(response.headers, 'content-type')?.toLowerCase().startsWith('text/event-stream') || !response.body?.getReader) throw new TrafficStreamError('Live streaming is unavailable; snapshots remain available.')
         reader = response.body.getReader(); arm(45000)
         const parser = createTrafficSseParser(({ event, data }) => {
             if (controller.signal.aborted) return

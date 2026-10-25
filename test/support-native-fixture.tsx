@@ -9,6 +9,7 @@ import { Screen } from '../src/components/ui'
 import { AppThemeProvider } from '../src/theme/context'
 import type { AppSettings } from '../src/types'
 import type { SupportMessage, SupportTicket } from '../src/lib/profile-api'
+import { responseLike } from '../src/lib/headers'
 
 if (process.env.EXPO_PUBLIC_SUPPORT_API !== 'https://support.invalid/api') throw new Error('Support fixture requires its exact synthetic API at bundle time.')
 const settings = { apiBaseUrl: 'https://support.invalid/api', siteBaseUrl: 'https://support.invalid', userId: 'fixture-user', authToken: 'fixture-token',
@@ -28,7 +29,7 @@ const messages: Record<string, SupportMessage[]> = {
 }
 const replies = new Map<string, { body: string; id: string }>()
 const uuid = () => `33333333-3333-4333-8333-${String(++sequence).padStart(12, '0')}`
-const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
+const json = (value: unknown, status = 200) => responseLike(JSON.stringify(value), status, '', { 'content-type': 'application/json' })
 function append(id: string, body: string, sender = settings.userId) {
     const messageId = uuid()
     messages[id] = [...messages[id] || [], { id: messageId, sender_id: sender, sender_name: sender === settings.userId ? 'You' : 'Synthetic Support', body, created_at: now }]

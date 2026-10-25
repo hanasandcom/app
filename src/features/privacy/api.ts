@@ -1,4 +1,5 @@
 import type { AppSettings } from '../../types'
+import { getHeader } from '../../lib/headers'
 import { apiFetch } from '../../lib/api'
 import { canUsePrivacyAction, matchedPrivacyOutcome, parsePrivacyExport, parsePrivacyState, privacyId, PrivacyError, row, text, utf8Size, type PrivacyAction, type PrivacyReceipt, type PrivacyState } from './model'
 
@@ -27,7 +28,7 @@ async function request(settings: AppSettings, signal: AbortSignal, body: unknown
             ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         })
         const maximum = body !== undefined && row(body).action === 'export' ? 16 * 1024 * 1024 : 4 * 1024 * 1024
-        const length = Number(response.headers.get('content-length'))
+        const length = Number(getHeader(response.headers, 'content-length'))
         if (length > maximum) throw new PrivacyError('The response is too large to open safely on this device.', response.status, submitted)
         // Native implementations without a readable stream allocate text before this result-size check.
         const content = await response.text()

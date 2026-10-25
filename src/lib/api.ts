@@ -5,6 +5,7 @@ import type { AgentAutomation, AgentAutomationPayload, AgentAutomationRun, AiFil
 import { AuthenticationError, PendingDeletionError } from './api-errors'
 import { trustedDesktopAgentEndpoints } from './desktop-agent-endpoints'
 import { requestPinnedDesktopAgent } from './pinned-desktop-transport'
+import { deleteHeader, headerRecord, responseLike, setHeader } from './headers'
 export { AuthenticationError, PendingDeletionError } from './api-errors'
 
 const desktopAgentRequestBodyBytes = 64 * 1024
@@ -53,28 +54,28 @@ export async function apiFetch(settings: AppSettings | undefined, input: Request
     const requestUrl = String(input)
     const url = new URL(requestUrl)
     const managed = url.protocol === 'https:' && (url.hostname === 'hanasand.com' || url.hostname.endsWith('.hanasand.com'))
-    const requestHeaders = new Headers(init.headers)
+    const requestHeaders = headerRecord(init.headers)
     const multipart = typeof FormData !== 'undefined' && init.body instanceof FormData
-    if (multipart) requestHeaders.delete('Content-Type')
+    if (multipart) deleteHeader(requestHeaders, 'Content-Type')
     const organizationId = settings?.selectedOrganizationId
     if (organizationId && organizationId !== 'personal' && url.origin === new URL(settings!.apiBaseUrl).origin) {
-        requestHeaders.set('x-organization-id', organizationId)
+        setHeader(requestHeaders, 'x-organization-id', organizationId)
     }
     if (!managed) return transport(input, { ...init, headers: requestHeaders })
     if (settings) {
         for (const [name, value] of Object.entries(headers(settings))) {
             if (multipart && name.toLowerCase() === 'content-type') continue
-            if (value) requestHeaders.set(name, value)
+            if (value) setHeader(requestHeaders, name, value)
         }
     }
     const { createDeviceProof, getDevicePublicJwk } = await import('./device-proof')
     const devicePublicJwk = await getDevicePublicJwk()
-    requestHeaders.set('x-device-public-jwk', JSON.stringify(devicePublicJwk))
+    setHeader(requestHeaders, 'x-device-public-jwk', JSON.stringify(devicePublicJwk))
     if (settings?.authToken) {
         const signed = await createDeviceProof(settings.authToken, init.method || 'GET', requestUrl)
-        requestHeaders.set('dpop', signed.proof)
-        requestHeaders.set('x-device-proof-url', signed.url)
-        requestHeaders.set('x-device-proof-method', (init.method || 'GET').toUpperCase())
+        setHeader(requestHeaders, 'dpop', signed.proof)
+        setHeader(requestHeaders, 'x-device-proof-url', signed.url)
+        setHeader(requestHeaders, 'x-device-proof-method', (init.method || 'GET').toUpperCase())
     }
     // Native requests use the selected account, never a shared browser cookie jar.
     return transport(input, { ...init, credentials: settings?.authToken ? 'omit' : init.credentials, headers: requestHeaders })
@@ -329,7 +330,7 @@ async function sealDesktopAgentBody(plaintext: string, certificate: string) {
 async function openDesktopAgentResponse(response: Response, certificate: string) {
     if (response.status === 401) return response
 
-    const payload = asRecord(await response.clone().json().catch(() => null))
+    const payload = asRecord(await response.json().catch(() => null))
     if (payload.encrypted !== true || typeof payload.payload !== 'string') {
         throw new Error('Desktop agent returned a response without the required encryption envelope.')
     }
@@ -341,13 +342,9 @@ async function openDesktopAgentResponse(response: Response, certificate: string)
         throw new Error('Desktop agent response could not be decrypted.')
     }
 
-    const responseHeaders = new Headers(response.headers)
-    responseHeaders.delete('Content-Length')
-    return new Response(utf8String(plaintext), {
-        status: response.status,
-        statusText: response.statusText,
-        headers: responseHeaders,
-    })
+    const responseHeaders = headerRecord(response.headers)
+    deleteHeader(responseHeaders, 'Content-Length')
+    return responseLike(utf8String(plaintext), response.status, response.statusText, responseHeaders)
 }
 
 async function desktopAgentProofRequest(path: string, init: RequestInit | undefined, certificate: string) {

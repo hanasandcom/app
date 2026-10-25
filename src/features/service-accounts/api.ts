@@ -1,4 +1,5 @@
 import type { AppSettings } from '../../types'
+import { getHeader } from '../../lib/headers'
 import { apiFetch } from '../../lib/api'
 import { organizationListBase } from '../../lib/organization-endpoint'
 import { Access, Directory, Endpoint, ServiceAccountError, accountDetails, endpointId, identifier, own, parseDirectory, parseEndpoint, record, requireWriter, rows, serviceUrl, sessionScope, text } from './model'
@@ -23,7 +24,7 @@ async function request(s: AppSettings, path: string, signal: AbortSignal, option
             const response = await (options.transport || apiFetch)({ ...s, selectedOrganizationId: undefined }, url, { method, signal: controller.signal, cache: 'no-store', credentials: 'omit', redirect: 'error',
                 headers: { Accept: 'application/json', Authorization: `Bearer ${s.authToken}`, id: s.userId, ...(s.impersonationToken ? { 'x-impersonation-token': s.impersonationToken } : {}), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
             const max = 8 * 1024 * 1024
-            if (Number(response.headers.get('content-length')) > max) throw new ServiceAccountError('The response exceeds its size limit.', response.status, write)
+            if (Number(getHeader(response.headers, 'content-length')) > max) throw new ServiceAccountError('The response exceeds its size limit.', response.status, write)
             const content = await response.text()
             if (content.length > max || bytes(content) > max) throw new ServiceAccountError('The response exceeds its size limit.', response.status, write)
             let value: unknown

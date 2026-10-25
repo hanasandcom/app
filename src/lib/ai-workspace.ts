@@ -1,6 +1,7 @@
 import * as Crypto from 'expo-crypto'
 import type { AiChatMessage, AiRunDetails, AppSettings } from '../types'
 import { apiFetch } from './api'
+import { headerRecord, setHeader } from './headers'
 
 export type WorkspaceMessage = Omit<AiChatMessage, 'role'> & {
     role: 'user' | 'assistant' | 'tool'
@@ -59,10 +60,11 @@ function endpoint(base: string, path: string) {
 }
 async function request<T>(settings: AppSettings, url: string, init: RequestInit = {}, timeoutMs = 20000): Promise<T> {
     if (!settings.userId || !settings.authToken) throw new Error('Sign in to use your AI workspace.')
-    const headers = new Headers(init.headers)
-    headers.set('Authorization', `Bearer ${settings.authToken}`)
-    headers.set('id', settings.userId)
-    if (init.body && !(init.body instanceof FormData)) headers.set('Content-Type', 'application/json')
+    const headers = headerRecord(init.headers)
+    setHeader(headers, 'Authorization', `Bearer ${settings.authToken}`)
+    setHeader(headers, 'id', settings.userId)
+    const multipart = typeof FormData !== 'undefined' && init.body instanceof FormData
+    if (init.body && !multipart) setHeader(headers, 'Content-Type', 'application/json')
     const controller = new AbortController()
     const abort = () => controller.abort()
     let timedOut = false

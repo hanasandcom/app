@@ -1,4 +1,5 @@
 import type { AppSettings } from '../../types'
+import { getHeader } from '../../lib/headers'
 import { apiFetch } from '../../lib/api'
 export class VmError extends Error {
     constructor(message: string, readonly status = 0, readonly uncertain = false, readonly code = '') { super(message) }
@@ -37,7 +38,7 @@ export async function vmRequest(s: AppSettings, path: string, method: string, si
             ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
         }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
         const max = 8 * 1024 * 1024
-        if (Number(response.headers.get('content-length')) > max) throw new VmError('VM response exceeded its size limit.', response.status, effect)
+        if (Number(getHeader(response.headers, 'content-length')) > max) throw new VmError('VM response exceeded its size limit.', response.status, effect)
         const content = await response.text()
         if (content.length > max || utf8Size(content) > max) throw new VmError('VM response exceeded its size limit.', response.status, effect)
         let value: unknown

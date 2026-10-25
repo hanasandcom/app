@@ -37,5 +37,7 @@ test('remaining-menu fixture is opt-in and confines HTTP, sockets and mutations 
     expect(fixture).not.toContain('loadSettings')
     expect(fixture).not.toContain('SecureStore')
     expect(fixture).not.toContain('Response.json(')
+    expect(fixture).not.toContain('new Response(')
     expect(fixture).toContain('Synthetic response lost after the change was saved.')
+    expect(fixture).toContain('globalThis.fetch = syntheticFetch')
 })

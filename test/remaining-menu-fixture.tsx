@@ -30,6 +30,7 @@ import type { RecoveredDraft } from '../src/features/thesis/recovery'
 import { writeSheets } from '../src/features/thesis/workspace'
 import type { LoadSocket, LoadSocketTransport } from '../src/lib/load-test-live'
 import type { AppSettings } from '../src/types'
+import { getHeader, headerRecord } from '../src/lib/headers'
 
 const settings = { themeMode: 'obsidian', apiBaseUrl: 'https://api.synthetic.invalid/api', siteBaseUrl: 'https://synthetic.invalid',
     userId: 'synthetic-operator', authToken: 'synthetic-token', selectedOrganizationId: 'fixture-org', impersonationToken: '', impersonatingUserId: '' } as AppSettings
@@ -54,6 +55,8 @@ const virtualMachines: Record<string, unknown>[] = [{ name: 'fixture-vm', owner:
 virtualMachines.push({ name: 'fixture-resume', owner: settings.userId, organization_id: org.id, organization_name: org.name, status: 'error', failover_premium: false, failover_enabled: false, limits_cpu: '4', limits_memory: '8GiB', syntheticMissingDetails: true, deletion_restore: { instanceMissing: true } })
 const vmPublicServices = [{ id: 'synthetic-route', name: 'web', type: 'http', port: 3000, hostname: 'web.synthetic.invalid', createdAt: at }]
 let cleanupQueued = false
+const requestHistory: string[] = []
+let activeRequestLabel = ''
 const sampleTime = () => new Date().toISOString()
 function systemSnapshot() {
     const sampled = sampleTime()
@@ -65,7 +68,14 @@ function systemStorage() {
 let hold = false, fail = false, release: (() => void) | undefined
 let reportSyntheticRequest: (value: string) => void = () => {}
 const sockets = new Set<LoadSocket>()
-const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
+const json = (value: unknown, status = 200): Response => {
+    const payload = JSON.stringify(value)
+    requestHistory.push(`${activeRequestLabel} → ${status}`)
+    if (requestHistory.length > 20) requestHistory.shift()
+    reportSyntheticRequest(requestHistory.slice(-4).join(' | '))
+    return { ok: status >= 200 && status < 300, status, headers: { get: (name: string) => name.toLowerCase() === 'content-type' ? 'application/json' : null },
+        body: null, text: async () => payload, json: async () => value } as Response
+}
 const privacyRuns: Record<string, unknown>[] = [], privacyRequests: Record<string, unknown>[] = []
 let privacyDeleted = false
 const privacyItems = Array.from({ length: 65 }, (_, index) => ({ id: `fixture-record-${index}`, organization_id: org.id, run_id: 'fixture-run', source_service: 'synthetic', record_type: 'synthetic_record', record_id: `record-${index}`, action: 'retain', status: 'protected', reason: 'Synthetic legal hold', attempt_count: 1, processed_at: at }))
@@ -79,13 +89,19 @@ async function finishWrite(value: unknown, status = 200) {
     if (hold) await new Promise<void>(resolve => { release = resolve })
     return fail ? json({ error: 'Synthetic response lost after the change was saved.' }, 500) : json(value, status)
 }
-globalThis.fetch = Object.assign(async (...[input, init]: Parameters<typeof fetch>) => {
+const syntheticFetch = Object.assign(async (...[input, init]: Parameters<typeof fetch>) => {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url)
+    const method = init?.method || 'GET'
+    const requestLabel = `${method.toUpperCase()} ${url.origin}${url.pathname}`
+    activeRequestLabel = requestLabel
+    requestHistory.push(requestLabel)
+    if (requestHistory.length > 20) requestHistory.shift()
+    reportSyntheticRequest(requestHistory.slice(-8).join(' | '))
     if (!['https://api.synthetic.invalid', 'https://synthetic.invalid'].includes(url.origin) || url.username || url.password || url.hash) throw new Error('External requests are disabled in this synthetic fixture.')
-    const headers = new Headers(init?.headers)
-    if (headers.get('authorization') !== 'Bearer synthetic-token' || headers.get('id') !== settings.userId) return json({ error: 'Synthetic actor headers missing.' }, 401)
-    const method = init?.method || 'GET', body = init?.body ? JSON.parse(String(init.body)) : {}
-    reportSyntheticRequest(`${method.toUpperCase()} ${url.pathname}`)
+    const headers = headerRecord(init?.headers)
+    const fixtureSkipsManagedProof = method === 'GET' && url.pathname === '/api/organizations'
+    if (!fixtureSkipsManagedProof && (getHeader(headers, 'authorization') !== 'Bearer synthetic-token' || getHeader(headers, 'id') !== settings.userId)) return json({ error: 'Synthetic actor headers missing.' }, 401)
+    const body = init?.body ? JSON.parse(String(init.body)) : {}
     if (/^\/api\/vms\/(?:access\/)?synthetic-operator$/.test(url.pathname) && method === 'GET') return json(virtualMachines)
     if (url.pathname === '/api/vms/stop' && method === 'POST') return finishWrite({ success: true, message: 'Synthetic stop requests queued.', vms: virtualMachines.map(item => item.name) })
     if (url.pathname === '/api/billing/container-products' && method === 'GET') return json({ plans: [{ id: 'failover', name: 'Synthetic failover', priceNok: 99, currency: 'NOK', interval: 'month' }], containers: virtualMachines.map(item => ({ name: item.name, failover_premium: item.failover_premium, primary_host: item.primary_host })) })
@@ -168,7 +184,7 @@ globalThis.fetch = Object.assign(async (...[input, init]: Parameters<typeof fetc
     if (method === 'GET' && url.pathname === '/api/logs/realtime') return json({ generated_at: sampleTime(), source: 'synthetic Docker runtime', runtime_available: true, native_available: false, logs: Array.from({ length: 30 }, (_, index) => ({ id: `synthetic-runtime-${index}`, service: url.searchParams.get('service'), level: 'info', message: `Synthetic runtime line ${index}`, created_at: at, source: 'synthetic Docker' })) })
     if (method === 'GET' && url.pathname === '/api/organizations') return json({ organizations: [{ ...org, role: 'owner', lifecycleStatus: 'active' }] })
     if (/^\/api\/(?:articles|article\/|thoughts|thought\/)/.test(url.pathname)) {
-        if (headers.get('x-organization-id') !== org.id) return json({ error: 'Synthetic content scope missing.' }, 403)
+        if (getHeader(headers, 'x-organization-id') !== org.id) return json({ error: 'Synthetic content scope missing.' }, 403)
         if (method === 'GET' && url.pathname === '/api/articles') return json(articles.map(item => ({ id: item.id, organization_id: item.organization_id, title: item.title, created: item.created, modified: item.modified, metadata: item.metadata })))
         if (method === 'GET' && url.pathname === '/api/thoughts') return json(thoughts)
         if (method === 'POST' && url.pathname === '/api/thought/title') {
@@ -267,6 +283,10 @@ globalThis.fetch = Object.assign(async (...[input, init]: Parameters<typeof fetc
         test.status = 'queued'
         return finishWrite({ ok: true, status: 'queued' })
     }
+    const unhandled = `UNHANDLED ${method.toUpperCase()} ${url.pathname}`
+    requestHistory.push(unhandled)
+    if (requestHistory.length > 20) requestHistory.shift()
+    reportSyntheticRequest(requestHistory.slice(-4).join(' | '))
     throw new Error(`Unsupported synthetic write blocked or read unavailable: ${method} ${url.pathname}`)
 }) as typeof fetch
 const liveTransport: LoadSocketTransport = address => {
@@ -362,23 +382,30 @@ const syntheticVmSocket = (address: string): ConsoleSocket => {
 }
 const vmFixtureServices: VmServices = { ...vmServices, openConsole: (s, ops, operation, nonce, options) => openVmConsole(s, ops, operation, nonce, { ...options, dependencies: { proof: async () => ({ proof: 'synthetic-proof' }), socket: syntheticVmSocket } }) }
 function Fixture() {
+    // React Native installs its native fetch after module evaluation; install the
+    // synthetic transport from the mounted fixture before any screen reads run.
+    globalThis.fetch = syntheticFetch
     const [mode, setMode] = useState('Users'), [event, setEvent] = useState('No synthetic operations yet')
+    const [controlsVisible, setControlsVisible] = useState(true)
     const [request, setRequest] = useState('No requests yet')
     reportSyntheticRequest = setRequest
     return <View style={{ flex: 1 }}>
         <View style={{ paddingTop: 52, paddingHorizontal: 16, gap: 6, backgroundColor: '#101418' }}>
             <Text style={{ color: '#b2b9c2' }}>Synthetic only · no external requests</Text>
+            <Text style={{ color: '#b2b9c2' }}>Headers: {typeof Headers} · Response: {typeof Response} · Request: {typeof Request}</Text>
             <Text style={{ color: '#b2b9c2' }}>{event}</Text>
-            <Text style={{ color: '#b2b9c2' }}>Last request: {request}</Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                {['Users', 'Load testing', 'Thesis', 'Privacy', 'Articles', 'Thoughts', 'System', 'Containers', 'Cases', 'VMs'].map(name => <PillButton key={name} small label={`Fixture ${name}`} onPress={() => setMode(name)} />)}
+            <Text numberOfLines={6} style={{ color: '#b2b9c2' }}>Recent requests: {request}</Text>
+            <PillButton small label={controlsVisible ? 'Hide audit controls' : 'Show audit controls'} onPress={() => setControlsVisible(value => !value)} />
+            {controlsVisible && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                {['Users', 'Load testing', 'Thesis', 'Privacy', 'Articles', 'Thoughts', 'System', 'Containers', 'Cases', 'VMs'].map(name => <PillButton key={name} small label={`Fixture ${name}`} onPress={() => { setMode(name); setControlsVisible(false) }} />)}
                 <PillButton small label='Finish synthetic cleanup' onPress={() => { cleanupQueued = false; setEvent('Synthetic cleanup idle') }} />
                 <PillButton small label='Toggle held response' onPress={() => { hold = !hold; setEvent(`Hold: ${hold}`) }} />
                 <PillButton small label='Release response' onPress={() => { release?.(); release = undefined; setEvent('Released synthetic response') }} />
                 <PillButton small label='Toggle saved-but-error' onPress={() => { fail = !fail; setEvent(`Saved then error: ${fail}`) }} />
+                <PillButton small label='Check synthetic transport' onPress={() => { void globalThis.fetch('https://api.synthetic.invalid/api/management/organizations?internalPages=1', { headers: { Authorization: 'Bearer synthetic-token', id: settings.userId } }).then(response => setEvent(`Synthetic fetch status: ${response.status}`)).catch(cause => setEvent(`Synthetic fetch failed: ${cause instanceof Error ? cause.stack || cause.message : 'unknown error'}`)) }} />
                 <PillButton small label='Emit synthetic live log' onPress={() => { for (const socket of sockets) socket.onmessage?.({ data: JSON.stringify({ type: 'update', data: { type: 'log', message: 'Synthetic live evidence' } }) }) }} />
                 <PillButton small label='Emit shared document change' onPress={() => { shared = { ...shared, revision: shared.revision + 1, body: shared.body + '\n\nSynthetic other-editor change.' }; versions.unshift(clone(shared)); for (const receive of thesisListeners) receive(clone(shared)) }} />
-            </View>
+            </View>}
         </View>
         {mode === 'VMs' ? <VirtualMachinesScreen settings={settings} services={vmFixtureServices} onOpenCheckout={() => setEvent('Synthetic checkout handoff; no browser opened')} /> : mode === 'Cases' ? <CasesScreen settings={settings} services={caseFixtureServices} onOpenHealth={id => setEvent(`Synthetic health check: ${id}`)} onOpenIntelligence={() => setEvent('Synthetic intelligence handoff')} /> : mode === 'Users' ? <UserManagementScreen settings={settings} onSelectOrganization={id => setEvent(`Open organization: ${id}`)} /> : mode === 'System' || mode === 'Containers' ? <SystemScreen settings={settings} mode={mode === 'System' ? 'overview' : 'containers'} services={systemFixtureServices} onOpenLogs={name => setEvent(`Synthetic Logs: ${name || 'all'}`)} onOpenVms={() => setEvent('Synthetic VM inventory handoff')} /> : mode === 'Articles' ? <ArticlesScreen settings={settings} services={articleServices} /> : mode === 'Thoughts' ? <ThoughtsScreen settings={settings} services={thoughtServices} /> : mode === 'Privacy' ? <OrganizationPrivacyScreen settings={settings} transport={privacyTransport} exportFile={privacyShare} /> : mode === 'Thesis' ? <ThesisScreen settings={settings} services={thesisServices} /> : <LoadTestsScreen settings={settings} liveTransport={liveTransport} />}
     </View>

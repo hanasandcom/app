@@ -4,6 +4,7 @@ import type { AppSettings } from '../types'
 import { apiFetch } from './api'
 import { organizationListBase } from './organization-endpoint'
 import { supportBase } from './support-endpoint'
+import { headerRecord, setHeader } from './headers'
 export { supportBase } from './support-endpoint'
 
 export type AccountIdentity = { id: string; name: string; username: string; email?: string; active?: boolean }
@@ -79,11 +80,11 @@ export async function accountRequest<T>(settings: AppSettings, path: string, ini
     if (!settings.authToken || !settings.userId) throw new Error('Log in again to manage your account.')
     const url = `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`
     if (new URL(url).protocol !== 'https:') throw new Error('Use HTTPS for account services.')
-    const requestHeaders = new Headers(init.headers)
-    requestHeaders.set('Content-Type', 'application/json')
-    requestHeaders.set('Authorization', `Bearer ${settings.authToken}`)
-    requestHeaders.set('id', settings.userId)
-    if (settings.impersonationToken) requestHeaders.set('x-impersonation-token', settings.impersonationToken)
+    const requestHeaders = headerRecord(init.headers)
+    setHeader(requestHeaders, 'Content-Type', 'application/json')
+    setHeader(requestHeaders, 'Authorization', `Bearer ${settings.authToken}`)
+    setHeader(requestHeaders, 'id', settings.userId)
+    if (settings.impersonationToken) setHeader(requestHeaders, 'x-impersonation-token', settings.impersonationToken)
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), 15000)
     const cancel = () => controller.abort()

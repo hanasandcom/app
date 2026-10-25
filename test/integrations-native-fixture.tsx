@@ -10,6 +10,7 @@ import { IntegrationsScreen } from '../src/screens/IntegrationsScreen'
 import { PillButton } from '../src/components/ui'
 import { AppThemeProvider } from '../src/theme/context'
 import type { AppSettings } from '../src/types'
+import { responseLike } from '../src/lib/headers'
 
 const organizationId = 'fixture-org'
 const settings = { apiBaseUrl: 'https://integrations.invalid/api', siteBaseUrl: 'https://integrations.invalid', userId: 'fixture-user', authToken: 'fixture-token',
@@ -23,7 +24,7 @@ const destinations: Destination[] = [
 let unknownLifecycle = false, sequence = 0
 let reportOperation: (value: string) => void = () => {}
 const urls = new Map(destinations.map(row => [row.id, 'https://hooks.synthetic.invalid/synthetic-token']))
-const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
+const json = (value: unknown, status = 200) => responseLike(JSON.stringify(value), status, '', { 'content-type': 'application/json' })
 function feed() {
     return { destinations, destinationAdminProof: { access: { canManage: true } },
         destinationLifecycle: destinations.map(row => ({ destinationId: row.id, access: { canManage: true, canUpdate: true, canDisable: row.status === 'active', canTest: row.status === 'active' } })),

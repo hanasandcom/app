@@ -1,5 +1,6 @@
 import type { AppSettings } from '../types'
 import { apiFetch } from './api'
+import { headerRecord, setHeader } from './headers'
 import type { ToolOrganization } from './organization-tools'
 
 export const internalOrganizationId = '3e735e7b-4d7f-444d-9806-231fa26cfcec'
@@ -132,8 +133,8 @@ async function request(settings: AppSettings, path: string, signal: AbortSignal,
     if (!settings.userId || !settings.authToken) throw new Error('Log in again to manage rate limits.')
     const url = new URL(`${settings.apiBaseUrl.replace(/\/+$/, '')}/${path}`)
     if (url.protocol !== 'https:' || url.username || url.password) throw new Error('Use an HTTPS API address without credentials.')
-    const headers = new Headers({ Authorization: `Bearer ${settings.authToken}`, id: settings.userId, 'Content-Type': 'application/json' })
-    if (settings.impersonationToken) headers.set('x-impersonation-token', settings.impersonationToken)
+    const headers = headerRecord({ Authorization: `Bearer ${settings.authToken}`, id: settings.userId, 'Content-Type': 'application/json' })
+    if (settings.impersonationToken) setHeader(headers, 'x-impersonation-token', settings.impersonationToken)
     const controller = new AbortController(), abort = () => controller.abort()
     const timer = setTimeout(abort, 20000)
     if (signal.aborted) abort()

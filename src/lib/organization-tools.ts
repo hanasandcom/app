@@ -1,6 +1,7 @@
 import type { AppSettings } from '../types'
 import { apiFetch } from './api'
 import { organizationListBase } from './organization-endpoint'
+import { headerRecord, setHeader } from './headers'
 
 const record = (value: unknown): Record<string, unknown> =>
     value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
@@ -77,9 +78,9 @@ async function request(
     if (init.signal?.aborted) controller.abort()
     else init.signal?.addEventListener('abort', abort, { once: true })
     try {
-        const headers = new Headers(init.headers)
-        headers.set('Accept', 'application/json')
-        headers.set('Content-Type', 'application/json')
+        const headers = headerRecord(init.headers)
+        setHeader(headers, 'Accept', 'application/json')
+        setHeader(headers, 'Content-Type', 'application/json')
         const response = await apiFetch(
             organizationId ? { ...settings, selectedOrganizationId: organizationId } : settings,
             url.toString(),

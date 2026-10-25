@@ -1,5 +1,6 @@
 import type { AppSettings } from '../types'
 import { apiFetch } from './api'
+import { deleteHeader, headerRecord, setHeader } from './headers'
 
 export function workspaceAccountKey(settings: AppSettings) {
     return `${settings.apiBaseUrl.replace(/\/+$/, '')}/${settings.userId}/${settings.impersonatingUserId || ''}/${(settings as AppSettings & { selectedOrganizationId?: string }).selectedOrganizationId || ''}`
@@ -10,13 +11,13 @@ async function request(settings: AppSettings, service: 'api' | 'cdn', path: stri
     if (!settings.userId || !settings.authToken || !base) throw new Error('Sign in to load your account.')
     const url = new URL(`${base.replace(/\/+$/, '')}/${path}`)
     if (url.protocol !== 'https:') throw new Error('A secure HTTPS connection is required.')
-    const headers = new Headers(init.headers)
-    if (typeof FormData !== 'undefined' && init.body instanceof FormData) headers.delete('Content-Type')
-    else headers.set('Content-Type', 'application/json')
+    const headers = headerRecord(init.headers)
+    if (typeof FormData !== 'undefined' && init.body instanceof FormData) deleteHeader(headers, 'Content-Type')
+    else setHeader(headers, 'Content-Type', 'application/json')
     if (service === 'cdn') {
         // The CDN album and favorite routes use the same session token through cookies.
-        headers.set('Cookie', `id=${encodeURIComponent(settings.userId)}; access_token=${encodeURIComponent(settings.authToken)}`)
-        headers.set('Origin', url.origin)
+        setHeader(headers, 'Cookie', `id=${encodeURIComponent(settings.userId)}; access_token=${encodeURIComponent(settings.authToken)}`)
+        setHeader(headers, 'Origin', url.origin)
     }
     const response = await apiFetch(settings, url.toString(), {
         ...init,

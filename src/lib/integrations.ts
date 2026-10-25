@@ -1,5 +1,6 @@
 import type { AppSettings } from '../types'
 import { apiFetch } from './api'
+import { headerRecord, setHeader } from './headers'
 
 const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
 const text = (value: unknown) => typeof value === 'string' ? value : ''
@@ -32,10 +33,10 @@ async function request(settings: AppSettings, path: string, init: RequestInit = 
     const controller = new AbortController(), cancel = () => controller.abort()
     const timer = setTimeout(cancel, 15000)
     if (signal?.aborted) cancel(); else signal?.addEventListener('abort', cancel)
-    const headers = new Headers(init.headers)
-    headers.set('Accept', 'application/json'); headers.set('Content-Type', 'application/json')
-    headers.set('Authorization', `Bearer ${settings.authToken}`); headers.set('id', settings.userId)
-    if (settings.impersonationToken) headers.set('x-impersonation-token', settings.impersonationToken)
+    const headers = headerRecord(init.headers)
+    setHeader(headers, 'Accept', 'application/json'); setHeader(headers, 'Content-Type', 'application/json')
+    setHeader(headers, 'Authorization', `Bearer ${settings.authToken}`); setHeader(headers, 'id', settings.userId)
+    if (settings.impersonationToken) setHeader(headers, 'x-impersonation-token', settings.impersonationToken)
     try {
         const response = await apiFetch(settings, url.toString(), { ...init, headers, credentials: 'omit', redirect: 'error', signal: controller.signal })
         const payload: unknown = await response.json().catch(() => null)

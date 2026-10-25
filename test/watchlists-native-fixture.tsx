@@ -8,6 +8,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { WatchlistsScreen } from '../src/screens/WatchlistsScreen'
 import { AppThemeProvider } from '../src/theme/context'
 import type { AppSettings } from '../src/types'
+import { responseLike } from '../src/lib/headers'
 
 const organizationId = 'fixture-organization'
 const settings = {
@@ -24,7 +25,7 @@ let items: Item[] = [
 ]
 let sequence = 0
 function json(value: unknown, status = 200) {
-    return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
+    return responseLike(JSON.stringify(value), status, '', { 'content-type': 'application/json' })
 }
 function saved(changed: Item[], partial = false, cleanup = false) {
     return {

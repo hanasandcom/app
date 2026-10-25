@@ -1,5 +1,6 @@
 import type { AppSettings } from '../types'
 import { apiFetch } from './api'
+import { getHeader, headerRecord } from './headers'
 import type { GalleryFile } from './workspace-data'
 
 export type AlbumRole = 'owner' | 'viewer' | 'contributor'
@@ -15,7 +16,7 @@ async function fetchCdn(settings: AppSettings, path: string, init: RequestInit =
     if (settings.impersonatingUserId || settings.impersonationToken) throw new Error('Switch back to your own account to manage CDN albums.')
     const url = new URL(`${settings.cdnBaseUrl.replace(/\/+$/, '')}/${path}`)
     if (url.protocol !== 'https:' || url.username || url.password) throw new Error('A secure CDN connection is required.')
-    const headers = new Headers({ 'Content-Type': 'application/json', Origin: url.origin,
+    const headers = headerRecord({ 'Content-Type': 'application/json', Origin: url.origin,
         Cookie: `id=${encodeURIComponent(settings.userId)}; access_token=${encodeURIComponent(settings.authToken)}` })
     const response = await apiFetch(settings, url.toString(), { ...init, headers, credentials: 'omit' })
     return response
@@ -146,10 +147,10 @@ export async function loadGalleryAlbumImage(settings: AppSettings, id: string, t
         const response = await fetchCdn(settings, `files/${segment(id)}${thumbnail ? '?variant=thumbnail' : ''}`, { signal, cache: 'no-store' })
         if (signal?.aborted) throw new Error('Photo request cancelled.')
         if (!response.ok) throw new Error(`Photo unavailable (${response.status}). Refresh or sign in again.`)
-        const type = response.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase() || ''
+        const type = getHeader(response.headers, 'Content-Type')?.split(';')[0].trim().toLowerCase() || ''
         if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/heic', 'image/heif'].includes(type)) throw new Error('The CDN did not return a supported photo.')
         const maxBytes = thumbnail ? 5 * 1024 * 1024 : 50 * 1024 * 1024
-        const declaredSize = Number(response.headers.get('Content-Length'))
+        const declaredSize = Number(getHeader(response.headers, 'Content-Length'))
         if (declaredSize > maxBytes) throw new Error('This photo is too large to preview in the app.')
         // Streaming is available on web/test runtimes. Native fetch may expose
         // only arrayBuffer; validate its actual size as well as Content-Length.

@@ -14,6 +14,7 @@ import { DeliveryHistoryScreen } from '../src/screens/DeliveryHistoryScreen'
 import { AiMetricsScreen } from '../src/screens/AiMetricsScreen'
 import { IntegrationsScreen } from '../src/screens/IntegrationsScreen'
 import type { SupportLiveAdapter, SupportSocket } from '../src/lib/support-live'
+import { responseLike } from '../src/lib/headers'
 import type { AiMetricsLive } from '../src/lib/ai-metrics-live'
 import { AiMetricsPromptError } from '../src/lib/ai-metrics-live'
 import { parseAiClient } from '../src/lib/ai-metrics'
@@ -29,7 +30,7 @@ const organization = { id: 'org', name: 'Fixture Team', slug: 'fixture-team', st
 const client = { name: 'fixture-client', model: { status: 'idle', tps: 4 }, cpu: [{ name: 'CPU', load: 0.2 }], ram: [{ load: 0.5 }], gpu: [{ name: 'GPU', load: 0.25 }], lanes: [{ id: 'lane', maxRequests: 2, activeRequests: 0, availableRequests: 2 }], power: { totalWatts: 45, monthlyKwh: 2 } }
 let staff = true, holdReply = false, finishReply: (() => void) | null = null, rejectPrompt = true
 const sockets = new Set<SupportSocket>()
-const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
+const json = (value: unknown, status = 200) => responseLike(JSON.stringify(value), status, '', { 'content-type': 'application/json' })
 globalThis.fetch = Object.assign(async (...[input, init]: Parameters<typeof fetch>) => {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url)
     if (!['https://api.synthetic.invalid', 'https://synthetic.invalid', 'https://support.synthetic.invalid'].includes(url.origin)

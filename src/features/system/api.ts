@@ -1,4 +1,5 @@
 import type { AppSettings } from '../../types'
+import { getHeader } from '../../lib/headers'
 import { apiFetch } from '../../lib/api'
 import { organizationListBase } from '../../lib/organization-endpoint'
 import { endpoint, ownAccount, parseRuntimeLogs, parseStorage, parseTelemetry, record, staleTelemetry, systemScope, SystemError, validContainerId, type Access, type Storage, type Telemetry } from './model'
@@ -20,7 +21,7 @@ async function request(settings: AppSettings, base: string, path: string, signal
         dispatched = true
         const response = await (options.transport || apiFetch)(settings, url, { method: path === 'system/storage/clear' ? 'POST' : 'GET', signal: controller.signal, credentials: 'omit', redirect: 'error', cache: 'no-store', headers: {
             Accept: 'application/json', Authorization: `Bearer ${settings.authToken}`, id: settings.userId, ...(settings.impersonationToken ? { 'x-impersonation-token': settings.impersonationToken } : {}) } })
-        if (Number(response.headers.get('content-length')) > 4 * 1024 * 1024) throw new SystemError('System response exceeded the 4 MiB limit.', response.status, mutation)
+        if (Number(getHeader(response.headers, 'content-length')) > 4 * 1024 * 1024) throw new SystemError('System response exceeded the 4 MiB limit.', response.status, mutation)
         const content = await response.text()
         if (content.length > 4 * 1024 * 1024 || utf8Size(content) > 4 * 1024 * 1024) throw new SystemError('System response exceeded the 4 MiB limit.', response.status, mutation)
         if (!response.ok) throw new SystemError([401, 403].includes(response.status) ? 'System access could not be verified. Refresh manually.' : 'System service is unavailable. Refresh to try again.', response.status, mutation && response.status >= 500)

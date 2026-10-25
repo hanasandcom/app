@@ -213,6 +213,7 @@ test('failed storage observations retain figures but block queued cleanup and an
     const source = readFileSync(fileURLToPath(import.meta.url).replace(/features\/system\/system.test.ts$/, 'screens/SystemScreen.tsx'), 'utf8')
     expect(source).toContain('storageObservation.unavailable(); ops.forgetReview()\n                setStorageError')
     expect(source).toContain('kind === \'cleanup\' && !storageObservation.current(storageRevision)')
+    expect(source).toContain('Storage figures changed while the confirmation was open. Refresh and review cleanup again.')
     expect(source.indexOf('await services.access(write.controller.signal)')).toBeLessThan(source.indexOf('const observed = storageObservation.current(storageRevision)'))
     expect(source).toContain('await services.cleanup(permission, observed, write.controller.signal)')
     expect(source).toContain('canWrite={writable && !!storageObservation.current(storageObservation.revision)}')

@@ -40,12 +40,12 @@ export class PublishingDesk {
         this.publish()
     }
     dispose() { this.hide(); this.disposed = true; this.listeners.clear(); this.state = { ...this.state, items: [], selected: undefined, draft: { id: '', body: '' }, lookup: null, unknown: undefined, receipt: undefined } }
-    private begin(pending: 'read' | 'write') {
+    private begin(pending: 'read' | 'write', invalidateList = false) {
         this.controller?.abort()
         const controller = new AbortController()
         this.controller = controller
         const operation = ++this.operation
-        this.state.pending = pending; this.state.error = ''; if (pending === 'read') this.state.fresh = false; this.renew(); this.publish()
+        this.state.pending = pending; this.state.error = ''; if (pending === 'read' && invalidateList) this.state.fresh = false; this.renew(); this.publish()
         return { controller, operation }
     }
     private current(operation: number) { return !this.disposed && this.state.visible && this.operation === operation }
@@ -59,7 +59,7 @@ export class PublishingDesk {
         if (remembered && !this.state.unknown) this.state.unknown = { intent: remembered, reviewed: false, matches: [], missing: false }
         const unknown = this.state.unknown
         const selected = this.state.selected
-        const { controller, operation } = this.begin('read')
+        const { controller, operation } = this.begin('read', true)
         try {
             const access = await this.api.access(controller.signal)
             if (!access.canRead) throw new PublishingError('This account cannot open the selected editorial workspace.', 403)

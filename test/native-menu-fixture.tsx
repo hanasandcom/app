@@ -11,6 +11,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { AppThemeProvider } from '../src/theme/context'
 import type { AppSettings, RootTabParamList } from '../src/types'
+import { responseLike } from '../src/lib/headers'
 const settings = { apiBaseUrl: 'https://traffic.invalid/api', siteBaseUrl: 'https://traffic.invalid', userId: 'synthetic-user', authToken: 'synthetic-token', selectedOrganizationId: 'synthetic-org', impersonationToken: '', impersonatingUserId: '', themeMode: 'obsidian' } as AppSettings
 let finishPolicy: (() => void) | null = null
 const policy = { enabled: true, defaults: { anonymous: { windowMs: 1000, maxRequests: 3 }, authenticated: { windowMs: 60000, maxRequests: 120 }, internal: { windowMs: 1000, maxRequests: 1000 } }, overrides: [], updatedAt: '2026-10-23T03:00:00Z', updatedBy: 'synthetic-user' }
@@ -20,7 +21,7 @@ const archive = { service: 'core', file: 'core-2026-10-23.sql.gz', mtime: '2026-
 const operation = { id: 'synthetic-operation', kind: 'verify', trigger: 'manual', actorId: 'synthetic-user', status: 'succeeded', stage: 'complete', startedAt: '2026-10-23T03:00:00Z', finishedAt: '2026-10-23T03:00:01Z', durationMs: 1000, file: archive.file, targetDatabase: null, checksumSha256: 'synthetic-checksum', sizeBytes: 4096, archiveEntries: 2, sourceIntegrity: null, restoredIntegrity: null, targetRemoved: null, error: null, releaseCommit: null }
 const dashboard = { backups: [{ id: 'core', name: 'Core', database: 'synthetic_core', status: 'healthy', operations: [operation], scheduleEnabled: true, schedule: '0 2 * * *', scheduleTimezone: 'UTC', latestFile: archive.file, currentOperation: null }], files: [archive], errors: [] }
 const overview = { status: 'healthy', generatedAt: '2026-10-23T03:00:00Z', activeQueries: 1, totalSizeBytes: 1048576, health: { message: 'Synthetic database healthy' }, queries: [{ database: 'synthetic_core', user: 'synthetic-user', state: 'active', durationSeconds: 1, query: 'select synthetic', isLongRunning: false }], storage: { sampledAt: '2026-10-23T03:00:00Z', stale: false, host: 'synthetic', disk: { totalBytes: 1073741824, availableBytes: 536870912, dailyGrowthBytes: null, daysUntilFull: null }, instances: [{ id: 'synthetic-pg', engine: 'postgres', status: 'healthy', databases: [{ name: 'synthetic_core', sizeBytes: 1048576 }] }] } }
-const json = (value: unknown) => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } })
+const json = (value: unknown) => responseLike(JSON.stringify(value), 200, '', { 'content-type': 'application/json' })
 globalThis.fetch = Object.assign(async (...[input, init]: Parameters<typeof fetch>) => {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url)
     if (url.origin !== 'https://traffic.invalid' || url.username || url.password || url.hash) throw new Error('External requests are disabled in this synthetic fixture.')
@@ -54,7 +55,7 @@ let denyStream = false
 const syntheticStream = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input))
     if (url.origin !== 'https://traffic.invalid' || url.pathname !== '/api/traffic/live' || (init?.method || 'GET') !== 'GET') throw new Error('External stream blocked.')
-    if (denyStream) return { ok: false, status: 401, headers: new Headers(), body: null } as unknown as Response
+    if (denyStream) return responseLike(null, 401)
     let timer: ReturnType<typeof setInterval>, next = 100
     const body = new ReadableStream<Uint8Array>({
         start(controller) {
@@ -64,7 +65,7 @@ const syntheticStream = (async (input: RequestInfo | URL, init?: RequestInit) =>
         },
         cancel() { clearInterval(timer) },
     })
-    return { ok: true, status: 200, headers: new Headers({ 'content-type': 'text/event-stream' }), body } as unknown as Response
+    return { ...responseLike('', 200, '', { 'content-type': 'text/event-stream' }), body } as Response
 }) as unknown as typeof fetch
 const Stack = createNativeStackNavigator()
 function Fixture() {
