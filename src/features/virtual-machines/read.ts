@@ -8,11 +8,11 @@ import { VmError, vmScope } from './transport'
 export type VmSnapshot = {
     inventory: Scoped<Vm[]> | null; vm: Scoped<Vm> | null; management: Scoped<VmManagement> | null
     platform: Awaited<ReturnType<typeof api.loadPlatformAccess>> | null
-    products: Awaited<ReturnType<typeof api.loadProducts>> | null
+    products: Awaited<ReturnType<typeof api.loadProducts>> | null; productsPending: boolean
     details: Scoped<VmDetails | null> | null; metrics: Scoped<VmMetric[]> | null
     organizations: ToolOrganization[] | null; errors: string[]; reads: VmReadSet
 }
-export const emptySnapshot = (): VmSnapshot => ({ inventory: null, vm: null, management: null, platform: null, products: null, details: null, metrics: null, organizations: null, errors: [],
+export const emptySnapshot = (): VmSnapshot => ({ inventory: null, vm: null, management: null, platform: null, products: null, productsPending: false, details: null, metrics: null, organizations: null, errors: [],
     reads: { inventory: false, target: false, management: false, platform: false, products: false, details: false, services: false } })
 export function preserveVmSnapshot(previous: VmSnapshot, partial: VmSnapshot): VmSnapshot {
     return {
@@ -95,6 +95,16 @@ export async function readVmWorkspace(settings: AppSettings, read: VmRead, servi
 
     const targetAvailable = !hasTarget
     result.reads.target = targetAvailable
+    // Failover pricing is only an optional checkout affordance. Keep it off the
+    // critical path so a slow billing read cannot hold the VM controls locked.
+    const shouldLoadProducts = hasTarget && (!reuseWorkspace || !previous?.products) && !settings.impersonationToken && !settings.impersonatingUserId
+    result.productsPending = shouldLoadProducts
+    const productsPending = shouldLoadProducts
+        ? take(() => services.loadProducts(settings, signal), value => {
+            result.products = value
+            result.reads.products = value.value.plans.some(plan => plan.id === 'failover') && value.value.containers.some(vm => vm.name === read.target)
+        }).finally(() => { if (!signal.aborted) { result.productsPending = false; publish() } })
+        : undefined
     await Promise.all([
         ...(!reuseWorkspace ? [
             takeInventory('owned', () => services.loadInventory(settings, signal)),
@@ -102,10 +112,6 @@ export async function readVmWorkspace(settings: AppSettings, read: VmRead, servi
             take(() => services.loadPlatformAccess(settings, signal), value => { result.platform = value; result.reads.platform = value.value.canEdit }),
             take(() => services.organizations(settings, signal), value => { result.organizations = value }),
         ] : []),
-        ...(hasTarget && (!reuseWorkspace || !previous?.products) && !settings.impersonationToken && !settings.impersonatingUserId ? [take(() => services.loadProducts(settings, signal), value => {
-            result.products = value
-            result.reads.products = value.value.plans.some(plan => plan.id === 'failover') && value.value.containers.some(vm => vm.name === read.target)
-        })] : []),
         ...(hasTarget ? [
             take(() => services.loadVm(settings, read.target, signal), value => { result.vm = value; result.reads.target = true }),
             take(() => services.loadPublicServices(settings, read.target, signal), value => { result.management = value; result.reads.management = value.value.canManage; result.reads.services = true }),
@@ -113,5 +119,8 @@ export async function readVmWorkspace(settings: AppSettings, read: VmRead, servi
             take(() => services.loadMetrics(settings, read.target, signal), value => { result.metrics = value }),
         ] : []),
     ])
+    // take() handles errors and publishes the result when pricing arrives.
+    // Do not wait for it here; checkout performs its own fresh eligibility read.
+    void productsPending
     return result
 }

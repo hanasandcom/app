@@ -120,6 +120,26 @@ test('inventory skips checkout products and a listed VM loads them with its targ
     expect(target.reads.products).toBe(true)
     expect(calls).toEqual({ owned: 1, accessible: 1, platform: 1, organizations: 1, products: 1, vm: 1, management: 1, details: 1, metrics: 1 })
 })
+test('a slow pricing read does not hold current VM details or controls behind the checkout affordance', async () => {
+    let finishProducts: ((value: Awaited<ReturnType<VmServices['loadProducts']>>) => void) | undefined
+    let publishProducts: (() => void) | undefined
+    const publishedProducts = new Promise<void>(resolve => { publishProducts = resolve })
+    const ops = new VmController(settings, new VmIntents()); ops.visible = true
+    const read = ops.beginRead(ops.generation, false, 'synthetic-vm')!
+    const result = await readVmWorkspace(settings, read, services({
+        loadProducts: async () => new Promise(resolve => { finishProducts = resolve }),
+    }), snapshot => { if (snapshot.products && !snapshot.productsPending) publishProducts?.() })
+    expect(result.vm?.value.name).toBe('synthetic-vm')
+    expect(result.reads.target).toBe(true)
+    expect(result.products).toBeNull()
+    expect(result.productsPending).toBe(true)
+    expect(ops.finishRead(read, { target: read.target, authorized: true, reads: result.reads })).toBe(true)
+    expect(ops.locked).toBe(false)
+    finishProducts?.(await services().loadProducts(settings, new AbortController().signal))
+    await publishedProducts
+    expect(result.products?.value.plans).toHaveLength(1)
+    expect(result.productsPending).toBe(false)
+})
 test('workspace reads are repeated when the inventory is incomplete or the session scope changes', async () => {
     const calls = { inventory: 0, accessible: 0, platform: 0, organizations: 0, products: 0 }
     const api = services({

@@ -4,7 +4,7 @@ The mobile login screen supports password login, iOS and Android passkey login, 
 
 ## Deployment requirements
 
-- Deploy `frontend/public/.well-known/apple-app-site-association` from the Hanasand website repository. It associates `webcredentials:hanasand.com` with `8VBNY258K7.com.hanasand.app`.
+- Serve the website route `frontend/src/app/.well-known/apple-app-site-association/route.ts` at `https://hanasand.com/.well-known/apple-app-site-association`. It must list each signed App ID prefix used by app builds with the `com.hanasand.app` bundle ID. The current simulator signing prefix is `76RJJQB69V`; keep the legacy production prefix `8VBNY258K7` while older builds remain supported. iOS passkeys verify this file before using the `webcredentials:hanasand.com` entitlement.
 - Deploy the mobile passkey verification and SSO start/exchange routes in the Hanasand frontend, and the mobile SSO start/exchange handlers and schema migration in Identity.
 - Deploy the social-auth routes in the Hanasand frontend and configure `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in both Identity workers. Register `https://identity.hanasand.com/api/auth/social/google/callback` as the Google OAuth redirect URI, matching Identity’s default public origin. If `SOCIAL_AUTH_ORIGIN` is configured, register that origin’s `/api/auth/social/google/callback` instead. `GET /api/auth/social/providers` must report Google as configured before mobile sign-in can start.
 - Keep `PASSKEY_ORIGIN=https://hanasand.com` and `PASSKEY_RP_ID=hanasand.com` for the website and iOS.

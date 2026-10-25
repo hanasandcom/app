@@ -62,7 +62,7 @@ export function DetailPanel({ workspace: w, settings, services, onOpenCheckout }
                     await onOpenCheckout(receipt.url)
                     return 'Checkout opened. Refresh products and VM state after returning.'
                 })} />)}
-                {!w.snapshot.products && <VmText>Product prices and checkout eligibility are unavailable.</VmText>}
+                {!w.snapshot.products && <VmText>{w.snapshot.productsPending ? 'Loading failover pricing…' : 'Product prices and checkout eligibility are unavailable.'}</VmText>}
             </GlassCard>}
             {tab === 'details' && <GlassCard>
                 <StoredDetailsPanel details={w.snapshot.details} current={() => w.ops.idle(g)} />
