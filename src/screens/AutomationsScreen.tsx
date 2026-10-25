@@ -38,6 +38,7 @@ function AccountAutomations({ settings, section, initialAutomationId }: { settin
     const [draft, setDraft] = useState<AgentAutomationPayload>(() => newAutomationDraft(section, defaultTimezone()))
 
     const selected = automations.find(item => item.id === selectedId) || null
+    const runHistoryLoading = !!selected && (busy === 'load' || busy === `select-${selected.id}`)
     const cronRunning = cronJobs.filter(job => job.running).length
     const cronWithErrors = cronJobs.filter(job => !!job.lastError || ['failed', 'error'].includes(job.status.toLowerCase())).length
 
@@ -208,6 +209,27 @@ function AccountAutomations({ settings, section, initialAutomationId }: { settin
         setDraft(newAutomationDraft(section, defaultTimezone()))
     }
 
+    const runHistoryCard = selected ? (
+        <GlassCard style={styles.runHistory}>
+            <View style={styles.editorHeader}>
+                <Play color={theme.textMuted} size={18} />
+                <Text style={styles.sectionTitle}>Run history</Text>
+                <RefreshCw color={theme.textMuted} size={16} />
+            </View>
+            <InlineNotice message={runsError} />
+            {!!runsError && <PillButton label='Retry run history' small disabled={!!busy} onPress={() => void selectAutomation(selected)} />}
+            {runs.map(run => (
+                <View key={run.id} style={styles.runRow}>
+                    <Text style={styles.cardMeta}>{formatDate(run.startedAt)} · {run.status}</Text>
+                    {run.status === 'failed'
+                        ? <InlineNotice message={run.error || run.result || 'Run failed.'} />
+                        : <Text style={styles.cardBody}>{run.result || 'Running...'}</Text>}
+                </View>
+            ))}
+            {!runs.length && !runsError && <Text style={styles.cardBody}>{runHistoryLoading ? 'Loading run history…' : 'No runs recorded yet.'}</Text>}
+        </GlassCard>
+    ) : null
+
     return (
         <Screen title={section === 'health' ? 'Health Checks' : 'Cron Jobs'} subtitle={section === 'health' ? 'Service checks and alerts' : 'Scheduled jobs'}>
             {section === 'cron' && <View style={styles.actions}>
@@ -250,6 +272,7 @@ function AccountAutomations({ settings, section, initialAutomationId }: { settin
                         <CalendarClock color={theme.textMuted} size={18} />
                         <Text style={styles.sectionTitle}>{selected ? 'Edit automation' : 'New automation'}</Text>
                     </View>
+                    {runHistoryCard}
                     <Field disabled={!!busy} label='Name' value={draft.name} onChangeText={name => setDraft({ ...draft, name })} />
                     <Field disabled={!!busy} label='Description' value={draft.prompt} onChangeText={prompt => setDraft({ ...draft, prompt })} multiline />
                     <View style={styles.row}>
@@ -278,15 +301,17 @@ function AccountAutomations({ settings, section, initialAutomationId }: { settin
                 </GlassCard>}
                 <View style={styles.automationList}>
                     {automations.map(automation => (
-                        <GlassCard key={automation.id} style={[styles.automationCard, automation.id === selectedId && styles.selectedCard]}>
-                            <Text style={styles.cardTitle} numberOfLines={1}>{automation.name}</Text>
-                            <Text style={styles.cardBody} numberOfLines={2}>{automation.prompt}</Text>
-                            <Text style={styles.cardMeta}>{automationActionLabel(automation.actionType)} · {monitoringLabel(automation.monitoringType)}</Text>
-                            <Text style={styles.cardMeta}>{automation.status} · {automation.lastStatus || 'Not run yet'}</Text>
-                            {!!automation.targetUrl && <Text style={styles.cardBody} numberOfLines={2}>{automation.targetUrl}</Text>}
-                            <Text style={styles.cardMeta}>{formatSchedule(automation)}</Text>
-                            <PillButton label='Edit' disabled={!!busy} onPress={() => void selectAutomation(automation)} small />
-                        </GlassCard>
+                        <View key={automation.id} style={automation.id === selectedId ? styles.selectedRunGroup : undefined}>
+                            <GlassCard style={[styles.automationCard, automation.id === selectedId && styles.selectedCard]}>
+                                <Text style={styles.cardTitle} numberOfLines={1}>{automation.name}</Text>
+                                <Text style={styles.cardBody} numberOfLines={2}>{automation.prompt}</Text>
+                                <Text style={styles.cardMeta}>{automationActionLabel(automation.actionType)} · {monitoringLabel(automation.monitoringType)}</Text>
+                                <Text style={styles.cardMeta}>{automation.status} · {automation.lastStatus || 'Not run yet'}</Text>
+                                {!!automation.targetUrl && <Text style={styles.cardBody} numberOfLines={2}>{automation.targetUrl}</Text>}
+                                <Text style={styles.cardMeta}>{formatSchedule(automation)}</Text>
+                                <PillButton label='Edit' disabled={!!busy} onPress={() => void selectAutomation(automation)} small />
+                            </GlassCard>
+                        </View>
                     ))}
                     {!automations.length && busy === 'load' && (
                         <GlassCard style={styles.emptyCard}>
@@ -302,24 +327,6 @@ function AccountAutomations({ settings, section, initialAutomationId }: { settin
                     )}
                 </View>
 
-                <GlassCard>
-                    <View style={styles.editorHeader}>
-                        <Play color={theme.textMuted} size={18} />
-                        <Text style={styles.sectionTitle}>Run history</Text>
-                        <RefreshCw color={theme.textMuted} size={16} />
-                    </View>
-                    <InlineNotice message={runsError} />
-                    {!!runsError && selected && <PillButton label='Retry run history' small onPress={() => void selectAutomation(selected)} />}
-                    {runs.map(run => (
-                        <View key={run.id} style={styles.runRow}>
-                            <Text style={styles.cardMeta}>{formatDate(run.startedAt)} · {run.status}</Text>
-                            {run.status === 'failed'
-                                ? <InlineNotice message={run.error || run.result || 'Run failed.'} />
-                                : <Text style={styles.cardBody}>{run.result || 'Running...'}</Text>}
-                        </View>
-                    ))}
-                    {!runs.length && !runsError && (!initialAutomationId || showEditor) && <Text style={styles.cardBody}>No runs recorded yet.</Text>}
-                </GlassCard>
             </>}
         </Screen>
     )
@@ -417,6 +424,8 @@ function createStyles(theme: ThemePalette) {
     return StyleSheet.create({
         actions: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
         automationList: { gap: spacing.sm, paddingVertical: spacing.sm },
+        selectedRunGroup: { gap: spacing.sm },
+        runHistory: { gap: spacing.sm },
         automationCard: { gap: spacing.sm },
         selectedCard: { borderColor: theme.surfaceBorder, backgroundColor: theme.surfaceStrong },
         emptyCard: { gap: spacing.sm },

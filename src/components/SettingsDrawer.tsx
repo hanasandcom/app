@@ -368,6 +368,7 @@ const styles = StyleSheet.create({
     },
     drawerCompact: {
         flexDirection: 'column',
+        height: '100%',
     },
     sidebar: {
         width: 250,

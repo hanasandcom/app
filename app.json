@@ -4,7 +4,7 @@
     "slug": "hanasand",
     "owner": "hanasand",
     "scheme": "hanasand",
-    "version": "0.1.39",
+    "version": "0.1.41",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -12,7 +12,7 @@
       "**/*"
     ],
     "ios": {
-      "buildNumber": "42",
+      "buildNumber": "44",
       "supportsTablet": true,
       "icon": "./assets/icon.png",
       "bundleIdentifier": "com.hanasand.app",
@@ -43,7 +43,7 @@
       "expo-web-browser"
     ],
     "android": {
-      "versionCode": 42,
+      "versionCode": 44,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#050505"
