@@ -27,6 +27,11 @@ export function DetailPanel({ workspace: w, settings, services, onOpenCheckout }
     if (!vm) return <GlassCard><VmText>{w.ops.reading ? `Loading ${w.selected}…` : 'Selected VM details are unavailable. Refresh current access to view this machine.'}</VmText></GlassCard>
     const target = vm.name
     return <>
+        {w.channel && <GlassCard>
+            <VmText strong>Console · {target}</VmText>
+            <TerminalSurface key={w.channel.id} channel={w.channel} active={w.visible} onFailure={() => { w.channel?.close(); w.dismissPrivate() }} />
+            <PillButton label='Close console' onPress={w.dismissPrivate} />
+        </GlassCard>}
         <GlassCard>
             <VmText strong>{target}</VmText>
             <VmText>{vm.status || 'Status unavailable'} · {vm.organization_name || vm.organization_id || 'Personal'}</VmText>
@@ -135,11 +140,6 @@ export function DetailPanel({ workspace: w, settings, services, onOpenCheckout }
         {(w.secret || w.connection) && <GlassCard>
             {w.secret && <VmText strong>Sudo password: {w.secret}</VmText>}{w.connection && <VmText>{w.connection}</VmText>}
             <PillButton label='Clear private connection details' onPress={w.dismissPrivate} />
-        </GlassCard>}
-        {w.channel && <GlassCard>
-            <VmText strong>Console · {target}</VmText>
-            <TerminalSurface key={w.channel.id} channel={w.channel} active={w.visible} onFailure={() => { w.channel?.close(); w.dismissPrivate() }} />
-            <PillButton label='Close console' onPress={w.dismissPrivate} />
         </GlassCard>}
         {(w.boot || w.bootStatus) && <GlassCard>
             <VmText strong>Boot log · retained tail (up to 32,768 characters)</VmText><VmText>{w.bootStatus}</VmText><VmText>{w.boot}</VmText>

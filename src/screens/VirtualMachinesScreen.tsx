@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ScrollView, View } from 'react-native'
 import type { AppSettings } from '../types'
 import { GlassCard, InlineNotice, PillButton, Screen } from '../components/ui'
@@ -20,6 +20,7 @@ function VmWorkspaceScreen({ settings, onOpenCheckout, services: injected }: Vir
     const g = w.ops.generation, rows = w.snapshot.inventory?.value
     const filtered = rows ? filterVms(rows, filter) : []
     const input = (change: () => void) => { if (w.ops.idle(g)) change() }
+    useEffect(() => { if (w.channel) scrollViewRef.current?.scrollTo({ y: 0, animated: true }) }, [w.channel])
     return <Screen scrollViewRef={scrollViewRef} title='Virtual machines' subtitle={settings.selectedOrganizationId && settings.selectedOrganizationId !== 'personal' ? 'Organization workspace' : 'Personal workspace'}>
         <View style={{ gap: 12 }}>
             <VmRow>

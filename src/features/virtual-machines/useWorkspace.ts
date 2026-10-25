@@ -72,7 +72,7 @@ export function useVmWorkspace(settings: AppSettings, services: VmServices) {
                 try {
                     const grant = await freshVmOperation(settings, services, ops, op)
                     const result = await run(op, grant)
-                    if (ops.finish(op, true)) setMessage(result)
+                    if (ops.finish(op, true) && kind !== 'console') setMessage(result)
                 } catch (cause) {
                     // Only a verified non-dispatch/rejection may clear an intent; transport uncertainty stays scoped across remounts.
                     const definite = cause instanceof VmError ? !cause.uncertain : kind === 'console'
@@ -96,7 +96,7 @@ export function useVmWorkspace(settings: AppSettings, services: VmServices) {
         })
         if (ops.operationCurrent(op)) setChannel(live)
         await live.opened
-        return 'Console authenticated. Host state is shown by the console.'
+        return ''
     }, true, false)
     return { ops, snapshot, selected, message, error, visible, secret, connection, channel, boot, bootStatus,
         refresh, select, request, openConsole, publish,
