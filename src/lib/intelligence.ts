@@ -152,3 +152,13 @@ export function sortActorActivity<T extends { lastSeenAt: string }>(items: T[]) 
         })
         .map(({ item }) => item)
 }
+
+export function formatActorActivityTime(value: string, locale?: string, timeZone?: string) {
+    const parsed = new Date(value)
+    if (!Number.isFinite(parsed.getTime())) return value || 'Not reported'
+    return parsed.toLocaleString(locale, {
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short',
+        ...(timeZone ? { timeZone } : {}),
+    })
+}

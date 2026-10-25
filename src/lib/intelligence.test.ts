@@ -115,4 +115,9 @@ describe('native intelligence routes and contracts', () => {
         ]
         expect(intel.sortActorActivity(rows).map(item => item.id)).toEqual(['newer', 'older', 'unknown', 'invalid'])
     })
+    it('shows the timezone on activity timestamps so the repeated DST hour remains readable', () => {
+        expect(intel.formatActorActivityTime('2026-10-25T01:24:13Z', 'en-GB', 'Europe/Oslo')).toContain('CET')
+        expect(intel.formatActorActivityTime('2026-10-25T00:31:56Z', 'en-GB', 'Europe/Oslo')).toContain('CEST')
+        expect(intel.formatActorActivityTime('', 'en-GB')).toBe('Not reported')
+    })
 })

@@ -3,7 +3,7 @@ import { Alert, Linking, Text, TextInput, View } from 'react-native'
 import type { AppSettings } from '../types'
 import { GlassCard, InlineNotice, PillButton, Screen } from '../components/ui'
 import { useAppTheme } from '../theme/context'
-import { deliveryStages, deliveryStatuses, intelligenceAccountKey, loadActorProfiles, loadDeliveryHealth, mergeIntelligencePage, recordDeliveryEvidence, sortActorActivity, validateReportEvidence } from '../lib/intelligence'
+import { deliveryStages, deliveryStatuses, formatActorActivityTime, intelligenceAccountKey, loadActorProfiles, loadDeliveryHealth, mergeIntelligencePage, recordDeliveryEvidence, sortActorActivity, validateReportEvidence } from '../lib/intelligence'
 import type { ActorProfile, DeliveryFilter, DeliveryRecord, DeliverySnapshot, ReportEvidence } from '../lib/intelligence'
 
 export type IntelligenceMode = 'profiles' | 'activity' | 'timeliness'
@@ -55,12 +55,12 @@ function ProfileResults({ settings, query, activity = false }: { settings: AppSe
         {!loading && !error && !items.length && <Body>{activity ? 'No recent actor activity was found.' : 'No actor profiles match this search.'}</Body>}
         {items.map(profile => <GlassCard key={profile.id} style={{ gap: 10 }}>
             <Heading>{profile.name || profile.normalizedName || profile.id}</Heading>
-            {activity && <Body>Last observed: {date(profile.lastSeenAt)}</Body>}
+            {activity && <Body>Last observed: {formatActorActivityTime(profile.lastSeenAt)}</Body>}
             <Body>{profile.actorType || 'Type not reported'} · {profile.reviewState || 'Review state not reported'}</Body>
             <Body>{profile.evidenceCount === null ? 'Evidence count not reported' : `${profile.evidenceCount} evidence records`}{profile.confidence === null ? '' : ` · ${Math.round(profile.confidence * 100)}% confidence`}</Body>
             <PillButton small label={selected === profile.id ? 'Close profile' : 'View profile'} onPress={() => setSelected(current => current === profile.id ? '' : profile.id)} />
             {selected === profile.id && <>
-                <Body>Aliases: {profile.aliases.join(', ') || 'None reported'}</Body><Body>First seen: {date(profile.firstSeenAt)}</Body><Body>Last seen: {date(profile.lastSeenAt)}</Body><Body>Updated: {date(profile.updatedAt)}</Body>
+                <Body>Aliases: {profile.aliases.join(', ') || 'None reported'}</Body><Body>First seen: {date(profile.firstSeenAt)}</Body><Body>Last seen: {formatActorActivityTime(profile.lastSeenAt)}</Body><Body>Updated: {date(profile.updatedAt)}</Body>
                 <Body>Profile ID: {profile.id}</Body><Body>Source IDs: {profile.sourceIds.join(', ') || 'None reported'}</Body><Body>Capture IDs: {profile.captureIds.join(', ') || 'None reported'}</Body>
             </>}
         </GlassCard>)}
