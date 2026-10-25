@@ -117,7 +117,7 @@ export function SettingsDrawer({
                         {section === 'general' && (
                             <View style={styles.sectionColumn}>
                                 <Text style={[styles.sectionTitle, { color: theme.text }]}>General</Text>
-                                <Text style={[styles.sectionBody, { color: theme.textMuted }]}>Choose how the desktop app behaves by default.</Text>
+                                <Text style={[styles.sectionBody, { color: theme.textMuted }]}>Choose how Hanasand behaves by default.</Text>
                                 <Text style={[styles.groupLabel, { color: theme.text }]}>Workspace mode</Text>
                                 <View style={styles.modeGrid}>
                                     <ModeCard
