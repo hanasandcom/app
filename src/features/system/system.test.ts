@@ -117,6 +117,25 @@ test('1008 and invalid frames close without retry; stream values preserve indepe
     const next = m.applyLive(m.parseTelemetry(snapshot({ vms: [{ status: 'running' }] })), { type: 'snapshot', system: snapshot().systemTelemetry, docker: snapshot().dockerTelemetry })
     expect(next.vmCount).toBe(1); expect(next.runningVms).toBe(1)
 })
+test('transient system stream closure reconnects with a fresh device proof and stops on hide', async () => {
+    const sockets: Socket[] = [], statuses: string[] = [], proofs: string[] = []
+    const stop = await watchSystem(settings, signal(), { data: () => {}, status: value => statuses.push(value), error: () => {} }, () => {
+        const socket = new Socket(); sockets.push(socket); return socket
+    }, async (_token, method, url) => {
+        expect(method).toBe('GET'); expect(url).toEndWith('/api/ws/system')
+        const proof = `proof-${proofs.length + 1}`; proofs.push(proof); return { proof }
+    }, 0)
+    sockets[0].onopen?.()
+    sockets[0].onclose?.({ code: 1006 })
+    expect(statuses.at(-1)).toContain('Reconnecting')
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(sockets).toHaveLength(2)
+    sockets[1].onopen?.()
+    expect(proofs).toEqual(['proof-1', 'proof-2'])
+    expect(JSON.parse(sockets[1].sent[0]).dpop).toBe('proof-2')
+    stop()
+    expect(sockets[1].closed).toBe(true)
+})
 test('actual screen binds native host generations and fresh authority before mutation without retry commands', () => {
     const source = readFileSync(fileURLToPath(import.meta.url).replace(/features\/system\/system.test.ts$/, 'screens/SystemScreen.tsx'), 'utf8')
     expect(source).toContain('key={`refresh:${captured}`}'); expect(source).toContain('ops.beginWrite(generation, intent)')
