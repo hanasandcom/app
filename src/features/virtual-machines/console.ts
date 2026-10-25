@@ -19,7 +19,7 @@ export type ConsoleDependencies = {
 }
 export type ConsoleOptions = {
     dependencies?: Partial<ConsoleDependencies>
-    deadlines?: { prepare?: number; proof?: number; ready?: number; inactivity?: number }
+    deadlines?: { prepare?: number; proof?: number }
     onBootOutput?: (data: string) => void; onBootStatus?: (message: string) => void; onClear?: () => void
 }
 export type VmConsole = {
@@ -50,7 +50,7 @@ export function openVmConsole(settings: AppSettings, ops: VmController, operatio
     let state: ConsoleEvent & { type: 'state' } = { type: 'state', state: 'connecting', message: 'Checking current VM access…' }
     let socket: ConsoleSocket | undefined, closed = false, accepted = false, sent = false, effect = false, queueBytes = 0, sessionBytes = 0
     let width = 100, height = 30, windowAt = Date.now(), inputBytes = 0, inputs = 0, resizes = 0
-    let readyTimer: ReturnType<typeof setTimeout> | undefined, idleTimer: ReturnType<typeof setTimeout> | undefined, flushTimer: ReturnType<typeof setTimeout> | undefined, reconnectTimer: ReturnType<typeof setTimeout> | undefined
+    let flushTimer: ReturnType<typeof setTimeout> | undefined, reconnectTimer: ReturnType<typeof setTimeout> | undefined
     let connectSocket: () => Promise<void> = async () => {}
     let resolveOpened: () => void = () => {}, rejectOpened: (error: VmError) => void = () => {}, settled = false
     const opened = new Promise<void>((resolve, reject) => { resolveOpened = resolve; rejectOpened = reject })
@@ -60,7 +60,7 @@ export function openVmConsole(settings: AppSettings, ops: VmController, operatio
     function change(next: typeof state) { state = next; emit(state) }
     function close(message = 'Console closed. Reopen explicitly when ready.') {
         if (closed) return
-        closed = true; state = { type: 'state', state: 'closed', message }; clearTimeout(prepareTimer); clearTimeout(readyTimer); clearTimeout(idleTimer); clearTimeout(flushTimer); clearTimeout(reconnectTimer)
+        closed = true; state = { type: 'state', state: 'closed', message }; clearTimeout(prepareTimer); clearTimeout(flushTimer); clearTimeout(reconnectTimer)
         controller.abort(); operation.signal.removeEventListener('abort', abort); removePrivate()
         queue.length = 0; queueBytes = 0
         if (socket) { socket.onopen = null; socket.onmessage = null; socket.onclose = null; socket.onerror = null; try { socket.close() } catch { /* Closed transport cannot be reused. */ } }
@@ -71,11 +71,9 @@ export function openVmConsole(settings: AppSettings, ops: VmController, operatio
     const abort = () => close('Console paused because its view or account changed.')
     const removePrivate = ops.onClearPrivate(abort)
     operation.signal.addEventListener('abort', abort, { once: true })
-    const idle = () => { clearTimeout(idleTimer); idleTimer = setTimeout(() => close('Console data timed out. Reopen manually.'), options.deadlines?.inactivity ?? 120000) }
     const reconnect = () => {
         if (closed || reconnectTimer) return
         change({ type: 'state', state: 'connecting', message: 'Connection lost. Reconnecting automatically…' })
-        idle()
         reconnectTimer = setTimeout(() => { reconnectTimer = undefined; void connectSocket().catch(() => close('Console access could not be refreshed. Reopen the console to try again.')) }, 2000)
     }
     const flush = () => {
@@ -126,7 +124,6 @@ export function openVmConsole(settings: AppSettings, ops: VmController, operatio
         const targetUrl = vmUrl(s, `ws/vm/${encodeURIComponent(target)}/console`)
         const socketUrl = targetUrl.replace(/^https:/, 'wss:')
         clearTimeout(prepareTimer)
-        readyTimer = setTimeout(() => close('The VM console did not become ready. Try opening it again.'), options.deadlines?.ready ?? 90000)
         connectSocket = async () => {
             if (!current() || closed) return
             if (permission && Date.now() - permission.checkedAt > 20000) {
@@ -155,7 +152,6 @@ export function openVmConsole(settings: AppSettings, ops: VmController, operatio
                 try { requireManage(s, permission, target) } catch { close('Console permission expired. Refresh VM access before reconnecting.'); return }
                 sent = true
                 send({ type: 'auth', id: s.userId, token: s.authToken, dpop: proof.proof })
-                idle()
             }
             activeSocket.onmessage = event => {
                 if (!current()) return
@@ -163,10 +159,10 @@ export function openVmConsole(settings: AppSettings, ops: VmController, operatio
                     if (!sent || typeof event.data !== 'string' || utf8Size(event.data) > 256 * 1024) throw new Error()
                     sessionBytes += utf8Size(event.data)
                     if (sessionBytes > 64 * 1024 * 1024) { close('Console output reached the session limit. Reopen manually.'); return }
-                    const message = object(JSON.parse(event.data)); idle()
+                    const message = object(JSON.parse(event.data))
                     if (message.type === 'ready') {
                         if (message.username !== target) throw new Error()
-                        accepted = true; clearTimeout(readyTimer)
+                        accepted = true
                         change({ type: 'state', state: 'ready', message: 'Console connected' })
                         if (!settled) { settled = true; resolveOpened() }
                         send({ type: 'resize', cols: width, rows: height })

@@ -223,13 +223,16 @@ test('socket input/resize/backpressure and output/frame limits are enforced', as
     const bad = fixture(); await tick(); bad.socket.open(); bad.socket.onmessage?.({ data: 'a'.repeat(262145) })
     await expect(bad.channel.opened).rejects.toMatchObject({ uncertain: false })
 })
-test('prepare/proof/ready/inactivity deadlines are bounded', async () => {
+test('preparation and authentication are bounded, while the host console stays open until closed', async () => {
     const prepare = fixture({ overrides: { deadlines: { prepare: 3 }, dependencies: { loadVm: async () => new Promise(() => {}) } } })
     await expect(prepare.channel.opened).rejects.toThrow('timed out'); expect(prepare.urls).toEqual([])
     const proof = fixture({ overrides: { deadlines: { proof: 3 }, dependencies: { proof: async () => new Promise(() => {}) } } })
     await expect(proof.channel.opened).rejects.toThrow('authentication timed out'); expect(proof.urls).toEqual([])
-    const ready = fixture({ overrides: { deadlines: { ready: 3 } } }); await expect(ready.channel.opened).rejects.toThrow('did not become ready'); expect(ready.urls.length).toBe(1)
-    const idle = fixture({ overrides: { deadlines: { inactivity: 3 } } }); await tick(); idle.socket.open(); idle.socket.message({ type: 'ready', username: 'synthetic-vm' }); await idle.channel.opened; await new Promise(resolve => setTimeout(resolve, 6)); expect(idle.socket.closes).toBe(1)
+    const waiting = fixture(); await tick(); waiting.socket.open(); await new Promise(resolve => setTimeout(resolve, 20))
+    expect(waiting.socket.closes).toBe(0)
+    waiting.socket.message({ type: 'ready', username: 'synthetic-vm' }); await waiting.channel.opened
+    await new Promise(resolve => setTimeout(resolve, 20)); expect(waiting.socket.closes).toBe(0)
+    waiting.channel.close(); expect(waiting.socket.closes).toBe(1)
 })
 test('accepted channel survives caller receipt settlement but closes on next context/read and never reuses connection id', async () => {
     const f = fixture(); await tick(); f.socket.open(); f.socket.message({ type: 'ready', username: 'synthetic-vm' }); await f.channel.opened
