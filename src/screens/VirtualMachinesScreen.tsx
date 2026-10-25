@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { View } from 'react-native'
+import { useMemo, useRef, useState } from 'react'
+import { ScrollView, View } from 'react-native'
 import type { AppSettings } from '../types'
 import { GlassCard, InlineNotice, PillButton, Screen } from '../components/ui'
 import { vmServices, type VmServices } from '../features/virtual-machines/services'
@@ -15,16 +15,17 @@ export function VirtualMachinesScreen(props: VirtualMachinesScreenProps) { retur
 function VmWorkspaceScreen({ settings, onOpenCheckout, services: injected }: VirtualMachinesScreenProps) {
     const services = useMemo(() => injected || vmServices, [injected])
     const w = useVmWorkspace(settings, services)
-    const [mode, setMode] = useState<'inventory' | 'create'>('inventory'), [filter, setFilter] = useState(defaultVmFilter), [limit, setLimit] = useState(30), [showMoreFilters, setShowMoreFilters] = useState(false)
+    const scrollViewRef = useRef<ScrollView>(null)
+    const [mode, setMode] = useState<'inventory' | 'create' | 'details'>('inventory'), [filter, setFilter] = useState(defaultVmFilter), [limit, setLimit] = useState(30), [showMoreFilters, setShowMoreFilters] = useState(false)
     const g = w.ops.generation, rows = w.snapshot.inventory?.value
     const filtered = rows ? filterVms(rows, filter) : []
     const input = (change: () => void) => { if (w.ops.idle(g)) change() }
-    return <Screen title='Virtual machines' subtitle={settings.selectedOrganizationId && settings.selectedOrganizationId !== 'personal' ? 'Organization workspace' : 'Personal workspace'}>
+    return <Screen scrollViewRef={scrollViewRef} title='Virtual machines' subtitle={settings.selectedOrganizationId && settings.selectedOrganizationId !== 'personal' ? 'Organization workspace' : 'Personal workspace'}>
         <View key={`workspace-controls:${g}`} style={{ gap: 12 }}>
             <VmRow>
                 <PillButton label={w.ops.reading ? 'Refreshing…' : 'Refresh current state'} disabled={!w.visible || w.ops.reading || w.ops.writing} onPress={() => { void w.refresh(g, true) }} />
-                <PillButton label='Inventory' disabled={!w.ops.idle(g)} onPress={() => { if (w.ops.context(g)) { setMode('inventory'); w.publish() } }} />
-                <PillButton label='Create VM' disabled={!w.writable} onPress={() => { if (w.ops.context(g)) { setMode('create'); w.publish() } }} />
+                <PillButton label={mode === 'details' ? 'Back to inventory' : 'Inventory'} disabled={!w.ops.idle(g)} onPress={() => { if (w.ops.context(g)) { setMode('inventory'); scrollViewRef.current?.scrollTo({ y: 0, animated: true }); w.publish() } }} />
+                <PillButton label='Create VM' disabled={!w.writable} onPress={() => { if (w.ops.context(g)) { setMode('create'); scrollViewRef.current?.scrollTo({ y: 0, animated: true }); w.publish() } }} />
             </VmRow>
             {w.ops.writing && <InlineNotice message='An operation is in progress. Leaving interrupts observation, so its outcome may need manual reconciliation.' />}
             {!ownAccount(settings) && <InlineNotice message='VM actions and credentials are unavailable while impersonating. Read access remains subject to the server.' />}
@@ -36,6 +37,7 @@ function VmWorkspaceScreen({ settings, onOpenCheckout, services: injected }: Vir
                 <VmText>{w.ops.unknown.kind.replaceAll('_', ' ')} · {w.ops.unknown.target}. No automatic retry was made. Refresh reads its exact current target and authority. Acknowledging only permits a new reviewed action; it does not establish the prior outcome.</VmText>
                 <PillButton label='Acknowledge reviewed current state' disabled={!w.ops.canAcknowledge} onPress={() => { const token = w.ops.unknown?.token; if (token && w.ops.acknowledge(g, token)) w.publish() }} />
             </GlassCard>}
+            {mode === 'details' && !!w.selected && <DetailPanel key={w.selected} workspace={w} settings={settings} services={services} onOpenCheckout={onOpenCheckout} />}
             {mode === 'inventory' && <GlassCard>
                 <VmText strong>Owned and accessible inventory</VmText>
                 <VmField label='Search VM names' value={filter.query} onChange={query => input(() => { setFilter(value => ({ ...value, query })); setLimit(30) })} />
@@ -57,7 +59,7 @@ function VmWorkspaceScreen({ settings, onOpenCheckout, services: injected }: Vir
                             <View style={{ gap: 12 }}>
                                 <VmText strong>{vm.name}</VmText><VmText>{vm.deleted_at ? 'Scheduled deletion' : vm.status || 'Status unavailable'} · {vm.limits_cpu || '?'} CPU · {vm.limits_memory || 'Memory unavailable'}</VmText>
                                 <VmText>{vm.organization_name || vm.organization_id || 'Personal'} · Owner {vm.owner}</VmText>
-                                <PillButton label={`Open ${vm.name}`} disabled={!w.visible || w.ops.writing || !w.snapshot.reads.inventory} onPress={() => w.select(g, vm.name)} />
+                                <PillButton label={`Open ${vm.name}`} disabled={!w.visible || w.ops.writing || !w.snapshot.reads.inventory} onPress={() => { w.select(g, vm.name); setMode('details'); scrollViewRef.current?.scrollTo({ y: 0, animated: true }) }} />
                             </View>
                         </GlassCard>)}
                     </View>
@@ -70,6 +72,5 @@ function VmWorkspaceScreen({ settings, onOpenCheckout, services: injected }: Vir
             </GlassCard>}
         </View>
         {mode === 'create' && <CreatePanel workspace={w} settings={settings} services={services} />}
-        {mode === 'inventory' && !!w.selected && <DetailPanel key={w.selected} workspace={w} settings={settings} services={services} onOpenCheckout={onOpenCheckout} />}
     </Screen>
 }
