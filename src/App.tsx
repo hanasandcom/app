@@ -300,7 +300,7 @@ export default function App() {
             try {
                 await saveThemePreference(next, saveRevision)
             } catch (error) {
-                if (!sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)) throw new Error('Your session changed. Open Settings again before saving.')
+                if (!sessionTransition.current(sessionIntentVersion, settings, currentSettings.current)) throw new Error('Your session changed. Open Settings again before saving.', { cause: error })
                 const latestRevision = settingsWriteRevision()
                 if (latestRevision === saveRevision + 1) throw error
                 saveRevision = latestRevision
