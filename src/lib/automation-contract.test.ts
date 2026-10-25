@@ -122,6 +122,7 @@ describe('exact health-check deep links', () => {
         const source = await Bun.file(new URL('../screens/AutomationsScreen.tsx', import.meta.url)).text()
         expect(source).toContain('key={JSON.stringify([workspaceAccountKey(settings), settings.authToken, settings.impersonationToken, section, initialAutomationId || \'\'])}')
         expect(source).toContain('[selectedId, setSelectedId] = useState(initialAutomationId || \'\')')
+        expect(source.indexOf('{showEditor && <GlassCard')).toBeLessThan(source.indexOf('<View style={styles.automationList}>'))
         expect(source).toContain('automationSelection(next, selectId, !!initialAutomationId, !!selectId || !!initialAutomationId)')
         expect(source).toContain('initialAutomationId && (!details.automation || details.automation.id !== nextSelected)')
         expect(source).toContain('if (initialAutomationId) setShowEditor(true)')

@@ -245,32 +245,6 @@ function AccountAutomations({ settings, section, initialAutomationId }: { settin
                     <PillButton label={busy === 'load' ? 'Loading…' : section === 'health' ? 'Refresh health checks' : 'Refresh personal jobs'} disabled={!!busy} onPress={() => void load()} small />
                 </View>
                 <InlineNotice message={automationError} />
-                <View style={styles.automationList}>
-                    {automations.map(automation => (
-                        <GlassCard key={automation.id} style={[styles.automationCard, automation.id === selectedId && styles.selectedCard]}>
-                            <Text style={styles.cardTitle} numberOfLines={1}>{automation.name}</Text>
-                            <Text style={styles.cardBody} numberOfLines={2}>{automation.prompt}</Text>
-                            <Text style={styles.cardMeta}>{automationActionLabel(automation.actionType)} · {monitoringLabel(automation.monitoringType)}</Text>
-                            <Text style={styles.cardMeta}>{automation.status} · {automation.lastStatus || 'Not run yet'}</Text>
-                            {!!automation.targetUrl && <Text style={styles.cardBody} numberOfLines={2}>{automation.targetUrl}</Text>}
-                            <Text style={styles.cardMeta}>{formatSchedule(automation)}</Text>
-                            <PillButton label='Edit' disabled={!!busy} onPress={() => void selectAutomation(automation)} small />
-                        </GlassCard>
-                    ))}
-                    {!automations.length && busy === 'load' && (
-                        <GlassCard style={styles.emptyCard}>
-                            <Text style={styles.cardTitle}>{section === 'health' ? 'Loading health checks…' : 'Loading jobs…'}</Text>
-                            <Text style={styles.cardBody}>Checking the latest data from Hanasand.</Text>
-                        </GlassCard>
-                    )}
-                    {!automations.length && busy !== 'load' && !automationError && (
-                        <GlassCard style={styles.emptyCard}>
-                            <Text style={styles.cardTitle}>{section === 'health' ? 'No health checks yet' : 'No jobs yet'}</Text>
-                            <Text style={styles.cardBody}>Create one and the server will run it even if this app is closed.</Text>
-                        </GlassCard>
-                    )}
-                </View>
-
                 {showEditor && <GlassCard style={styles.editor}>
                     <View style={styles.editorHeader}>
                         <CalendarClock color={theme.textMuted} size={18} />
@@ -302,6 +276,31 @@ function AccountAutomations({ settings, section, initialAutomationId }: { settin
                     </View>
                     <InlineNotice message={selected?.pausedReason || undefined} tone='info' />
                 </GlassCard>}
+                <View style={styles.automationList}>
+                    {automations.map(automation => (
+                        <GlassCard key={automation.id} style={[styles.automationCard, automation.id === selectedId && styles.selectedCard]}>
+                            <Text style={styles.cardTitle} numberOfLines={1}>{automation.name}</Text>
+                            <Text style={styles.cardBody} numberOfLines={2}>{automation.prompt}</Text>
+                            <Text style={styles.cardMeta}>{automationActionLabel(automation.actionType)} · {monitoringLabel(automation.monitoringType)}</Text>
+                            <Text style={styles.cardMeta}>{automation.status} · {automation.lastStatus || 'Not run yet'}</Text>
+                            {!!automation.targetUrl && <Text style={styles.cardBody} numberOfLines={2}>{automation.targetUrl}</Text>}
+                            <Text style={styles.cardMeta}>{formatSchedule(automation)}</Text>
+                            <PillButton label='Edit' disabled={!!busy} onPress={() => void selectAutomation(automation)} small />
+                        </GlassCard>
+                    ))}
+                    {!automations.length && busy === 'load' && (
+                        <GlassCard style={styles.emptyCard}>
+                            <Text style={styles.cardTitle}>{section === 'health' ? 'Loading health checks…' : 'Loading jobs…'}</Text>
+                            <Text style={styles.cardBody}>Checking the latest data from Hanasand.</Text>
+                        </GlassCard>
+                    )}
+                    {!automations.length && busy !== 'load' && !automationError && (
+                        <GlassCard style={styles.emptyCard}>
+                            <Text style={styles.cardTitle}>{section === 'health' ? 'No health checks yet' : 'No jobs yet'}</Text>
+                            <Text style={styles.cardBody}>Create one and the server will run it even if this app is closed.</Text>
+                        </GlassCard>
+                    )}
+                </View>
 
                 <GlassCard>
                     <View style={styles.editorHeader}>
