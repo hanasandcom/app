@@ -75,7 +75,9 @@ function AccountAutomations({ settings, section, initialAutomationId }: { settin
             if (!automationReadCurrent(active.current, request, detailsSequence.current)) return
             setCanManageSystem(overview.canManageSystem)
             setAutomations(next)
-            const selection = automationSelection(next, selectId, !!initialAutomationId)
+            // Load the list first. Fetch run history only for an explicitly opened check;
+            // automatically selecting the first row made the whole screen wait on a detail request.
+            const selection = automationSelection(next, selectId, !!initialAutomationId, !!selectId || !!initialAutomationId)
             const nextSelected = selection.id
             setSelectedId(nextSelected)
             setRuns([])

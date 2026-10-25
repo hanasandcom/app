@@ -52,10 +52,10 @@ export const defaultJsonRule: AutomationJsonRule = { path: '', operator: 'gt', v
 export const automationActions = ['agent_prompt', 'echo', 'mail_health_check', 'system_alert', 'organization_report'] as const
 export const monitoringTypes = ['fetch', 'post', 'tcp', 'ssh', 'json', 'push'] as const
 export function automationInitialTab(section: 'health' | 'cron') { return section === 'health' ? 'personal' as const : 'cron' as const }
-export function automationSelection(items: ReadonlyArray<Pick<AgentAutomation, 'id'>>, selectedId: string, exact = false) {
+export function automationSelection(items: ReadonlyArray<Pick<AgentAutomation, 'id'>>, selectedId: string, exact = false, selectFirst = true) {
     if (items.some(item => item.id === selectedId)) return { id: selectedId, missing: false }
     if (exact && selectedId) return { id: selectedId, missing: true }
-    return { id: items[0]?.id || '', missing: false }
+    return { id: selectFirst ? items[0]?.id || '' : '', missing: false }
 }
 export const automationReadCurrent = (active: boolean, request: number, sequence: number) => active && request === sequence
 export function automationEditError(draft: AgentAutomationPayload) {
