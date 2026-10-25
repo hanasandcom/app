@@ -21,7 +21,7 @@ function VmWorkspaceScreen({ settings, onOpenCheckout, services: injected }: Vir
     const filtered = rows ? filterVms(rows, filter) : []
     const input = (change: () => void) => { if (w.ops.idle(g)) change() }
     return <Screen scrollViewRef={scrollViewRef} title='Virtual machines' subtitle={settings.selectedOrganizationId && settings.selectedOrganizationId !== 'personal' ? 'Organization workspace' : 'Personal workspace'}>
-        <View key={`workspace-controls:${g}`} style={{ gap: 12 }}>
+        <View style={{ gap: 12 }}>
             <VmRow>
                 <PillButton label={w.ops.reading ? 'Refreshing…' : 'Refresh current state'} disabled={!w.visible || w.ops.reading || w.ops.writing} onPress={() => { void w.refresh(g, true) }} />
                 <PillButton label={mode === 'details' ? 'Back to inventory' : 'Inventory'} disabled={!w.ops.idle(g)} onPress={() => { if (w.ops.context(g)) { setMode('inventory'); scrollViewRef.current?.scrollTo({ y: 0, animated: true }); w.publish() } }} />

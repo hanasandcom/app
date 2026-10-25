@@ -292,9 +292,10 @@ test('native target current-listener model replaces action/editor hosts at opera
 })
 test('actual UI wiring pins host boundaries, private result guards, explicit effect calls and separate terminal/boot sinks', async () => {
     const [screen, detail, create, hook, reads] = await Promise.all(['../../screens/VirtualMachinesScreen.tsx', './DetailPanel.tsx', './CreatePanel.tsx', './useWorkspace.ts', './read.ts'].map(path => Bun.file(new URL(path, import.meta.url)).text()))
-    expect(screen).toContain('key={`workspace-controls:${g}`}'); expect(screen).toContain('w.refresh(g, true)')
+    expect(screen).not.toContain('key={`workspace-controls:${g}`}'); expect(screen).toContain('w.refresh(g, true)')
     expect(screen).toContain('<View style={{ gap: 12 }}>')
     expect(screen).toContain('<GlassCard key={vm.name}')
+    expect(screen).toContain('<DetailPanel key={w.selected}')
     expect(screen.indexOf('mode === \'details\' && !!w.selected && <DetailPanel')).toBeLessThan(screen.indexOf('mode === \'inventory\' && <GlassCard>'))
     expect(screen).toContain('setMode(\'details\'); scrollViewRef.current?.scrollTo({ y: 0, animated: true })')
     expect(screen).toContain('mode === \'details\' ? \'Back to inventory\' : \'Inventory\'')
