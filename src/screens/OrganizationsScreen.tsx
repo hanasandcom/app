@@ -7,6 +7,7 @@ import {
     fetchOrganizationSettings, organizationPath, type Organization, type OrganizationInvite,
     type OrganizationMember, type OrganizationSettings,
 } from '../lib/profile-api'
+import { organizationLifecycleActions, organizationLifecycleTarget } from '../lib/organization-lifecycle-actions'
 import { DropdownMenu, GlassCard, InlineNotice, LabeledInput, PillButton, Screen, SectionTitle } from '../components/ui'
 import { getThemePalette, spacing } from '../theme/tokens'
 
@@ -147,14 +148,25 @@ export function OrganizationsScreen({ settings, selectedOrganizationId, onSelect
                     { label: 'Organization settings', onPress: () => setTab('Settings') },
                     { label: 'Manage team', onPress: () => setTab('Team') },
                     ...(onOpenPrivacy ? [{ label: 'Privacy and data deletion', onPress: () => onOpenPrivacy(selected.id) }] : []),
-                    ...(mayManage ? [{
-                        label: (savedSettings?.lifecycleStatus || selected.lifecycleStatus || '').toLowerCase() === 'archived' ? 'Reactivate organization' : 'Archive organization',
-                        destructive: (savedSettings?.lifecycleStatus || selected.lifecycleStatus || '').toLowerCase() !== 'archived',
+                    ...(mayManage ? organizationLifecycleActions(savedSettings?.lifecycleStatus || selected.lifecycleStatus || selected.status).map(action => ({
+                        label: action === 'reactivate' ? 'Reactivate organization' : action === 'delete' ? 'Delete organization' : 'Archive organization',
+                        destructive: action !== 'reactivate',
                         onPress: () => {
-                            const archived = (savedSettings?.lifecycleStatus || selected.lifecycleStatus || '').toLowerCase() === 'archived'
-                            confirm(archived ? 'Reactivate organization?' : 'Archive organization?', archived ? `Reactivate ${selected.name}? Organization services will resume.` : `Archive ${selected.name}? Organization activity will pause. You can reactivate it later. Permanent deletion is not available through the organization API.`, () => mutation('settings', 'PUT', { lifecycleStatus: archived ? 'active' : 'archived' }), archived ? 'Organization reactivated.' : 'Organization archived.')
+                            const lifecycleStatus = organizationLifecycleTarget(action)
+                            const title = action === 'reactivate' ? 'Reactivate organization?' : action === 'delete' ? 'Delete organization?' : 'Archive organization?'
+                            const body = action === 'reactivate'
+                                ? `Reactivate ${selected.name}? Organization services will resume.`
+                                : action === 'delete'
+                                    ? `Delete ${selected.name}? Members will lose access and services tied to this organization will stop.`
+                                    : `Archive ${selected.name}? Organization activity will pause. You can reactivate it later.`
+                            const success = action === 'reactivate' ? 'Organization reactivated.' : action === 'delete' ? 'Organization deleted.' : 'Organization archived.'
+                            confirm(title, body, async () => {
+                                const receipt = await mutation('settings', 'PUT', { lifecycleStatus }) as { organization?: { id?: unknown; lifecycleStatus?: unknown } }
+                                if (receipt.organization?.id !== selected.id || receipt.organization.lifecycleStatus !== lifecycleStatus) throw new Error('The organization lifecycle change could not be verified. Refresh before trying again.')
+                                return receipt
+                            }, success)
                         },
-                    }] : []),
+                    })) : []),
                 ]} />
             </GlassCard>}
             {tab === 'Team' && <>
@@ -204,7 +216,7 @@ export function OrganizationsScreen({ settings, selectedOrganizationId, onSelect
                     <PillButton label='Save settings' tone='accent' disabled={busy || detailsLoading || JSON.stringify(draft) === JSON.stringify(savedSettings)} onPress={() => void act(saveSettings, 'Organization settings updated.')} />
                     <View style={styles.item}>
                         <Text style={styles.text}>Organization lifecycle</Text>
-                        <Text style={styles.meta}>Archiving pauses organization activity. An owner or admin can reactivate it later. Permanent deletion is not available through the organization API.</Text>
+                        <Text style={styles.meta}>Archiving pauses organization activity. An owner or admin can reactivate it later. Deleting marks the organization deleted and stops its services.</Text>
                     </View>
                 </> : <>
                     <Text style={styles.meta}>Name: {savedSettings.name || selected.name}</Text><Text style={styles.meta}>Slug: {savedSettings.slug || 'None'}</Text>

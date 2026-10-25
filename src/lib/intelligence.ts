@@ -142,3 +142,13 @@ export function mergeIntelligencePage<T extends { id: string }>(current: T[], in
     for (const item of incoming) merged.set(item.id, item)
     return [...merged.values()]
 }
+export function sortActorActivity<T extends { lastSeenAt: string }>(items: T[]) {
+    return items
+        .map((item, index) => ({ item, index, timestamp: Date.parse(item.lastSeenAt) }))
+        .sort((left, right) => {
+            const leftTime = Number.isFinite(left.timestamp) ? left.timestamp : Number.NEGATIVE_INFINITY
+            const rightTime = Number.isFinite(right.timestamp) ? right.timestamp : Number.NEGATIVE_INFINITY
+            return rightTime - leftTime || left.index - right.index
+        })
+        .map(({ item }) => item)
+}

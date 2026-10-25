@@ -3,7 +3,7 @@ import { Alert, Linking, Text, TextInput, View } from 'react-native'
 import type { AppSettings } from '../types'
 import { GlassCard, InlineNotice, PillButton, Screen } from '../components/ui'
 import { useAppTheme } from '../theme/context'
-import { deliveryStages, deliveryStatuses, intelligenceAccountKey, loadActorProfiles, loadDeliveryHealth, mergeIntelligencePage, recordDeliveryEvidence, validateReportEvidence } from '../lib/intelligence'
+import { deliveryStages, deliveryStatuses, intelligenceAccountKey, loadActorProfiles, loadDeliveryHealth, mergeIntelligencePage, recordDeliveryEvidence, sortActorActivity, validateReportEvidence } from '../lib/intelligence'
 import type { ActorProfile, DeliveryFilter, DeliveryRecord, DeliverySnapshot, ReportEvidence } from '../lib/intelligence'
 
 export type IntelligenceMode = 'profiles' | 'activity' | 'timeliness'
@@ -43,7 +43,7 @@ function ProfileResults({ settings, query, activity = false }: { settings: AppSe
         setLoading(true); setError('')
         if (page === 1) { setItems([]); setTotal(null); setNextPage(null); setSelected('') }
         void loadActorProfiles(settings, { query, page }, controller.signal).then(data => {
-            if (active) { setItems(current => page === 1 ? data.items : mergeIntelligencePage(current, data.items)); setTotal(data.total); setNextPage(data.nextPage) }
+            if (active) { setItems(current => { const merged = page === 1 ? data.items : mergeIntelligencePage(current, data.items); return activity ? sortActorActivity(merged) : merged }); setTotal(data.total); setNextPage(data.nextPage) }
         }).catch(cause => { if (active) setError(controller.signal.aborted ? 'Profiles took too long to load. Retry to continue.' : message(cause)) })
             .finally(() => { if (active) setLoading(false); clearTimeout(timer) })
         return () => { active = false; controller.abort(); clearTimeout(timer) }

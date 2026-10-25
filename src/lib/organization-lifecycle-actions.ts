@@ -8,3 +8,11 @@ export function organizationLifecycleActions(status?: string | null): Organizati
         default: return []
     }
 }
+
+export function organizationLifecycleTarget(action: OrganizationLifecycleAction) {
+    switch (action) {
+        case 'archive': return 'archived' as const
+        case 'reactivate': return 'active' as const
+        case 'delete': return 'deleted' as const
+    }
+}

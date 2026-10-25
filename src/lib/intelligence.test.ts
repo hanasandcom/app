@@ -106,4 +106,13 @@ describe('native intelligence routes and contracts', () => {
     it('deduplicates overlapping pages by identity without losing earlier loaded records', () => {
         expect(intel.mergeIntelligencePage([{ id: 'a', value: 1 }, { id: 'b', value: 2 }], [{ id: 'b', value: 3 }, { id: 'c', value: 4 }])).toEqual([{ id: 'a', value: 1 }, { id: 'b', value: 3 }, { id: 'c', value: 4 }])
     })
+    it('orders latest activity by most recently observed evidence and keeps missing dates last', () => {
+        const rows = [
+            { id: 'older', lastSeenAt: '2026-10-22T10:00:00Z' },
+            { id: 'newer', lastSeenAt: '2026-10-22T12:00:00Z' },
+            { id: 'unknown', lastSeenAt: '' },
+            { id: 'invalid', lastSeenAt: 'not-a-date' },
+        ]
+        expect(intel.sortActorActivity(rows).map(item => item.id)).toEqual(['newer', 'older', 'unknown', 'invalid'])
+    })
 })
