@@ -18,6 +18,5 @@ describe('mobile theme accent', () => {
         expect(themeVariants.light.background).toBe('#e3e5e7')
         expect(themeVariants.obsidian.isLight).toBe(false)
         expect(themeVariants.graphite.isLight).toBe(false)
-        expect(themeVariants.forest.isLight).toBe(false)
     })
 })

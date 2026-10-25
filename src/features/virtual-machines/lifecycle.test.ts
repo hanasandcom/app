@@ -38,18 +38,18 @@ class Socket {
     message(value: unknown) { this.onmessage?.({ data: JSON.stringify(value) }) }
 }
 function fixture(options: { status?: string; manage?: boolean; overrides?: Parameters<typeof openVmConsole>[4] } = {}) {
-    const { controller, operation } = opening(), socket = new Socket(), urls: string[] = [], proofs: string[][] = [], starts: string[] = []
+    const { controller, operation } = opening(), socket = new Socket(), urls: string[] = [], socketHeaders: Array<Record<string, string> | undefined> = [], proofs: string[][] = [], starts: string[] = []
     const channel = openVmConsole(settings, controller, operation, nonce, {
         ...options.overrides,
         dependencies: {
             loadVm: async () => machine(options.status), loadPublicServices: async () => permission(options.manage),
             power: async (_s, _vm, _p, action) => { starts.push(action); return { status: 200, payload: { accepted: true } } },
             proof: async (token, method, url) => { proofs.push([token, method, url]); return { proof: 'synthetic-proof' } },
-            socket: url => { urls.push(url); return socket },
+            socket: (url, headers) => { urls.push(url); socketHeaders.push(headers); return socket },
             ...options.overrides?.dependencies,
         },
     })
-    return { channel, controller, operation, socket, urls, proofs, starts }
+    return { channel, controller, operation, socket, urls, socketHeaders, proofs, starts }
 }
 test('minimal intent scopes normalize service/personal context and survive token refresh/component replacement', () => {
     const registry = new VmIntents(), a = unlocked(settings, registry)
@@ -64,7 +64,7 @@ test('minimal intent scopes normalize service/personal context and survive token
     expect(new VmController({ ...settings, impersonatingUserId: 'other' }, registry).unknown).toBeUndefined()
 })
 test('every action remains uncertain across remount and cannot be acknowledged by denied/failed/automatic/wrong-target reads', () => {
-    for (const kind of operationKinds) {
+    for (const kind of operationKinds.filter(kind => kind !== 'console')) {
         const registry = new VmIntents(), c = unlocked(settings, registry)
         const operation = c.begin(c.review(c.generation, kind, 'synthetic-vm', true)!, `operation-${kind.replaceAll('_', '-')}`)!
         c.finish(operation, false); c.hide()
@@ -78,6 +78,16 @@ test('every action remains uncertain across remount and cannot be acknowledged b
         next.finishRead(read, { target: 'synthetic-vm', authorized: true, reads: allReads })
         expect(next.canAcknowledge).toBe(true); expect(next.acknowledge(next.generation, operation.token)).toBe(true)
     }
+})
+test('successful automatic exact-target refresh clears a legacy console-only uncertainty without acknowledgement', () => {
+    const registry = new VmIntents()
+    expect(registry.claim(vmIntentScope(settings), { token: 'legacy-console', kind: 'console', target: 'synthetic-vm' })).toBe(true)
+    const c = unlocked(settings, registry)
+    expect(c.unknown).toBeUndefined()
+    const next = new VmController(settings, registry); next.visible = true
+    const read = next.beginRead(next.generation, false, 'synthetic-vm')!
+    next.finishRead(read, { target: 'synthetic-vm', authorized: true, reads: allReads })
+    expect(next.unknown).toBeUndefined(); expect(next.locked).toBe(false); expect(next.canAcknowledge).toBe(false)
 })
 test('operation-specific review requires management/products/platform/details/services as appropriate', () => {
     for (const [kind, required] of [['power', 'management'], ['checkout', 'products'], ['delete', 'platform'], ['restore', 'platform'], ['stop_all', 'platform'], ['collect', 'details'], ['service_add', 'services'], ['console', 'management']] as const) {
@@ -129,11 +139,12 @@ test('console requires explicit reviewed possible-start permission; no connectio
     const op = c.begin(c.review(c.generation, 'power', 'synthetic-vm')!, 'one')!
     expect(() => openVmConsole(settings, c, op, nonce)).toThrow('Review')
 })
-test('console signs HTTPS upgrade target once, uses WSS without query/headers and sends credentials only in auth frame', async () => {
+test('console signs the HTTPS API target, uses WSS with the website Origin and sends credentials only in the auth frame', async () => {
     const f = fixture(); const events: unknown[] = []
     f.channel.subscribe(event => events.push(event)); expect(events[0]).toMatchObject({ type: 'state', state: 'connecting' })
     await tick(); expect(f.proofs).toEqual([['synthetic-token', 'GET', 'https://api.hanasand.com/api/ws/vm/synthetic-vm/console']])
-    expect(f.urls).toEqual(['wss://api.hanasand.com/api/ws/vm/synthetic-vm/console']); expect(f.channel.id).not.toContain(settings.authToken)
+    expect(f.urls).toEqual(['wss://api.hanasand.com/api/ws/vm/synthetic-vm/console'])
+    expect(f.socketHeaders).toEqual([{ origin: 'https://hanasand.com' }]); expect(f.channel.id).not.toContain(settings.authToken)
     expect(f.channel.input('early')).toBe(false)
     f.socket.open(); f.socket.onopen?.(); expect(f.socket.sent.length).toBe(1)
     expect(JSON.parse(f.socket.sent[0])).toEqual({ type: 'auth', id: settings.userId, token: settings.authToken, dpop: 'synthetic-proof' })
@@ -150,26 +161,44 @@ test('reviewed opening starts a newly stopped VM only after fresh manageable acc
     const denied = fixture({ status: 'Stopped', manage: false }); await expect(denied.channel.opened).rejects.toThrow('permission')
     expect(denied.starts).toEqual([]); expect(denied.urls).toEqual([])
 })
-test('hide during permission await or proof creation prevents late socket creation, and keeps unknown opening metadata', async () => {
+test('hide during permission await or proof creation prevents late socket creation without retaining a console operation', async () => {
     for (const phase of ['permission', 'proof'] as const) {
         let release!: () => void
         const pending = new Promise<void>(resolve => { release = resolve })
         const f = fixture({ overrides: { dependencies: phase === 'permission' ? { loadPublicServices: async () => { await pending; return permission() } } : { proof: async () => { await pending; return { proof: 'late-proof' } } } } })
         await tick(); f.controller.hide(); release()
         await expect(f.channel.opened).rejects.toThrow(); await tick()
-        expect(f.urls).toEqual([]); expect(f.controller.unknown?.kind).toBe('console')
+        expect(f.urls).toEqual([]); expect(f.controller.unknown).toBeUndefined()
     }
 })
 test('auth rejection/malformed or foreign-ready frames close once, clear private results and never reconnect', async () => {
     for (const value of [{ type: 'ready', username: 'foreign' }, { type: 'error', message: 'do-not-leak' }, { type: 'unknown' }]) {
         let clears = 0
         const f = fixture({ overrides: { onClear: () => { clears++ } } }); await tick(); f.socket.open(); f.socket.message(value)
-        await expect(f.channel.opened).rejects.toMatchObject({ uncertain: true })
+        await expect(f.channel.opened).rejects.toMatchObject({ uncertain: false })
         expect(f.socket.closes).toBe(1); expect(f.urls.length).toBe(1); expect(clears).toBe(1)
         expect(f.channel.input('late')).toBe(false)
         const state: unknown[] = []; f.channel.subscribe(event => state.push(event)); expect(state[0]).toMatchObject({ state: 'closed' })
         expect(JSON.stringify(state)).not.toContain('do-not-leak')
     }
+})
+test('a transient socket close reconnects automatically with a fresh proof and no shell-input replay', async () => {
+    const sockets: Socket[] = [], proofRequests: string[] = []
+    const f = fixture({ overrides: { dependencies: {
+        socket: () => { const socket = new Socket(); sockets.push(socket); return socket },
+        proof: async (_token, _method, url) => { proofRequests.push(url); return { proof: `proof-${proofRequests.length}` } },
+    } } })
+    await tick(); expect(sockets.length).toBe(1)
+    sockets[0].open(); expect(JSON.parse(sockets[0].sent[0]).dpop).toBe('proof-1')
+    sockets[0].message({ type: 'ready', username: 'synthetic-vm' }); await f.channel.opened
+    expect(f.channel.input('before-disconnect')).toBe(true)
+    sockets[0].onclose?.({ code: 1006 })
+    await new Promise(resolve => setTimeout(resolve, 2050))
+    expect(sockets.length).toBe(2); expect(proofRequests.length).toBe(2)
+    sockets[1].open(); expect(JSON.parse(sockets[1].sent[0]).dpop).toBe('proof-2')
+    expect(JSON.stringify(sockets[1].sent)).not.toContain('before-disconnect')
+    sockets[1].message({ type: 'ready', username: 'synthetic-vm' })
+    expect(f.channel.input('after-reconnect')).toBe(true); f.channel.close()
 })
 test('raw terminal bytes stay raw, output is bounded/queued, boot stream stays separate and hide discards queued/late output', async () => {
     let boot = '', cleared = false
@@ -190,11 +219,11 @@ test('socket input/resize/backpressure and output/frame limits are enforced', as
     f.socket.bufferedAmount = 1048577; expect(f.channel.input('x')).toBe(false); expect(f.socket.closes).toBe(1)
     const q = fixture(); await tick(); q.socket.open()
     for (let i = 0; i < 6; i++) q.socket.message({ type: 'output', data: 'a'.repeat(200000) })
-    await expect(q.channel.opened).rejects.toMatchObject({ uncertain: true }); expect(q.socket.closes).toBe(1)
+    await expect(q.channel.opened).rejects.toMatchObject({ uncertain: false }); expect(q.socket.closes).toBe(1)
     const bad = fixture(); await tick(); bad.socket.open(); bad.socket.onmessage?.({ data: 'a'.repeat(262145) })
-    await expect(bad.channel.opened).rejects.toMatchObject({ uncertain: true })
+    await expect(bad.channel.opened).rejects.toMatchObject({ uncertain: false })
 })
-test('prepare/proof/ready/inactivity deadlines are bounded without automatic connection retries', async () => {
+test('prepare/proof/ready/inactivity deadlines are bounded', async () => {
     const prepare = fixture({ overrides: { deadlines: { prepare: 3 }, dependencies: { loadVm: async () => new Promise(() => {}) } } })
     await expect(prepare.channel.opened).rejects.toThrow('timed out'); expect(prepare.urls).toEqual([])
     const proof = fixture({ overrides: { deadlines: { proof: 3 }, dependencies: { proof: async () => new Promise(() => {}) } } })
@@ -212,7 +241,7 @@ test('accepted channel survives caller receipt settlement but closes on next con
 test('power awaits require renewed management before opening a console, and aged proof preparation cannot bypass fresh authority', async () => {
     let observations = 0
     const changed = fixture({ status: 'Stopped', overrides: { dependencies: { loadPublicServices: async () => permission(++observations === 1) } } })
-    await expect(changed.channel.opened).rejects.toMatchObject({ uncertain: true })
+    await expect(changed.channel.opened).rejects.toMatchObject({ uncertain: false })
     expect(changed.starts).toEqual(['start']); expect(observations).toBe(2); expect(changed.urls).toEqual([])
     const grant = permission(); let release!: () => void
     const pending = new Promise<void>(resolve => { release = resolve })

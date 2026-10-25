@@ -1,12 +1,12 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Pressable, Text, TextInput, View } from 'react-native'
-import { ChevronDown, ChevronRight, ExternalLink } from 'lucide-react-native'
+import { ChevronDown, ChevronRight, ExternalLink, Settings2 } from 'lucide-react-native'
 import type { AppSettings } from '../types'
 import { Screen } from '../components/ui'
 import { siteNavigation, toggleNavigationGroup, type NavigationAccess, type SiteNavigationItem } from '../data/site-navigation'
 import { useAppTheme } from '../theme/context'
 
-export function ExploreScreen({ settings, access, onOpen }: { settings: AppSettings; access?: Omit<NavigationAccess, 'id'>; onOpen: (item: SiteNavigationItem) => void }) {
+export function ExploreScreen({ settings, access, onOpen, onOpenSettings }: { settings: AppSettings; access?: Omit<NavigationAccess, 'id'>; onOpen: (item: SiteNavigationItem) => void; onOpenSettings: () => void }) {
     const theme = useAppTheme()
     const [search, setSearch] = useState('')
     const [expanded, setExpanded] = useState<Record<string, boolean>>({ Workspace: true, Communication: true, Content: true, Organization: true, Account: true, Automation: true })
@@ -40,6 +40,14 @@ export function ExploreScreen({ settings, access, onOpen }: { settings: AppSetti
     }
 
     return <Screen title='Menu'>
+        <Pressable accessibilityRole='button' accessibilityLabel='App settings' onPress={onOpenSettings} style={({ pressed }) => ({ flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 16, borderWidth: 1, borderColor: theme.surfaceBorderSoft, backgroundColor: pressed ? theme.accentSoft : theme.backgroundAlt, paddingHorizontal: 16, paddingVertical: 16 })}>
+            <Settings2 color={theme.text} size={20} strokeWidth={2} />
+            <View style={{ flex: 1 }}>
+                <Text style={{ color: theme.text, fontSize: 16, fontWeight: '700' }}>App settings</Text>
+                <Text style={{ color: theme.textMuted, fontSize: 13, marginTop: 3 }}>Theme, workspace, and app preferences</Text>
+            </View>
+            <ChevronRight size={18} color={theme.textSoft} />
+        </Pressable>
         <TextInput value={search} onChangeText={setSearch} autoCorrect={false} autoCapitalize='none' placeholder='Find a page' placeholderTextColor={theme.textSoft} accessibilityLabel='Search navigation' style={{ color: theme.text, paddingHorizontal: 16, paddingVertical: 14, borderRadius: 16, borderWidth: 1, borderColor: theme.surfaceBorderSoft, backgroundColor: theme.backgroundRaised }} />
         <View style={{ borderRadius: 18, borderWidth: 1, borderColor: theme.surfaceBorderSoft, backgroundColor: theme.backgroundAlt, paddingBottom: 10 }}>
             {hasMatch ? rows(groups) : <Text style={{ color: theme.textMuted, padding: 18, textAlign: 'center' }}>No pages match “{search.trim()}”. Try another name.</Text>}

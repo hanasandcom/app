@@ -47,30 +47,6 @@ export const themeVariants = {
         ambientNeutral: 'rgba(243,245,248,0.04)',
         shadow: 'rgba(0,0,0,0.42)',
     },
-    forest: {
-        isLight: false,
-        background: '#090c0a',
-        backgroundAlt: '#0f1511',
-        backgroundRaised: '#141c17',
-        surface: '#19231c',
-        surfaceStrong: '#213026',
-        surfaceBorder: '#355140',
-        surfaceBorderSoft: '#274034',
-        text: '#edf4ee',
-        textMuted: 'rgba(237,244,238,0.72)',
-        textSoft: 'rgba(237,244,238,0.46)',
-        accent: '#e25b61',
-        accentSoft: 'rgba(237,244,238,0.06)',
-        accentAlt: '#8ca593',
-        success: '#87b484',
-        warning: '#c6bb78',
-        danger: '#d56b6f',
-        grid: 'rgba(237,244,238,0.028)',
-        ambientPrimary: 'rgba(124,163,106,0.11)',
-        ambientSecondary: 'rgba(237,244,238,0.025)',
-        ambientNeutral: 'rgba(237,244,238,0.035)',
-        shadow: 'rgba(0,0,0,0.45)',
-    },
     light: {
         isLight: true,
         background: '#e3e5e7',
@@ -97,7 +73,7 @@ export const themeVariants = {
     },
 } as const
 
-export type ThemeMode = keyof typeof themeVariants
+export type ThemeMode = 'obsidian' | 'graphite' | 'light'
 export type ThemePalette = (typeof themeVariants)[ThemeMode]
 
 export const palette = themeVariants.obsidian

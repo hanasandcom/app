@@ -25,7 +25,7 @@ export type RootTabParamList = {
 }
 
 export type AppSettings = {
-    themeMode: 'obsidian' | 'graphite' | 'forest' | 'light'
+    themeMode: 'obsidian' | 'graphite' | 'light'
     workspaceMode: 'coding' | 'daily'
     siteBaseUrl: string
     apiBaseUrl: string

@@ -61,10 +61,10 @@ export function useVmWorkspace(settings: AppSettings, services: VmServices) {
         selection.current = target; setSelected(target); setMessage(''); setSnapshot(workspace); publish(); void refresh(ops.generation, false, target, workspace)
     }
     const request = (generation: number, kind: VmOperationKind, target: string, title: string, explanation: string,
-        run: (op: VmOperation, grant: FreshVm) => Promise<string>, possibleStart = false) => {
+        run: (op: VmOperation, grant: FreshVm) => Promise<string>, possibleStart = false, confirm = true) => {
         const review = ops.review(generation, kind, target, possibleStart)
         if (!review) return
-        Alert.alert(title, explanation, [{ text: 'Cancel', style: 'cancel' }, { text: 'Confirm', style: ['delete', 'stop_all'].includes(kind) ? 'destructive' : 'default', onPress: () => {
+        const dispatch = () => {
             const op = ops.begin(review, randomUUID())
             if (!op) return
             setError(''); setMessage(''); publish()
@@ -75,13 +75,19 @@ export function useVmWorkspace(settings: AppSettings, services: VmServices) {
                     if (ops.finish(op, true)) setMessage(result)
                 } catch (cause) {
                     // Only a verified non-dispatch/rejection may clear an intent; transport uncertainty stays scoped across remounts.
-                    const definite = cause instanceof VmError && !cause.uncertain
-                    if (ops.finish(op, definite)) setError(definite ? cause.message : 'The operation outcome is unknown. Refresh current state and review before another attempt.')
+                    const definite = cause instanceof VmError ? !cause.uncertain : kind === 'console'
+                    if (!definite && kind === 'console') ops.rememberUncertain(op)
+                    if (ops.finish(op, definite)) setError(definite
+                        ? cause instanceof Error ? cause.message : 'The VM console could not be opened. Try again.'
+                        : kind === 'console' ? 'The VM could not be confirmed as started. Refresh its status before reconnecting.'
+                            : 'The operation outcome is unknown. Refresh current state before trying again.')
                 } finally { publish() }
             })()
-        } }])
+        }
+        if (!confirm) { dispatch(); return }
+        Alert.alert(title, explanation, [{ text: 'Cancel', style: 'cancel' }, { text: 'Confirm', style: ['delete', 'stop_all'].includes(kind) ? 'destructive' : 'default', onPress: dispatch }])
     }
-    const openConsole = (generation: number) => request(generation, 'console', selected, 'Open VM console?', 'This checks current access and may start this VM if it is stopped. A server shell will be opened. No SSH certificate synchronization is requested.', async op => {
+    const openConsole = (generation: number) => request(generation, 'console', selected, 'Open VM console', 'Opening the console may start this VM if it is stopped.', async op => {
         const ownedEpoch = privateEpoch.current
         const live = services.openConsole(settings, ops, op, randomUUID(), {
             onBootOutput: data => { if (ops.sessionCurrent(settings) && privateEpoch.current === ownedEpoch) setBoot(value => `${value}${data}`.slice(-32768)) },
@@ -91,7 +97,7 @@ export function useVmWorkspace(settings: AppSettings, services: VmServices) {
         if (ops.operationCurrent(op)) setChannel(live)
         await live.opened
         return 'Console authenticated. Host state is shown by the console.'
-    }, true)
+    }, true, false)
     return { ops, snapshot, selected, message, error, visible, secret, connection, channel, boot, bootStatus,
         refresh, select, request, openConsole, publish,
         setSecret: (op: VmOperation, value: string) => { if (acceptsVmResult(ops, op, settings)) setSecret(value) },

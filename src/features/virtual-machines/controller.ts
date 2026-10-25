@@ -56,6 +56,7 @@ export class VmController {
     private privateClearers = new Set<() => void>()
     constructor(settings: AppSettings, private intents = registry) { this.session = vmScope(settings); this.scope = vmIntentScope(settings); this.own = ownAccount(settings) }
     get unknown() { return this.intents.get(this.scope) }
+    get activeOperationKind() { return this.operation?.kind }
     get locked() { return this.needsRead || !!this.unknown }
     get canAcknowledge() { return !this.needsRead && !!this.unknown && this.reviewed === this.unknown.token }
     current(generation: number) { return this.visible && this.generation === generation }
@@ -92,12 +93,18 @@ export class VmController {
     begin(review: VmReview, token: string): VmOperation | null {
         if (!this.own || !this.idle(review.generation) || this.locked || review.inputRevision !== this.inputRevision || review.kind === 'console' && review.consoleMayStart !== true) return null
         const intent = { token, kind: review.kind, target: review.target }
-        if (!this.intents.claim(this.scope, intent)) return null
+        // A console session is a reconnectable stream, not a one-shot mutation. Only
+        // retain an intent if its optional VM start is actually left unconfirmed.
+        if (review.kind !== 'console' && !this.intents.claim(this.scope, intent)) return null
         this.generation++; this.inputRevision++; this.writing = true; this.needsRead = true; this.reviewed = undefined; this.pending = new AbortController(); this.clearPrivate()
         this.operation = { ...intent, generation: this.generation, signal: this.pending.signal, ...(review.consoleMayStart ? { consoleMayStart: true as const } : {}) }
         return this.operation
     }
     operationCurrent(value: VmOperation) { return this.current(value.generation) && this.writing && !value.signal.aborted && this.operation === value }
+    rememberUncertain(value: VmOperation) {
+        return value.kind === 'console' && this.operationCurrent(value)
+            && this.intents.claim(this.scope, { token: value.token, kind: value.kind, target: value.target })
+    }
     async fresh<T>(value: VmOperation, read: (signal: AbortSignal) => Promise<T>, allowed: (value: T) => boolean): Promise<T | null> {
         if (!this.operationCurrent(value)) return null
         const result = await read(value.signal)
@@ -106,7 +113,9 @@ export class VmController {
     finish(value: VmOperation, definiteReceipt: boolean) {
         if (!this.operationCurrent(value)) return false
         if (definiteReceipt) this.intents.clear(this.scope, value.token)
-        this.writing = false; this.operation = undefined; this.generation++; this.inputRevision++; return true
+        this.writing = false; this.operation = undefined
+        if (value.kind === 'console' && definiteReceipt) this.needsRead = false
+        this.generation++; this.inputRevision++; return true
     }
     beginRead(generation: number, manual: boolean, selected: string): VmRead | null {
         if (!this.idle(generation)) return null
@@ -118,7 +127,14 @@ export class VmController {
         if (!this.current(value.generation)) return false
         const complete = result.authorized && result.target === value.target && requiredVmReads(value.kind, result.reads)
         this.reading = false; this.needsRead = !complete
-        if (complete && value.manual && value.intent && this.unknown?.token === value.intent) this.reviewed = value.intent
+        if (complete && value.intent && this.unknown?.token === value.intent) {
+            if (this.unknown.kind === 'console') {
+                // Clear records left by older builds on any successful exact-target
+                // read. Opening a stream is reconnectable and needs no acknowledgement.
+                this.intents.clear(this.scope, value.intent)
+                this.reviewed = undefined
+            } else if (value.manual) this.reviewed = value.intent
+        }
         this.generation++; this.inputRevision++; return true
     }
     acknowledge(generation: number, token: string) {

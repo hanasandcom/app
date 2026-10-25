@@ -47,7 +47,7 @@ export function DetailPanel({ workspace: w, settings, services, onOpenCheckout }
                     const receipt = await services.power(settings, grant.vm!, grant.management!, action, op.signal)
                     return `Power request returned HTTP ${receipt.status}. Refresh to observe host state.`
                 })} />)}</VmRow>
-                <PillButton label='Review opening console' disabled={!canManage} onPress={() => w.openConsole(g)} />
+                <PillButton label='Open console' disabled={!canManage || !!w.channel} onPress={() => w.openConsole(g)} />
                 <VmText>Failover entitlement: {vm.failover_premium === true ? 'Included' : vm.failover_premium === false ? 'Not included' : 'Unavailable'} · Enabled: {vm.failover_enabled === null ? 'Unavailable' : vm.failover_enabled ? 'Yes' : 'No'}</VmText>
                 <PillButton label={vm.failover_enabled ? 'Review disabling failover' : 'Review enabling failover'} disabled={!canManage || vm.failover_enabled === null || !vm.failover_enabled && vm.failover_premium !== true} onPress={() => w.request(g, 'host_features', target, 'Change failover setting?', `Set failover ${vm.failover_enabled ? 'off' : 'on'} for ${target}.`, async (op, grant) => {
                     await services.setFailoverEnabled(settings, grant.vm!, grant.management!, !vm.failover_enabled, op.signal); return 'Failover setting receipt received. Refresh host state.'

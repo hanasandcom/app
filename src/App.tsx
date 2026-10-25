@@ -8,7 +8,7 @@ import { Alert, AppState, Platform, Pressable, Text, View } from 'react-native'
 import * as WebBrowser from 'expo-web-browser'
 import { StatusBar } from 'expo-status-bar'
 import * as SystemUI from 'expo-system-ui'
-import { AlarmClockCheck, Bot, Brain, Compass, Images, Mail, ScanLine, Server, StickyNote, UserRound } from 'lucide-react-native'
+import { AlarmClockCheck, Bot, Brain, Compass, Images, Mail, Menu, ScanLine, Server, StickyNote, UserRound } from 'lucide-react-native'
 import type { AiChatMessage, AppSettings, RootTabParamList } from './types'
 import { SettingsDrawer } from './components/SettingsDrawer'
 import { WorkspacePicker } from './components/WorkspacePicker'
@@ -41,7 +41,7 @@ import { classifyRefreshFailure, sameSettingsSession, SessionTransition } from '
 import { caseId as monitoringCaseId } from './features/cases/model'
 
 const Tab = createBottomTabNavigator<RootTabParamList>()
-const primaryTabRoutes: Array<keyof RootTabParamList> = ['Intelligence', 'Images', 'Mail', 'VirtualMachines', 'Home']
+const primaryTabRoutes: Array<keyof RootTabParamList> = ['Intelligence', 'Images', 'Mail', 'VirtualMachines', 'Home', 'Explore']
 function AppRoot({ children, backgroundColor }: { children: ReactNode; backgroundColor: string }) {
     return <GestureHandlerRootView style={{ flex: 1, backgroundColor }}><SafeAreaProvider>{children}</SafeAreaProvider></GestureHandlerRootView>
 }
@@ -57,7 +57,7 @@ const tabIcons = {
     Images: Images,
     VirtualMachines: Server,
     Automations: AlarmClockCheck,
-    Explore: Compass,
+    Explore: Menu,
 } as const
 
 async function safeLoad<T>(loader: () => Promise<T>, fallback: T) {
@@ -479,7 +479,7 @@ export default function App() {
         <AppRoot backgroundColor={activePalette.background}>
             <StatusBar style={settings.themeMode === 'light' ? 'dark' : 'light'} />
             <AppThemeProvider mode={settings.themeMode}>
-                <SettingsDrawerProvider openSettings={() => setSettingsOpen(true)} openMenu={() => navigation.navigate('Explore')} openWorkspace={() => setWorkspaceOpen(true)} workspaceName={activeOrganization?.name || 'Personal'}>
+                <SettingsDrawerProvider openSettings={() => setSettingsOpen(true)} openWorkspace={() => setWorkspaceOpen(true)} workspaceName={activeOrganization?.name || 'Personal'}>
                     <NavigationContainer
                         ref={navigation}
                         linking={{
@@ -573,7 +573,7 @@ export default function App() {
                                 {({ route }) => <AutomationsScreen key={JSON.stringify([route.params?.automationId, route.params?.handoffId])} settings={settings} section={route.params?.section} initialAutomationId={route.params?.automationId} />}
                             </Tab.Screen>
                             <Tab.Screen name='Explore'>
-                                {() => <ExploreScreen settings={settings} access={navigationAccess} onOpen={openPage} />}
+                                {() => <ExploreScreen settings={settings} access={navigationAccess} onOpen={openPage} onOpenSettings={() => setSettingsOpen(true)} />}
                             </Tab.Screen>
                             <Tab.Screen name='Organizations'>
                                 {({ route }) => <OrganizationsScreen initialSection={route.params?.section} settings={settings} selectedOrganizationId={activeOrganization?.id} onSelectOrganization={id => void selectWorkspace(id)} onOpenPrivacy={id => void openOrganizationPrivacy(id)} />}

@@ -1,30 +1,28 @@
 import { LinearGradient } from 'expo-linear-gradient'
 import { createContext, type ReactNode, type Ref, useContext, useMemo, useState } from 'react'
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type KeyboardTypeOptions } from 'react-native'
-import { AlertCircle, CheckCircle2, ChevronDown, Info, Menu, Settings2, X } from 'lucide-react-native'
+import { AlertCircle, CheckCircle2, ChevronDown, Info, Settings2, X } from 'lucide-react-native'
 import Svg, { Circle, Line, Path } from 'react-native-svg'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { radius, spacing, type ThemePalette } from '../theme/tokens'
 import { useAppTheme } from '../theme/context'
 import { safeAreaTopInset } from '../lib/safe-area'
 
-const SettingsDrawerContext = createContext<{ openSettings: () => void; openMenu?: () => void; openWorkspace?: () => void; workspaceName?: string } | null>(null)
+const SettingsDrawerContext = createContext<{ openSettings: () => void; openWorkspace?: () => void; workspaceName?: string } | null>(null)
 
 export function SettingsDrawerProvider({
     openSettings,
-    openMenu,
     openWorkspace,
     workspaceName,
     children,
 }: {
     openSettings: () => void
-    openMenu?: () => void
     openWorkspace?: () => void
     workspaceName?: string
     children: ReactNode
 }) {
     return (
-        <SettingsDrawerContext.Provider value={{ openSettings, openMenu, openWorkspace, workspaceName }}>
+        <SettingsDrawerContext.Provider value={{ openSettings, openWorkspace, workspaceName }}>
             {children}
         </SettingsDrawerContext.Provider>
     )
@@ -93,7 +91,6 @@ export function Screen({
             </View>}
             <View style={styles.rootEdges}>
                 <View style={[styles.header, compactHeader && styles.compactHeader, { paddingTop: safeAreaTopInset(insets.top, Platform.OS) + spacing.sm }]}>
-                    {settingsDrawer?.openMenu && <Pressable accessibilityRole='button' accessibilityLabel='Open navigation menu' onPress={settingsDrawer.openMenu} style={styles.settingsButton}><Menu color={theme.textMuted} size={20} /></Pressable>}
                     {left ? <View style={styles.headerLeft}>{left}</View> : null}
                     <View style={{ flex: 1, minWidth: 112 }}>
                         <Text style={[styles.title, compactHeader && styles.compactTitle]}>{title}</Text>

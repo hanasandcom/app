@@ -9,8 +9,8 @@ import { safeAreaDrawerTopInset } from '../lib/safe-area'
 type SettingsSection = 'general' | 'appearance' | 'configuration' | 'personalization'
 
 const sectionItems: Array<{ id: SettingsSection; label: string; icon: typeof Cog }> = [
+    { id: 'appearance', label: 'Theme', icon: Palette },
     { id: 'general', label: 'General', icon: Cog },
-    { id: 'appearance', label: 'Appearance', icon: Palette },
     { id: 'configuration', label: 'Configuration', icon: SlidersHorizontal },
     { id: 'personalization', label: 'Personalization', icon: Monitor },
 ]
@@ -18,8 +18,7 @@ const sectionItems: Array<{ id: SettingsSection; label: string; icon: typeof Cog
 const themeOptions: Array<{ id: ThemeMode; label: string; description: string }> = [
     { id: 'obsidian', label: 'Obsidian', description: 'Warm charcoal surfaces with restrained red details.' },
     { id: 'graphite', label: 'Graphite', description: 'Cool charcoal surfaces with restrained red details.' },
-    { id: 'forest', label: 'Forest', description: 'Deep green surfaces with restrained red details.' },
-    { id: 'light', label: 'Light', description: 'Soft gray and off-white surfaces with dark text.' },
+    { id: 'light', label: 'Soft light', description: 'A shaded off-white with a gray cast and dark text.' },
 ]
 
 export function SettingsDrawer({
@@ -37,7 +36,7 @@ export function SettingsDrawer({
 }) {
     const { width } = useWindowDimensions()
     const insets = useSafeAreaInsets()
-    const [section, setSection] = useState<SettingsSection>('general')
+    const [section, setSection] = useState<SettingsSection>('appearance')
     const [draft, setDraft] = useState(settings)
     const [saving, setSaving] = useState(false)
     const settingsRef = useRef(settings)
@@ -49,6 +48,7 @@ export function SettingsDrawer({
     useEffect(() => {
         if (open) {
             setDraft(settingsRef.current)
+            setSection('appearance')
         }
     }, [open])
 
@@ -156,8 +156,8 @@ export function SettingsDrawer({
 
                         {section === 'appearance' && (
                             <View style={styles.sectionColumn}>
-                                <Text style={[styles.sectionTitle, { color: theme.text }]}>Appearance</Text>
-                                <Text style={[styles.sectionBody, { color: theme.textMuted }]}>Switch the shell palette without changing your content.</Text>
+                                <Text style={[styles.sectionTitle, { color: theme.text }]}>Theme</Text>
+                                <Text style={[styles.sectionBody, { color: theme.textMuted }]}>Choose one of two dark themes or a soft off-white light theme.</Text>
                                 <View style={styles.themeStack}>
                                     {themeOptions.map(option => (
                                         <Pressable

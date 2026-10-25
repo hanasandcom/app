@@ -27,12 +27,12 @@ function VmWorkspaceScreen({ settings, onOpenCheckout, services: injected }: Vir
                 <PillButton label={mode === 'details' ? 'Back to inventory' : 'Inventory'} disabled={!w.ops.idle(g)} onPress={() => { if (w.ops.context(g)) { setMode('inventory'); scrollViewRef.current?.scrollTo({ y: 0, animated: true }); w.publish() } }} />
                 <PillButton label='Create VM' disabled={!w.writable} onPress={() => { if (w.ops.context(g)) { setMode('create'); scrollViewRef.current?.scrollTo({ y: 0, animated: true }); w.publish() } }} />
             </VmRow>
-            {w.ops.writing && <InlineNotice message='An operation is in progress. Leaving interrupts observation, so its outcome may need manual reconciliation.' />}
+            {w.ops.writing && w.ops.activeOperationKind !== 'console' && <InlineNotice message='An operation is in progress. Leaving interrupts observation, so its outcome may need manual reconciliation.' />}
             {!ownAccount(settings) && <InlineNotice message='VM actions and credentials are unavailable while impersonating. Read access remains subject to the server.' />}
             {!!w.error && <InlineNotice message={w.error} tone='error' />}
             {!!w.message && <InlineNotice message={w.message} />}
             {w.snapshot.errors.map((error, index) => <InlineNotice key={index} message={error} tone='error' />)}
-            {w.ops.unknown && <GlassCard>
+            {w.ops.unknown && w.ops.unknown.kind !== 'console' && <GlassCard>
                 <VmText strong>Review an uncertain operation</VmText>
                 <VmText>{w.ops.unknown.kind.replaceAll('_', ' ')} · {w.ops.unknown.target}. No automatic retry was made. Refresh reads its exact current target and authority. Acknowledging only permits a new reviewed action; it does not establish the prior outcome.</VmText>
                 <PillButton label='Acknowledge reviewed current state' disabled={!w.ops.canAcknowledge} onPress={() => { const token = w.ops.unknown?.token; if (token && w.ops.acknowledge(g, token)) w.publish() }} />

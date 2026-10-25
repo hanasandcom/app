@@ -81,11 +81,11 @@ describe('session transition authority', () => {
 
     it('keeps the latest workspace/preferences when a same-session transition is confirmed later', () => {
         const guard = new SessionTransition(), renderVersion = guard.version
-        const latest = { ...account, selectedOrganizationId: 'current-org', themeMode: 'forest' as const }
+        const latest = { ...account, selectedOrganizationId: 'current-org', themeMode: 'light' as const }
         expect(guard.begin(renderVersion, account, latest)).not.toBeNull()
         const logout = { ...latest, authToken: '', userId: '' }
         expect(logout.selectedOrganizationId).toBe('current-org')
-        expect(logout.themeMode).toBe('forest')
+        expect(logout.themeMode).toBe('light')
         expect(guard.current(renderVersion, account, latest)).toBe(false)
     })
 
