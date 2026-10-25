@@ -5,7 +5,7 @@ import type { AppSettings } from '../types'
 import { GlassCard, InlineNotice, PillButton, Screen, SectionTitle } from '../components/ui'
 import { LoadTestHistory, LoadTestLaunch, LoadTestReport } from '../components/LoadTestWorkspace'
 import { joinLoadTestLive, applyLoadLive, type LoadSocketTransport } from '../lib/load-test-live'
-import { canEditLoad, canReadLoadInput, canReconcileLoad, createLoadTest, loadEndpoint, loadOwnAccount, loadPresets, loadScope, loadTestHistory, loadTestQuota, loadTestResult, rerunLoadTest, validateLoadDraft, LoadTestError, type LoadDraft, type LoadQuota, type LoadReadTicket, type LoadTest } from '../lib/load-tests'
+import { canEditLoad, canReadLoadInput, canReconcileLoad, createLoadTest, loadEndpoint, loadOwnAccount, loadPresets, loadScope, loadTestHistory, loadTestQuota, loadTestResult, queuedLoadRerun, rerunLoadTest, validateLoadDraft, LoadTestError, type LoadDraft, type LoadQuota, type LoadReadTicket, type LoadTest } from '../lib/load-tests'
 
 export function LoadTestsScreen({ settings, liveTransport }: { settings: AppSettings; liveTransport?: LoadSocketTransport }) {
     return <LoadTestsWorkspace key={loadScope(settings)} settings={settings} liveTransport={liveTransport} />
@@ -115,7 +115,7 @@ function LoadTestsWorkspace({ settings, liveTransport }: { settings: AppSettings
             if (rerun) {
                 await rerunLoadTest(settings, id, controller.signal)
                 if (!alive.current || !active.current || epoch.current !== own || controller.signal.aborted) return
-                setReport(previous => previous?.id === id ? { ...previous, status: 'queued', logs: [], errors: [], summary: { ...previous.summary, requests: null, checks: null, failures: null, failureRate: null, duration: {}, series: [] }, finishedAt: '', exitCode: null, durationMs: null } : previous)
+                setReport(previous => previous?.id === id ? queuedLoadRerun(previous) : previous)
                 setNotice('Rerun queued. Refresh to read its stored status, or explicitly join public live output.')
             } else {
                 const result = await createLoadTest(settings, value, controller.signal)

@@ -255,8 +255,21 @@ const syntheticFetch = Object.assign(async (...[input, init]: Parameters<typeof 
             return user ? json(user) : json({ error: 'Synthetic profile not visible.' }, 404)
         }
         if (url.pathname === '/api/tests/mine' || url.pathname === '/api/tests/recent') return json(tests)
-        if (url.pathname === '/api/tests/quota') return json({ identity: settings.userId, plan: 'free', limit: 5, used: 1, remaining: 4, resetsAt: null })
+        if (url.pathname === '/api/tests/quota') return json({ identity: settings.userId, plan: 'free', limit: 5, used: tests.length, remaining: Math.max(0, 5 - tests.length), resetsAt: null })
         if (url.pathname.startsWith('/api/test/')) return json(tests.find(test => test.id === decodeURIComponent(url.pathname.slice('/api/test/'.length))) ?? null)
+    }
+    if (method === 'POST' && url.pathname === '/api/test') {
+        const id = `fixture-scan-${tests.length}`
+        const row = { ...body, id, status: 'queued', queue_position: 1, created_at: at, logs: [], errors: [] }
+        tests.unshift(row)
+        return finishWrite({ ...row, quota: { identity: settings.userId, plan: 'free', limit: 5, used: 2, remaining: 3, resetsAt: null } }, 202)
+    }
+    const rerun = /^\/api\/test\/([^/]+)\/rerun$/.exec(url.pathname)
+    if (method === 'POST' && rerun) {
+        const row = tests.find(test => test.id === decodeURIComponent(rerun[1]))
+        if (!row) return json({ error: 'Synthetic scan missing.' }, 404)
+        row.status = 'queued'; row.queue_position = 1; row.logs = []; row.errors = []
+        return finishWrite({ ok: true, status: 'queued' }, 202)
     }
     const account = /^\/api\/user\/([^/]+)(\/active)?$/.exec(url.pathname)
     if (account && (method === 'DELETE' && !account[2] || method === 'PUT' && account[2])) {

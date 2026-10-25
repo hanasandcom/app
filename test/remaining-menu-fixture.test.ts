@@ -30,6 +30,8 @@ test('remaining-menu fixture is opt-in and confines HTTP, sockets and mutations 
     expect(fixture).toContain('/api/cases/monitoring/merge')
     expect(fixture).toContain('eventTotal: 51')
     expect(fixture).toContain('Synthetic restart accepted.')
+    expect(fixture).toContain("url.pathname === '/api/test'")
+    expect(fixture).toContain('rerun$/.exec(url.pathname)')
     expect(fixture).toContain('/api/thought/title')
     expect(fixture).toContain('Memory-only recovery')
     expect(fixture).toContain('Emit shared document change')

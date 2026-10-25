@@ -86,6 +86,25 @@ export function parseLoadTest(value: unknown): LoadTest {
     }) : []
     return { id: row.id, url: row.url, status: row.status, timeout: nonnegative(row.timeout) === null ? null : Number(row.timeout) > 1000 ? Math.ceil(Number(row.timeout) / 1000) : Number(row.timeout), stages, queuePosition: loadNumber(row.queue_position), logs: logs.rows, errors: errors.rows, outputLimited: logs.limited || errors.limited, createdAt: text(row.created_at), startedAt: text(row.started_at), finishedAt: text(row.finished_at), durationMs: loadDurationMs(row.duration), exitCode: loadNumber(row.exit_code), visits: loadNumber(row.visits), summary: parseLoadSummary(row.latest_run_summary ?? row.summary), previous: row.previous_run_summary ? parseLoadSummary(row.previous_run_summary) : null, runNumber: loadNumber(row.latest_run_number), p95Delta: loadNumber(row.p95_delta_ms) }
 }
+export function queuedLoadRerun(test: LoadTest): LoadTest {
+    return {
+        ...test,
+        status: 'queued',
+        queuePosition: null,
+        startedAt: '',
+        finishedAt: '',
+        durationMs: null,
+        exitCode: null,
+        visits: null,
+        summary: parseLoadSummary(null),
+        previous: test.summary,
+        runNumber: null,
+        p95Delta: null,
+        logs: [],
+        errors: [],
+        outputLimited: false,
+    }
+}
 async function request(settings: AppSettings, path: string, signal: AbortSignal, body?: unknown) {
     const write = body !== undefined
     if (!settings.userId || !settings.authToken) throw new LoadTestError('Sign in to inspect your checks.', 401)

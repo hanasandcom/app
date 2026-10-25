@@ -35,6 +35,14 @@ test('missing metrics remain null; real zero remains zero and actual med is pres
     expect(parsed.summary.duration.p50).toBeNull(); expect(parsed.p95Delta).toBe(-3)
     expect(parsed.previous).toBeNull(); expect(parsed.summary.series).toEqual([])
 })
+test('queued rerun drops completed-run status and metrics instead of showing them as the new run', () => {
+    const completed = api.parseLoadTest(row({ queue_position: 0, started_at: 'start', finished_at: 'finish', duration: { seconds: 30 }, exit_code: 0, visits: 32, latest_run_number: 2, summary: { requests: 32, checks: 32, failures: 0, failureRate: 0, duration: { p95: 30 } }, logs: ['done'] }))
+    const queued = api.queuedLoadRerun(completed)
+    expect(queued.status).toBe('queued'); expect(queued.queuePosition).toBeNull(); expect(queued.runNumber).toBeNull()
+    expect(queued.startedAt).toBe(''); expect(queued.finishedAt).toBe(''); expect(queued.durationMs).toBeNull()
+    expect(queued.exitCode).toBeNull(); expect(queued.visits).toBeNull(); expect(queued.summary.requests).toBeNull()
+    expect(queued.previous?.requests).toBe(32); expect(queued.logs).toEqual([])
+})
 test('series retain only supplied numeric fields, are bounded, and carry no invented zeros', () => {
     const parsed = api.parseLoadSummary({ latency: [{ time: 1, p50: 4 }, { time: 2, p95: 8 }], rps: Array.from({ length: 400 }, (_, time) => ({ time, value: 1 })) })
     expect(parsed.series[0].points).toHaveLength(300)
