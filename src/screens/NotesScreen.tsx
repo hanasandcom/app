@@ -127,6 +127,7 @@ function AccountNotes({ settings }: { settings: AppSettings }) {
     else if (pendingChanges && !locallySaved) syncStatus = 'Saving on this device…'
     else if (selected?.remoteVersion || selected?.deletedOnWebsite) syncStatus = 'Saved on this device · website changes need review'
     else if (pendingChanges) syncStatus = remoteAvailable ? 'Saved on this device · waiting to sync' : 'Saved on this device · offline'
+    const noteCount = notes.filter(hasText).length
     const visibleNotes = notes.filter(note => hasText(note) && `${note.title} ${note.content}`.toLowerCase().includes(search.toLowerCase()))
 
     function replaceNotes(next: LocalNote[]) {
@@ -295,7 +296,7 @@ function AccountNotes({ settings }: { settings: AppSettings }) {
             <View style={{ paddingHorizontal: spacing.lg, gap: spacing.sm, paddingBottom: spacing.sm }}>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
                     <PillButton label='New note' small onPress={startFreshNote} disabled={!hydrated || !configured} />
-                    <PillButton label={`${notes.filter(hasText).length} notes`} small onPress={() => setMenuOpen(true)} />
+                    <PillButton label={`${noteCount} ${noteCount === 1 ? 'note' : 'notes'}`} small onPress={() => setMenuOpen(true)} />
                     <PillButton label='Sync' small onPress={() => { setLoadError(''); void hydrate() }} disabled={loading || syncing} />
                     {selected && <PillButton label='Delete' tone='danger' small disabled={syncing} onPress={removeSelected} />}
                 </View>
