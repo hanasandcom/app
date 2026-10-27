@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { View } from 'react-native'
 import { GlassCard, InlineNotice, PillButton } from '../../components/ui'
-import { bytes, measured, type Container, type RuntimeLogs, type Telemetry } from './model'
+import { bytes, isProtectedLogsContainerName, measured, type Container, type RuntimeLogs, type Telemetry } from './model'
 import { SystemActions, SystemText } from './ui'
 export function ContainersPanel({ snapshot, selected, logs, logsBusy, logsError, host, canWrite, onSelect, onRestart, onLogs, onOpenLogs }: {
     snapshot: Telemetry; selected: string; logs: RuntimeLogs | null; logsBusy: boolean; logsError: string; host: number; canWrite: boolean
@@ -34,7 +34,7 @@ export function ContainersPanel({ snapshot, selected, logs, logsBusy, logsError,
                 <SystemText>Ports: {selectedContainer.ports.length ? selectedContainer.ports.map(p => `${p.ip || '*'}:${p.publicPort ?? 'private'} → ${p.privatePort}/${p.type}`).join('\n') : 'None reported'}</SystemText>
                 <SystemText>Select the container name above to copy it.</SystemText>
                 <SystemActions key={`${host}:${selectedContainer.id}`}>
-                    <PillButton label='Review restart' disabled={!canWrite} onPress={() => onRestart(selectedContainer)} />
+                    {!isProtectedLogsContainerName(selectedContainer.name) && <PillButton label='Review restart' disabled={!canWrite} onPress={() => onRestart(selectedContainer)} />}
                     <PillButton label={logsBusy ? 'Loading runtime logs…' : 'Refresh runtime logs'} disabled={logsBusy} onPress={onLogs} />
                     <PillButton label='Open filtered Logs' onPress={() => onOpenLogs(selectedContainer.name)} />
                 </SystemActions>

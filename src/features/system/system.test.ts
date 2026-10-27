@@ -35,6 +35,17 @@ test('actual zero remains zero; absent telemetry and invalid envelopes never tur
     expect(m.parseStorage(storage()).cache).toBe(0)
     expect(m.parseStorage(storage({ checkedAt: '2000-01-01' })).stale).toBe(true)
 })
+test('Logs and processor containers cannot be restarted through the system client', async () => {
+    for (const name of ['logs_api', 'logs-worker-1', '/processor-api-1', 'hanasand-log-collector']) {
+        expect(m.isProtectedLogsContainerName(name)).toBe(true)
+        const protectedSnapshot = m.parseTelemetry(snapshot({ dockerTelemetry: {
+            containers: [container({ name })], generated_at: new Date().toISOString(), source: 'docker_engine',
+        } }))
+        await expect(api.restartContainer(settings, access(), protectedSnapshot, id, signal())).rejects.toThrow('Logs services cannot be restarted')
+    }
+    expect(m.isProtectedLogsContainerName('catalog-api-1')).toBe(false)
+    expect(calls).toHaveLength(0)
+})
 test('snapshot/storage use only existing Core routes and preserve unavailable source metadata', async () => {
     response(snapshot()); await api.loadTelemetry(settings, signal()); expect(calls[0].url).toEndWith('/system/snapshot')
     response(storage()); await api.loadStorage(settings, signal()); expect(calls[1].url).toEndWith('/system/storage')

@@ -19,6 +19,14 @@ export function endpoint(base: string, path: string) {
 }
 export const intentScope = (s: AppSettings) => JSON.stringify([endpoint(s.apiBaseUrl, ''), s.userId, s.impersonationToken || s.impersonatingUserId ? 'impersonated' : 'own'])
 export const validContainerId = (v: string) => /^[a-f0-9]{12,64}$/i.test(v)
+export function isProtectedLogsContainerName(name: string) {
+    const normalized = name.replace(/^\/+/, '').toLowerCase()
+    return normalized === 'logs'
+        || normalized === 'processor'
+        || normalized === 'hanasand-log-collector'
+        || normalized.includes('hanasand-log-collector')
+        || /(?:^|[-_])(?:logs|processor)(?:[-_]|$)/i.test(normalized)
+}
 function array(value: unknown, maximum: number): unknown[] {
     if (!Array.isArray(value) || value.length > maximum) throw new SystemError('The telemetry response is incomplete or exceeds its limit.')
     return value

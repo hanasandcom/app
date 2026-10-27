@@ -2,7 +2,7 @@ import type { AppSettings } from '../../types'
 import { getHeader } from '../../lib/headers'
 import { apiFetch } from '../../lib/api'
 import { organizationListBase } from '../../lib/organization-endpoint'
-import { endpoint, ownAccount, parseRuntimeLogs, parseStorage, parseTelemetry, record, staleTelemetry, systemScope, SystemError, validContainerId, type Access, type Storage, type Telemetry } from './model'
+import { endpoint, isProtectedLogsContainerName, ownAccount, parseRuntimeLogs, parseStorage, parseTelemetry, record, staleTelemetry, systemScope, SystemError, validContainerId, type Access, type Storage, type Telemetry } from './model'
 export type Transport = (settings: AppSettings, url: string, init: RequestInit) => Promise<Response>
 export type RequestOptions = { transport?: Transport; timeoutMs?: number }
 export function utf8Size(s: string) { let bytes = 0; for (const c of s) { const n = c.codePointAt(0)!; bytes += n < 128 ? 1 : n < 2048 ? 2 : n < 65536 ? 3 : 4 } return bytes }
@@ -45,7 +45,9 @@ export async function loadRuntimeLogs(s: AppSettings, name: string, signal: Abor
 function writer(s: AppSettings, a: Access) { if (!ownAccount(s) || a.scope !== systemScope(s) || !a.canWrite) throw new SystemError('Verify current system editing access in your own account.', 403) }
 export async function restartContainer(s: AppSettings, a: Access, snapshot: Telemetry, id: string, signal: AbortSignal, options?: RequestOptions) {
     writer(s, a)
-    if (!validContainerId(id) || staleTelemetry(snapshot) || !snapshot.containers.some(c => c.id === id && !['dead', 'exited', 'removing'].includes(c.state.toLowerCase()))) throw new SystemError('Refresh and select a current container before restarting.')
+    const selected = snapshot.containers.find(c => c.id === id)
+    if (!validContainerId(id) || staleTelemetry(snapshot) || !selected || ['dead', 'exited', 'removing'].includes(selected.state.toLowerCase())) throw new SystemError('Refresh and select a current container before restarting.')
+    if (isProtectedLogsContainerName(selected.name)) throw new SystemError('Logs services cannot be restarted from the system dashboard.', 409)
     const r = record((await request(s, s.apiBaseUrl, `restart/${encodeURIComponent(id)}`, signal, true, options)).body)
     if (r.ok !== true || !Object.hasOwn(r, 'detail')) throw new SystemError('Restart receipt could not be verified. Review current state before another action.', 0, true)
 }
